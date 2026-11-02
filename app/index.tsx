@@ -1,30 +1,45 @@
-import { useState } from 'react';
-import { View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { ScrollView } from 'react-native';
 
-import { Button, Card, Screen, Text } from '@/components/ui';
+import { Banner, Button, Screen } from '@/components/ui';
+import { useSession } from '@/features/auth/hooks/useSession';
+import { useSignOut } from '@/features/auth/hooks/useSignOut';
+import { authErrorMessage, PASSWORD_UPDATED } from '@/features/auth/messages';
+import { ProfileHeader } from '@/features/profile/components/ProfileHeader';
 import { useTheme } from '@/theme/useTheme';
 
-// Placeholder home screen. Replaced by the auth flow and tabs in specs 02–03.
+// TEMPORARY signed-in home (spec 02). Replaced by tabs in spec 03.
 export default function HomeScreen() {
   const { space } = useTheme();
-  const [taps, setTaps] = useState(0);
+  const router = useRouter();
+  const { notice, dismissNotice } = useSession();
+  const signOut = useSignOut();
 
   return (
     <Screen>
-      <View style={{ gap: space.lg }}>
-        <Text variant="h1" accessibilityRole="header">
-          LikeToOrder
-        </Text>
-        <Text color="textMuted">Discover food on the map. Coming soon.</Text>
-        <Card>
-          <Text>{taps === 0 ? 'Base components are working.' : `Tapped ${taps} times.`}</Text>
-        </Card>
+      <ScrollView contentContainerStyle={{ gap: space.lg, paddingVertical: space.xl }}>
+        {notice === 'password-updated' ? (
+          <Banner tone="success" message={PASSWORD_UPDATED} />
+        ) : null}
+        <ProfileHeader />
+        {signOut.error ? <Banner message={authErrorMessage(signOut.error.code)} /> : null}
         <Button
-          title="Say hello"
-          accessibilityHint="Counts taps to check the button works"
-          onPress={() => setTaps((count) => count + 1)}
+          title="Edit profile"
+          onPress={() => {
+            dismissNotice();
+            router.push('/profile/edit');
+          }}
         />
-      </View>
+        <Button
+          title="Sign out"
+          variant="secondary"
+          loading={signOut.isPending}
+          onPress={() => {
+            dismissNotice();
+            signOut.mutate();
+          }}
+        />
+      </ScrollView>
     </Screen>
   );
 }

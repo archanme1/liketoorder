@@ -18,8 +18,10 @@ export function ErrorState({
 }: ErrorStateProps) {
   const { space } = useTheme();
   return (
-    <View style={[styles.root, { gap: space.lg, padding: space.xl }]} accessibilityRole="alert">
-      <Text variant="bodyLg" style={styles.message}>
+    // The alert role sits on the message, not the container: an accessible container would
+    // merge the Try again button into one element that screen readers can't focus separately.
+    <View style={[styles.root, { gap: space.lg, padding: space.xl }]}>
+      <Text variant="bodyLg" style={styles.message} accessibilityRole="alert">
         {message}
       </Text>
       <Button title="Try again" onPress={onRetry} loading={retrying} />

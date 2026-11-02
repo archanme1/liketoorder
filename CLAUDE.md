@@ -150,6 +150,7 @@ npm run db:types              # regenerate src/types/database.ts
 - Load only: this file, the feature spec, the product-spec section it cites, and files listed under **Context to load** in the spec.
 - Use the Explore subagent for codebase searches so file dumps stay out of the main context.
 - If the session gets long mid-feature, use `/compact` with a note of the current step, e.g. `/compact implementing step 3 of plan for 09-pickup-requests`.
+- Before /code-review-feature, don't /clear; use /compact with a note of the current step, because fixes are made on the same branch. Use /clear only at the start of a new feature.
 
 ## Plan mode policy
 
@@ -171,7 +172,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | # | Feature | Status | Spec |
 |---|---|---|---|
 | 01 | project-setup | ✅ Shipped | .claude/specs/01-project-setup.md |
-| 02 | auth-and-profiles | ⬜ Not started | — |
+| 02 | auth-and-profiles | ✅ Shipped | .claude/specs/02-auth-and-profiles.md |
 | 03 | navigation-shell | ⬜ Not started | — |
 | 04 | cuisine-catalog | ⬜ Not started | — |
 | 05 | seller-onboarding | ⬜ Not started | — |

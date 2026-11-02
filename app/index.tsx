@@ -1,13 +1,16 @@
-import { useState } from 'react';
 import { View } from 'react-native';
 
-import { Button, Card, Screen, Text } from '@/components/ui';
+import { Banner, Button, Card, Screen, Text } from '@/components/ui';
+import { useSession } from '@/features/auth/hooks/useSession';
+import { useSignOut } from '@/features/auth/hooks/useSignOut';
+import { PASSWORD_UPDATED } from '@/features/auth/messages';
 import { useTheme } from '@/theme/useTheme';
 
-// Placeholder home screen. Replaced by the auth flow and tabs in specs 02–03.
+// Placeholder signed-in home. Spec 02 stage 3 replaces it with the profile home; spec 03 with tabs.
 export default function HomeScreen() {
   const { space } = useTheme();
-  const [taps, setTaps] = useState(0);
+  const { session, notice, dismissNotice } = useSession();
+  const signOut = useSignOut();
 
   return (
     <Screen>
@@ -15,14 +18,20 @@ export default function HomeScreen() {
         <Text variant="h1" accessibilityRole="header">
           LikeToOrder
         </Text>
-        <Text color="textMuted">Discover food on the map. Coming soon.</Text>
+        {notice === 'password-updated' ? (
+          <Banner tone="success" message={PASSWORD_UPDATED} />
+        ) : null}
         <Card>
-          <Text>{taps === 0 ? 'Base components are working.' : `Tapped ${taps} times.`}</Text>
+          <Text>{`Signed in as ${session?.user.email ?? ''}`}</Text>
         </Card>
         <Button
-          title="Say hello"
-          accessibilityHint="Counts taps to check the button works"
-          onPress={() => setTaps((count) => count + 1)}
+          title="Sign out"
+          variant="secondary"
+          loading={signOut.isPending}
+          onPress={() => {
+            dismissNotice();
+            signOut.mutate();
+          }}
         />
       </View>
     </Screen>

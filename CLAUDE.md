@@ -171,7 +171,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | # | Feature | Status | Spec |
 |---|---|---|---|
 | 01 | project-setup | ✅ Shipped | .claude/specs/01-project-setup.md |
-| 02 | auth-and-profiles | ⬜ Not started | — |
+| 02 | auth-and-profiles | 🚧 In progress | .claude/specs/02-auth-and-profiles.md |
 | 03 | navigation-shell | ⬜ Not started | — |
 | 04 | cuisine-catalog | ⬜ Not started | — |
 | 05 | seller-onboarding | ⬜ Not started | — |

@@ -73,12 +73,40 @@ async function emit(event: string, value: unknown) {
 
 describe('getRouteAccess', () => {
   it.each([
-    [false, false, { signedOutScreens: true, resetPassword: true, app: false }],
-    [true, false, { signedOutScreens: false, resetPassword: false, app: true }],
-    [true, true, { signedOutScreens: false, resetPassword: true, app: false }],
-    [false, true, { signedOutScreens: false, resetPassword: true, app: false }],
+    [
+      false,
+      false,
+      { signedOutScreens: true, resetPassword: true, setupProfile: false, app: false },
+    ],
+    [
+      true,
+      false,
+      { signedOutScreens: false, resetPassword: false, setupProfile: false, app: true },
+    ],
+    [true, true, { signedOutScreens: false, resetPassword: true, setupProfile: false, app: false }],
+    [
+      false,
+      true,
+      { signedOutScreens: false, resetPassword: true, setupProfile: false, app: false },
+    ],
   ])('hasSession=%s isRecovering=%s', (hasSession, isRecovering, expected) => {
     expect(getRouteAccess({ hasSession, isRecovering })).toEqual(expected);
+  });
+
+  it.each([
+    [false, { signedOutScreens: false, resetPassword: false, setupProfile: true, app: false }],
+    [true, { signedOutScreens: false, resetPassword: false, setupProfile: false, app: true }],
+  ])('signed in with profileComplete=%s', (profileComplete, expected) => {
+    expect(getRouteAccess({ hasSession: true, isRecovering: false, profileComplete })).toEqual(
+      expected,
+    );
+  });
+
+  it('never allows setup-profile or the app mid-recovery, whatever the profile', () => {
+    for (const profileComplete of [true, false]) {
+      const access = getRouteAccess({ hasSession: true, isRecovering: true, profileComplete });
+      expect(access).toMatchObject({ resetPassword: true, setupProfile: false, app: false });
+    }
   });
 });
 
@@ -157,7 +185,7 @@ describe('AuthProvider', () => {
       expect(await AsyncStorage.getItem(RECOVERY_KEY)).toBe('true');
       expect(
         screen.getByText(
-          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: true, app: false })}`,
+          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: true, setupProfile: false, app: false })}`,
         ),
       ).toBeTruthy();
     });
@@ -169,7 +197,7 @@ describe('AuthProvider', () => {
       expect(screen.getByText('recovering:false')).toBeTruthy();
       expect(
         screen.getByText(
-          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: false, app: true })}`,
+          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: false, setupProfile: false, app: true })}`,
         ),
       ).toBeTruthy();
     });
@@ -243,7 +271,7 @@ describe('AuthProvider', () => {
       await waitFor(() => expect(screen.getByText('recovering:true')).toBeTruthy());
       expect(
         screen.getByText(
-          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: true, app: false })}`,
+          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: true, setupProfile: false, app: false })}`,
         ),
       ).toBeTruthy();
       expect(await AsyncStorage.getItem(RECOVERY_KEY)).toBe('true');
@@ -267,7 +295,7 @@ describe('AuthProvider', () => {
       expect(await AsyncStorage.getItem(RECOVERY_KEY)).toBeNull();
       expect(
         screen.getByText(
-          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: false, app: true })}`,
+          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: false, setupProfile: false, app: true })}`,
         ),
       ).toBeTruthy();
     });

@@ -63,7 +63,8 @@ select ok(
   'trigger sets updated_at on update'
 );
 select is(
-  (select count(*)::int from public.profiles),
+  (select count(*)::int from public.profiles
+    where id in ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002')),
   2,
   'authenticated user can select other users'' profiles'
 );

@@ -1,3 +1,4 @@
+export { Avatar, getInitials } from './Avatar';
 export { Banner } from './Banner';
 export { Button } from './Button';
 export { Card } from './Card';

@@ -1,29 +1,34 @@
-import { View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { ScrollView } from 'react-native';
 
-import { Banner, Button, Card, Screen, Text } from '@/components/ui';
+import { Banner, Button, Screen } from '@/components/ui';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { useSignOut } from '@/features/auth/hooks/useSignOut';
 import { PASSWORD_UPDATED } from '@/features/auth/messages';
+import { ProfileHeader } from '@/features/profile/components/ProfileHeader';
 import { useTheme } from '@/theme/useTheme';
 
-// Placeholder signed-in home. Spec 02 stage 3 replaces it with the profile home; spec 03 with tabs.
+// TEMPORARY signed-in home (spec 02). Replaced by tabs in spec 03.
 export default function HomeScreen() {
   const { space } = useTheme();
-  const { session, notice, dismissNotice } = useSession();
+  const router = useRouter();
+  const { notice, dismissNotice } = useSession();
   const signOut = useSignOut();
 
   return (
     <Screen>
-      <View style={{ gap: space.lg }}>
-        <Text variant="h1" accessibilityRole="header">
-          LikeToOrder
-        </Text>
+      <ScrollView contentContainerStyle={{ gap: space.lg, paddingVertical: space.xl }}>
         {notice === 'password-updated' ? (
           <Banner tone="success" message={PASSWORD_UPDATED} />
         ) : null}
-        <Card>
-          <Text>{`Signed in as ${session?.user.email ?? ''}`}</Text>
-        </Card>
+        <ProfileHeader />
+        <Button
+          title="Edit profile"
+          onPress={() => {
+            dismissNotice();
+            router.push('/profile/edit');
+          }}
+        />
         <Button
           title="Sign out"
           variant="secondary"
@@ -33,7 +38,7 @@ export default function HomeScreen() {
             signOut.mutate();
           }}
         />
-      </View>
+      </ScrollView>
     </Screen>
   );
 }

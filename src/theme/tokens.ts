@@ -26,8 +26,8 @@ export const type = { caption: 12, body: 15, bodyLg: 17, title: 20, h1: 28 };
 
 export const weight = { regular: '400', semibold: '600', bold: '700' } as const;
 
-// Minimum touch target (accessibility rule: ≥ 44pt).
-export const size = { touch: 44 };
+// Minimum touch target (accessibility rule: ≥ 44pt) and avatar diameters.
+export const size = { touch: 44, avatarSm: 40, avatarMd: 64, avatarLg: 96 };
 
 // Pressable feedback and inactive (disabled / loading) controls.
 export const opacity = { disabled: 0.5, pressed: 0.8 };

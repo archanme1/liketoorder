@@ -8,7 +8,7 @@ allowed-tools: Read, Glob, Bash(git branch:*), Bash(git status:*), Bash(git log:
 3. Reply with:
 
 ```
-Food Map v1 — <shipped>/<total> shipped
+LikeToOrder v1 — <shipped>/<total> shipped
 
 ✅ Shipped:      <numbers>
 🚧 In progress:  <number — slug — branch>

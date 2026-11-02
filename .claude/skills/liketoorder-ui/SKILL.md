@@ -1,9 +1,9 @@
 ---
-name: foodmap-ui
-description: Food Map's design system and UI rules for React Native screens and components — theme tokens, typography, spacing, shared components, bottom sheet content, request status chips, activity grid visuals, empty/error/loading states, and accessibility. Use whenever designing or building any screen, component, or visual polish in the app.
+name: liketoorder-ui
+description: LikeToOrder's design system and UI rules for React Native screens and components — theme tokens, typography, spacing, shared components, bottom sheet content, request status chips, activity grid visuals, empty/error/loading states, and accessibility. Use whenever designing or building any screen, component, or visual polish in the app.
 ---
 
-# Food Map — UI
+# LikeToOrder — UI
 
 Feel: warm, food-first, photo-led, calm. Food photos are the color; the chrome stays neutral.
 
@@ -15,7 +15,7 @@ Open `src/theme/tokens.ts` and `src/components/ui/` and reuse what exists. If a 
 export const colors = {
   bg: '#FFFDF9', surface: '#FFFFFF', surfaceAlt: '#F6F1EA',
   text: '#1F1A17', textMuted: '#6B625B', border: '#E8E0D6',
-  primary: '#E2572B', primaryText: '#FFFFFF',          // warm paprika
+  primary: '#CF471C', primaryText: '#FFFFFF',          // warm paprika; 4.59:1 with white, 4.52:1 with bg (WCAG AA)
   success: '#2E7D4F', warning: '#B7791F', danger: '#C0392B', info: '#2B6CB0',
   grid0: '#EFE8DF', grid1: '#F9C9A8', grid2: '#F08A55', grid3: '#C2410C', // activity intensity
   adRing: '#F4B400',
@@ -23,7 +23,10 @@ export const colors = {
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
 export const radius = { sm: 6, md: 10, lg: 16, pill: 999 };
 export const type = { caption: 12, body: 15, bodyLg: 17, title: 20, h1: 28 };
+export const opacity = { disabled: 0.5, pressed: 0.8 }; // inactive controls / press feedback
 ```
+`primary` must stay ≥ 4.5:1 against both `primaryText` (white) and `bg` — `src/theme/__tests__/tokens.test.ts` enforces it.
+Don't place primary-colored text controls (secondary/ghost buttons, links) on `surfaceAlt` (only ~4.1:1); put them on `surface` or `bg` instead.
 Provide a dark variant later; always read colors through a `useTheme()` hook so it's possible.
 
 ## Shared components (src/components/ui)

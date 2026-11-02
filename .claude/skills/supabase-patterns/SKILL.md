@@ -1,9 +1,9 @@
 ---
 name: supabase-patterns
-description: Food Map's Supabase conventions — migrations, RLS policy templates, ownership checks, status-transition functions, storage buckets, Edge Functions, generated types, react-query api layer, homemade approximate location, and pgTAP tests. Use whenever creating or changing tables, policies, functions, storage, edge functions, or src/features/*/api.ts.
+description: LikeToOrder's Supabase conventions — migrations, RLS policy templates, ownership checks, status-transition functions, storage buckets, Edge Functions, generated types, react-query api layer, homemade approximate location, and pgTAP tests. Use whenever creating or changing tables, policies, functions, storage, edge functions, or src/features/*/api.ts.
 ---
 
-# Food Map — Supabase patterns
+# LikeToOrder — Supabase patterns
 
 ## Golden rules
 1. RLS on every table. 2. Ownership checked in SQL. 3. Status changes only via functions. 4. Migrations append-only. 5. Regenerate types after every migration (`npm run db:types`).

@@ -6,6 +6,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -49,10 +52,15 @@ jobs:
         if: steps.state.outputs.app == 'true'
         run: npm test -- --ci
 
+      - name: Supabase CLI version from package.json
+        id: sbver
+        if: steps.state.outputs.db == 'true'
+        run: echo "version=$(node -p "require('./package.json').devDependencies.supabase")" >> "$GITHUB_OUTPUT"
+
       - uses: supabase/setup-cli@v1
         if: steps.state.outputs.db == 'true'
         with:
-          version: latest
+          version: ${{ steps.sbver.outputs.version }}
 
       - name: Start local Supabase (database only)
         if: steps.state.outputs.db == 'true'

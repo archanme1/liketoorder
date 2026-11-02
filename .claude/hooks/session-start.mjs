@@ -22,7 +22,7 @@ if (existsSync(specDir)) {
 }
 
 const lines = [
-  'Food Map session context:',
+  'LikeToOrder session context:',
   `- Branch: ${branch}${dirty ? ` (${dirty} uncommitted file${dirty > 1 ? 's' : ''})` : ' (clean)'}`,
   activeSpec
     ? `- Active spec: .claude/specs/${activeSpec}.md — load it with /start-feature ${activeSpec}`

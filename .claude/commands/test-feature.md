@@ -14,9 +14,9 @@ If `.claude/specs/$ARGUMENTS.md` does not exist: stop and say
 
 ---
 
-## Step 1 — Write tests (foodmap-test-writer)
+## Step 1 — Write tests (liketoorder-test-writer)
 
-Invoke the **foodmap-test-writer** subagent with:
+Invoke the **liketoorder-test-writer** subagent with:
 - Spec: `.claude/specs/$ARGUMENTS.md` (Definition of done + Test plan sections are the contract)
 - Product spec sections the spec cites in `docs/product/v1.md`
 - Structure-only references (names, exports, table/column names — NOT logic):
@@ -32,9 +32,9 @@ Invoke the **foodmap-test-writer** subagent with:
 
 Wait until it confirms the files are written. If it could not write them, stop and report why.
 
-## Step 2 — Run tests (foodmap-test-runner)
+## Step 2 — Run tests (liketoorder-test-runner)
 
-Invoke the **foodmap-test-runner** subagent with:
+Invoke the **liketoorder-test-runner** subagent with:
 - The test files from Step 1
 - The spec for context
 - Commands:

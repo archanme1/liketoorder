@@ -1,1 +1,2 @@
--- Local dev seed data. Runs after migrations on `npx supabase db reset`. Empty until spec 02 adds tables.
+-- Local dev seed data. Runs after migrations on `npx supabase db reset`. Intentionally empty: `profiles` rows come
+-- from the auth.users trigger, so demo users and other data are created by the /seed command.

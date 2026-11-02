@@ -341,7 +341,7 @@ Feature-specific rules:
 **Config, checks and docs**
 - [x] `supabase/config.toml` has `minimum_password_length = 8`, `password_requirements = "letters_digits"`, `enable_confirmations = true` and `secure_password_change = true` (S1 closed).
 - [x] Each of the three implementation stages had its tests passing before the next stage started (noted in the PR).
-- [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` all pass, and `src/types/database.ts` matches the generated types (the CI types diff is green).
+- [x] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` all pass, and `src/types/database.ts` matches the generated types (the CI types diff is green).
 - [x] Every touchable on the new screens has `accessibilityLabel` + `accessibilityRole` and is ≥ 44pt.
 - [x] No colors or sizes are hardcoded outside tokens.
 - [x] §16 S1 and S2 are marked closed in `docs/product/v1.md` at ship time.

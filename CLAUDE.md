@@ -150,6 +150,7 @@ npm run db:types              # regenerate src/types/database.ts
 - Load only: this file, the feature spec, the product-spec section it cites, and files listed under **Context to load** in the spec.
 - Use the Explore subagent for codebase searches so file dumps stay out of the main context.
 - If the session gets long mid-feature, use `/compact` with a note of the current step, e.g. `/compact implementing step 3 of plan for 09-pickup-requests`.
+- Before /code-review-feature, don't /clear; use /compact with a note of the current step, because fixes are made on the same branch. Use /clear only at the start of a new feature.
 
 ## Plan mode policy
 

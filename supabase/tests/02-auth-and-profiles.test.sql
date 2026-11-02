@@ -1,6 +1,6 @@
 -- Spec 02: profiles table — RLS, grants, triggers and check constraints.
 begin;
-select plan(59);
+select plan(67);
 
 -- Two users: owner (…01) and outsider (…02). Inserting into auth.users fires the profile trigger.
 insert into auth.users (id, email) values
@@ -217,14 +217,22 @@ select lives_ok(
   $$ update public.profiles set bio = '', city = '' where id = '00000000-0000-0000-0000-000000000001' $$,
   'empty bio and city are allowed'
 );
--- Reserved usernames (Decision 8): rejected exactly, but allowed as part of a longer name.
+-- Reserved usernames (Decision 8): every listed name is rejected (so the SQL list can't silently
+-- shrink), null stays allowed, and a name that only contains a reserved word is allowed.
 select throws_ok(
-  $$ update public.profiles set username = 'admin' where id = '00000000-0000-0000-0000-000000000001' $$,
-  '23514', null, 'reserved username admin is rejected'
-);
-select throws_ok(
-  $$ update public.profiles set username = 'liketoorder' where id = '00000000-0000-0000-0000-000000000001' $$,
-  '23514', null, 'reserved username liketoorder is rejected'
+  format(
+    $$ update public.profiles set username = %L where id = '00000000-0000-0000-0000-000000000001' $$,
+    name
+  ),
+  '23514', null, format('reserved username %s is rejected', name)
+)
+from unnest(array[
+  'admin', 'administrator', 'support', 'help', 'staff',
+  'moderator', 'system', 'root', 'liketoorder'
+]) as name;
+select lives_ok(
+  $$ update public.profiles set username = null where id = '00000000-0000-0000-0000-000000000001' $$,
+  'a null username is still allowed'
 );
 select lives_ok(
   $$ update public.profiles set username = 'admin_fan' where id = '00000000-0000-0000-0000-000000000001' $$,

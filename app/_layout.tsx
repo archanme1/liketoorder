@@ -46,7 +46,10 @@ function RootNavigator() {
       <Screen style={[styles.errorScreen, { gap: space.lg }]}>
         <ErrorState
           message={profileErrorMessage(profile.error.code)}
-          onRetry={() => void profile.refetch()}
+          onRetry={() => {
+            signOut.reset();
+            void profile.refetch();
+          }}
           retrying={profile.isRefetching}
         />
         {signOut.error ? <Banner message={authErrorMessage(signOut.error.code)} /> : null}

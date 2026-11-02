@@ -1,8 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AuthApiError } from '@supabase/supabase-js';
 import { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import { queryClient } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
+
+import { authErrorMessage } from '../messages';
 
 // Renders the real app/ routes so the Stack.Protected guards and their redirects are exercised,
 // including the cold start at "/" (regression: signed-out launch showed "Unmatched Route").
@@ -45,12 +48,18 @@ function mockProfile(profile: typeof baseProfile) {
   mocked.from.mockReturnValue(builder);
 }
 
+const appQueryDefaults = queryClient.getDefaultOptions();
+
 describe('route guards on cold start', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     // The root layout uses the app's shared client; don't let one test's cached profile leak.
     queryClient.clear();
     await AsyncStorage.clear();
+  });
+
+  afterEach(() => {
+    queryClient.setDefaultOptions(appQueryDefaults);
   });
 
   it('opens sign-in when signed out', async () => {
@@ -101,12 +110,28 @@ describe('route guards on cold start', () => {
       maybeSingle: jest.fn(async () => ({ data: null, error: { message: 'Failed to fetch' } })),
     };
     mocked.from.mockReturnValue(builder);
+    // Skip the app's one retry (a real 1 s delay) so the error screen shows straight away.
+    queryClient.setDefaultOptions({
+      ...appQueryDefaults,
+      queries: { ...appQueryDefaults.queries, retry: false },
+    });
     await renderRouter('./app', { initialUrl: '/' });
-    // The shared client retries once (about 1 s) before showing the error.
-    const signOut = await screen.findByRole('button', { name: 'Sign out' }, { timeout: 4000 });
+    const signOut = await screen.findByRole('button', { name: 'Sign out' });
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
     await fireEvent.press(signOut);
     expect(mocked.auth.signOut).toHaveBeenCalled();
+  });
+
+  it('shows an error banner on home when sign-out fails', async () => {
+    mocked.auth.getSession.mockResolvedValue({ data: { session } });
+    mockProfile({ ...baseProfile, username: 'archan', display_name: 'Archan Me' });
+    // Both the global and the local fallback sign-out fail.
+    mocked.auth.signOut.mockResolvedValue({ error: new AuthApiError('boom', 500, undefined) });
+    await renderRouter('./app', { initialUrl: '/' });
+    await fireEvent.press(await screen.findByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByText(authErrorMessage('unknown'))).toBeTruthy();
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen).toHavePathname('/');
   });
 
   it('opens reset-password, not home or setup, when relaunched mid-recovery', async () => {

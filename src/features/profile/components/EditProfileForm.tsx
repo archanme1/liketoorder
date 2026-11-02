@@ -62,6 +62,8 @@ function EditProfileFields({ profile }: { profile: Profile }) {
   const router = useRouter();
   const update = useUpdateMyProfile();
   const [banner, setBanner] = useState<string | null>(null);
+  // defaultValues are read once: later cache updates (e.g. after saving) don't reset the form.
+  // That's intended, since the form closes on save; reset it explicitly if that ever changes.
   const { control, handleSubmit, setError } = useForm<EditProfileValues>({
     resolver: zodResolver(editProfileSchema),
     defaultValues: {

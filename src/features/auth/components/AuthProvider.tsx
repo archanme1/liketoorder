@@ -12,7 +12,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 
-import { readRecoveryFlag, writeRecoveryFlag } from '../recoveryFlag';
+import { readRecoveryFlag, writeRecoveryFlag, writeRecoveryFlagStrict } from '../recoveryFlag';
 
 export type AuthNotice = 'password-updated';
 
@@ -23,7 +23,10 @@ export type AuthContextValue = {
   isRecovering: boolean;
   /** One-time message for the next signed-in screen. */
   notice: AuthNotice | null;
-  /** Persist the flag before verifying a reset code, so a kill mid-verify still lands on reset. */
+  /**
+   * Persist the flag before verifying a reset code, so a kill mid-verify still lands on reset.
+   * Rejects if storage fails; the caller must not verify the code then.
+   */
   prepareRecovery: () => Promise<void>;
   /** Undo prepareRecovery when the code is rejected. */
   abandonRecovery: () => Promise<void>;
@@ -99,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [queryClient]);
 
-  const prepareRecovery = useCallback(() => writeRecoveryFlag(true), []);
+  const prepareRecovery = useCallback(() => writeRecoveryFlagStrict(true), []);
 
   const abandonRecovery = useCallback(async () => {
     if (!recoveringRef.current) await writeRecoveryFlag(false);

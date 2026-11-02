@@ -17,15 +17,17 @@ export const RESEND_COOLDOWN_SECONDS = 60;
 
 type VerifyEmailFormProps = {
   email: string;
+  /** False when arriving from sign-in: no code was just sent, so "Resend code" is available now. */
+  codeJustSent?: boolean;
 };
 
-export function VerifyEmailForm({ email }: VerifyEmailFormProps) {
+export function VerifyEmailForm({ email, codeJustSent = true }: VerifyEmailFormProps) {
   const { space } = useTheme();
   const router = useRouter();
   const verify = useVerifyEmailCode();
   const resend = useResendEmailCode();
-  // A code was just sent when this screen opens, so the cooldown starts immediately.
-  const [secondsLeft, setSecondsLeft] = useState(RESEND_COOLDOWN_SECONDS);
+  // After sign-up a code was just sent, so the cooldown starts immediately.
+  const [secondsLeft, setSecondsLeft] = useState(codeJustSent ? RESEND_COOLDOWN_SECONDS : 0);
   const { control, handleSubmit, setError } = useForm<VerifyEmailValues>({
     resolver: zodResolver(verifyEmailSchema),
     defaultValues: { code: '' },
@@ -64,7 +66,11 @@ export function VerifyEmailForm({ email }: VerifyEmailFormProps) {
 
   return (
     <View style={{ gap: space.lg }}>
-      <Text>{`We sent a 6-digit code to ${email}. Enter it below to confirm your email.`}</Text>
+      <Text>
+        {codeJustSent
+          ? `We sent a 6-digit code to ${email}. Enter it below to confirm your email.`
+          : `Confirm ${email} to sign in. Enter the 6-digit code we emailed you, or tap Resend code for a new one.`}
+      </Text>
       {verifyError ? <Banner message={verifyError} /> : null}
       {resendError ? <Banner message={resendError} /> : null}
       {resend.isSuccess && !resendError ? <Banner tone="info" message={RESEND_DONE} /> : null}

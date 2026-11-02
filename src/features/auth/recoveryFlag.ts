@@ -11,13 +11,18 @@ export async function readRecoveryFlag(): Promise<boolean> {
   }
 }
 
+/** Throws if storage fails. Used before verifying a reset code, which must not go ahead unflagged. */
+export async function writeRecoveryFlagStrict(value: boolean): Promise<void> {
+  if (value) {
+    await AsyncStorage.setItem(RECOVERY_KEY, 'true');
+  } else {
+    await AsyncStorage.removeItem(RECOVERY_KEY);
+  }
+}
+
 export async function writeRecoveryFlag(value: boolean): Promise<void> {
   try {
-    if (value) {
-      await AsyncStorage.setItem(RECOVERY_KEY, 'true');
-    } else {
-      await AsyncStorage.removeItem(RECOVERY_KEY);
-    }
+    await writeRecoveryFlagStrict(value);
   } catch {
     // Storage failure only affects the relaunch case; the in-memory flag still guards routes.
   }

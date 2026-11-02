@@ -9,7 +9,6 @@ export type Profile = Database['public']['Tables']['profiles']['Row'];
 export type ProfilePatch = Partial<Pick<Profile, 'username' | 'display_name' | 'bio' | 'city'>>;
 export type ProfileField = keyof ProfilePatch;
 
-const PATCH_FIELDS: readonly ProfileField[] = ['username', 'display_name', 'bio', 'city'];
 const PROFILE_COLUMNS = 'id, username, display_name, bio, city, is_seller, created_at, updated_at';
 
 export type ProfileErrorCode =
@@ -30,6 +29,7 @@ export class ProfileAppError extends Error {
 
 const CHECK_CONSTRAINT_FIELDS: Record<string, ProfileField> = {
   profiles_username_check: 'username',
+  profiles_username_not_reserved: 'username',
   profiles_display_name_check: 'display_name',
   profiles_bio_check: 'bio',
   profiles_city_check: 'city',
@@ -77,10 +77,12 @@ export async function getMyProfile(): Promise<Profile | null> {
 /** Sends only username, display_name, bio and city — never id, is_seller or timestamps. */
 export async function updateMyProfile(patch: ProfilePatch): Promise<Profile> {
   const id = await currentUserId();
-  const allowed: ProfilePatch = {};
-  for (const field of PATCH_FIELDS) {
-    if (patch[field] !== undefined) Object.assign(allowed, { [field]: patch[field] });
-  }
+  const allowed: ProfilePatch = {
+    ...(patch.username !== undefined && { username: patch.username }),
+    ...(patch.display_name !== undefined && { display_name: patch.display_name }),
+    ...(patch.bio !== undefined && { bio: patch.bio }),
+    ...(patch.city !== undefined && { city: patch.city }),
+  };
 
   const { data, error } = await supabase
     .from('profiles')

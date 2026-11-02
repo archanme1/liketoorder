@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { renderRouter, screen } from 'expo-router/testing-library';
+import { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import { queryClient } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
@@ -12,12 +12,16 @@ jest.mock('@/lib/supabase', () => ({
     auth: {
       onAuthStateChange: jest.fn(() => ({ data: { subscription: { unsubscribe: jest.fn() } } })),
       getSession: jest.fn(),
+      signOut: jest.fn(async () => ({ error: null })),
     },
     from: jest.fn(),
   },
 }));
 
-const mocked = supabase as unknown as { auth: { getSession: jest.Mock }; from: jest.Mock };
+const mocked = supabase as unknown as {
+  auth: { getSession: jest.Mock; signOut: jest.Mock };
+  from: jest.Mock;
+};
 const session = { access_token: 't', refresh_token: 'r', user: { id: 'u1', email: 'a@b.com' } };
 const baseProfile = {
   id: 'u1',
@@ -87,6 +91,22 @@ describe('route guards on cold start', () => {
     await renderRouter('./app', { initialUrl: '/setup-profile' });
     expect(await screen.findByText('@archan')).toBeTruthy();
     expect(screen).toHavePathname('/');
+  });
+
+  it('offers Try again and Sign out when the profile fails to load', async () => {
+    mocked.auth.getSession.mockResolvedValue({ data: { session } });
+    const builder: QueryBuilder = {
+      select: jest.fn(() => builder),
+      eq: jest.fn(() => builder),
+      maybeSingle: jest.fn(async () => ({ data: null, error: { message: 'Failed to fetch' } })),
+    };
+    mocked.from.mockReturnValue(builder);
+    await renderRouter('./app', { initialUrl: '/' });
+    // The shared client retries once (about 1 s) before showing the error.
+    const signOut = await screen.findByRole('button', { name: 'Sign out' }, { timeout: 4000 });
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    await fireEvent.press(signOut);
+    expect(mocked.auth.signOut).toHaveBeenCalled();
   });
 
   it('opens reset-password, not home or setup, when relaunched mid-recovery', async () => {

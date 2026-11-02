@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 
-import { verifyResetCode, type AuthAppError } from '../api';
+import { AuthAppError, verifyResetCode } from '../api';
 
 import { useSession } from './useSession';
 
@@ -9,7 +9,12 @@ export function useVerifyResetCode() {
 
   return useMutation<void, AuthAppError, { email: string; code: string }>({
     mutationFn: async ({ email, code }) => {
-      await prepareRecovery();
+      try {
+        await prepareRecovery();
+      } catch {
+        // Without the stored flag, a relaunch mid-reset would count as signed in. Don't verify.
+        throw new AuthAppError('unknown');
+      }
       try {
         await verifyResetCode(email, code);
       } catch (error) {

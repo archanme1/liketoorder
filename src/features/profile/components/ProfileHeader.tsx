@@ -21,7 +21,8 @@ export function ProfileHeader() {
     );
   }
 
-  if (query.isError) {
+  // A failed background refetch keeps showing the loaded profile.
+  if (query.isError && query.data === undefined) {
     return (
       <ErrorState
         message={profileErrorMessage(query.error.code)}
@@ -45,9 +46,11 @@ export function ProfileHeader() {
   return (
     <View style={{ gap: space.sm }}>
       <Avatar displayName={profile.display_name} username={profile.username} size="lg" />
-      <Text variant="title" accessibilityRole="header">
-        {profile.display_name ?? ''}
-      </Text>
+      {profile.display_name ? (
+        <Text variant="title" accessibilityRole="header">
+          {profile.display_name}
+        </Text>
+      ) : null}
       {profile.username ? <Text color="textMuted">{`@${profile.username}`}</Text> : null}
       {profile.bio ? <Text>{profile.bio}</Text> : null}
       {profile.city ? <Text color="textMuted">{profile.city}</Text> : null}

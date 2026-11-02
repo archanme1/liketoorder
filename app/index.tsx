@@ -4,7 +4,7 @@ import { ScrollView } from 'react-native';
 import { Banner, Button, Screen } from '@/components/ui';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { useSignOut } from '@/features/auth/hooks/useSignOut';
-import { PASSWORD_UPDATED } from '@/features/auth/messages';
+import { authErrorMessage, PASSWORD_UPDATED } from '@/features/auth/messages';
 import { ProfileHeader } from '@/features/profile/components/ProfileHeader';
 import { useTheme } from '@/theme/useTheme';
 
@@ -22,6 +22,7 @@ export default function HomeScreen() {
           <Banner tone="success" message={PASSWORD_UPDATED} />
         ) : null}
         <ProfileHeader />
+        {signOut.error ? <Banner message={authErrorMessage(signOut.error.code)} /> : null}
         <Button
           title="Edit profile"
           onPress={() => {

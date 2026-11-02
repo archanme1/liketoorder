@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 import * as api from '../api';
 import { AuthProvider } from '../components/AuthProvider';
 import { ResetPasswordForm } from '../components/ResetPasswordForm';
-import { INVALID_CODE } from '../messages';
+import { authErrorMessage, INVALID_CODE } from '../messages';
 
 const mockRouter = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
 const RECOVERY_KEY = 'liketoorder.auth.isRecovering';
@@ -102,6 +102,16 @@ describe('ResetPasswordForm', () => {
       await fireEvent.changeText(await screen.findByLabelText('Reset code'), '123456');
       await fireEvent.press(screen.getByRole('button', { name: 'Verify' }));
       expect(await screen.findByText(rx(INVALID_CODE))).toBeTruthy();
+      expect(screen.queryByLabelText('New password')).toBeNull();
+    });
+
+    it('does not verify the code when the recovery flag cannot be saved', async () => {
+      await renderForm({ email: 'a@b.com' }, { recovering: false });
+      jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('disk full'));
+      await fireEvent.changeText(await screen.findByLabelText('Reset code'), '123456');
+      await fireEvent.press(screen.getByRole('button', { name: 'Verify' }));
+      expect(await screen.findByText(rx(authErrorMessage('unknown')))).toBeTruthy();
+      expect(mockedApi.verifyResetCode).not.toHaveBeenCalled();
       expect(screen.queryByLabelText('New password')).toBeNull();
     });
 

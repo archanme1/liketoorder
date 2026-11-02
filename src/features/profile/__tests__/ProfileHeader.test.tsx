@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import * as api from '../api';
 import { ProfileHeader } from '../components/ProfileHeader';
@@ -36,6 +36,7 @@ async function renderHeader() {
       <ProfileHeader />
     </QueryClientProvider>,
   );
+  return client;
 }
 
 describe('ProfileHeader', () => {
@@ -59,6 +60,26 @@ describe('ProfileHeader', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('@archan')).toBeTruthy();
     expect(mockedApi.getMyProfile).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps showing the loaded profile when a background refetch fails', async () => {
+    mockedApi.getMyProfile.mockResolvedValueOnce(profile);
+    mockedApi.getMyProfile.mockRejectedValueOnce(new realApi.ProfileAppError('network'));
+    const client = await renderHeader();
+    await screen.findByText('@archan');
+    await act(async () => {
+      await client.refetchQueries();
+    });
+    expect(mockedApi.getMyProfile).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('@archan')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('renders no empty heading when the display name is missing', async () => {
+    mockedApi.getMyProfile.mockResolvedValue({ ...profile, display_name: null });
+    await renderHeader();
+    await screen.findByText('@archan');
+    expect(screen.queryByRole('header')).toBeNull();
   });
 
   it('shows an empty state with Try again when there is no profile', async () => {

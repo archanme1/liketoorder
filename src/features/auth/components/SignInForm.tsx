@@ -25,7 +25,10 @@ export function SignInForm() {
         // The one exception to generic errors: an unconfirmed account goes to the code screen.
         if (error.code === 'email_not_confirmed') {
           signIn.reset();
-          router.push({ pathname: '/verify-email', params: { email: values.email } });
+          router.push({
+            pathname: '/verify-email',
+            params: { email: values.email, codeSent: 'false' },
+          });
         }
       },
     });

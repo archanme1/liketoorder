@@ -41,6 +41,6 @@ export function Banner({ message, tone = 'error' }: BannerProps) {
 }
 
 const styles = StyleSheet.create({
-  root: { flexDirection: 'row', alignItems: 'flex-start', borderWidth: 1 },
+  root: { flexDirection: 'row', alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth },
   message: { flex: 1 },
 });

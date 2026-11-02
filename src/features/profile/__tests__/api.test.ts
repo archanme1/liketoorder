@@ -76,6 +76,7 @@ describe('mapProfileError', () => {
 
   it.each([
     ['profiles_username_check', 'username'],
+    ['profiles_username_not_reserved', 'username'],
     ['profiles_display_name_check', 'display_name'],
     ['profiles_bio_check', 'bio'],
     ['profiles_city_check', 'city'],

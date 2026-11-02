@@ -4,9 +4,11 @@ import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { ErrorState, Screen } from '@/components/ui';
+import { Banner, Button, ErrorState, Screen } from '@/components/ui';
 import { AuthProvider } from '@/features/auth/components/AuthProvider';
 import { useSession } from '@/features/auth/hooks/useSession';
+import { useSignOut } from '@/features/auth/hooks/useSignOut';
+import { authErrorMessage } from '@/features/auth/messages';
 import { getHomeRoute, getRouteAccess } from '@/features/auth/routeAccess';
 import { useMyProfile } from '@/features/profile/hooks/useMyProfile';
 import { profileErrorMessage } from '@/features/profile/messages';
@@ -30,19 +32,29 @@ export default function RootLayout() {
 
 // Guards are for UX only; RLS is what protects the data.
 function RootNavigator() {
+  const { space } = useTheme();
   const { session, isLoading, isRecovering } = useSession();
   const signedIn = session !== null && !isRecovering;
   const profile = useMyProfile({ enabled: signedIn });
+  const signOut = useSignOut();
 
   // Only block on the first profile load; background refetches keep the current screen.
   if (isLoading || (signedIn && profile.isPending)) return <LoadingScreen />;
   if (signedIn && profile.isError && profile.data === undefined) {
+    // Sign out is the way out if the profile keeps failing to load.
     return (
-      <Screen>
+      <Screen style={[styles.errorScreen, { gap: space.lg }]}>
         <ErrorState
           message={profileErrorMessage(profile.error.code)}
           onRetry={() => void profile.refetch()}
           retrying={profile.isRefetching}
+        />
+        {signOut.error ? <Banner message={authErrorMessage(signOut.error.code)} /> : null}
+        <Button
+          title="Sign out"
+          variant="secondary"
+          loading={signOut.isPending}
+          onPress={() => signOut.mutate()}
         />
       </Screen>
     );
@@ -84,4 +96,5 @@ function LoadingScreen() {
 
 const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
+  errorScreen: { justifyContent: 'center' },
 });

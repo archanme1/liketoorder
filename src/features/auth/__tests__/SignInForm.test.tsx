@@ -115,7 +115,8 @@ describe('SignInForm', () => {
     await screen.findByRole('button', { name: 'Sign in' });
     expect(mockRouter.push).toHaveBeenCalledWith({
       pathname: '/verify-email',
-      params: { email: 'a@b.com' },
+      // No code was just sent, so verify-email lets the user resend straight away.
+      params: { email: 'a@b.com', codeSent: 'false' },
     });
     expect(screen.queryByRole('alert')).toBeNull();
   });

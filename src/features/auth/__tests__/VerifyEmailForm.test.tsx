@@ -21,7 +21,7 @@ const mockedApi = jest.mocked(api);
 
 const rx = (s: string) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 
-async function renderForm(email = 'a@b.com') {
+async function renderForm(email = 'a@b.com', codeJustSent?: boolean) {
   const client = new QueryClient({
     // gcTime Infinity: no cache-cleanup timers left running after a test.
     defaultOptions: {
@@ -31,7 +31,7 @@ async function renderForm(email = 'a@b.com') {
   });
   await render(
     <QueryClientProvider client={client}>
-      <VerifyEmailForm email={email} />
+      <VerifyEmailForm email={email} codeJustSent={codeJustSent} />
     </QueryClientProvider>,
   );
 }
@@ -92,6 +92,18 @@ describe('VerifyEmailForm', () => {
       const button = screen.getByRole('button', { name: 'Resend code' });
       expect(button).not.toBeDisabled();
       expect(screen.queryByText(/Resend code in/)).toBeNull();
+    });
+
+    it('lets the user resend straight away when no code was just sent (from sign-in)', async () => {
+      await renderForm('a@b.com', false);
+      expect(screen.queryByText(/Resend code in/)).toBeNull();
+      expect(screen.queryByText(/We sent a 6-digit code/)).toBeNull();
+      const button = screen.getByRole('button', { name: 'Resend code' });
+      expect(button).not.toBeDisabled();
+      await fireEvent.press(button);
+      expect(await screen.findByText(rx(RESEND_DONE))).toBeTruthy();
+      expect(mockedApi.resendEmailCode).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Resend code in 60s')).toBeTruthy();
     });
 
     it('resends, restarts the cooldown at 60 and shows the neutral confirmation', async () => {

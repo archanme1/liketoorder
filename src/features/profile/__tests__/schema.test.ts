@@ -2,9 +2,11 @@ import {
   BIO_MAX,
   CITY_MAX,
   DISPLAY_NAME_MAX,
+  RESERVED_USERNAMES,
   USERNAME_HINT,
   USERNAME_MAX,
   USERNAME_MIN,
+  USERNAME_RESERVED,
   bioSchema,
   citySchema,
   displayNameSchema,
@@ -36,6 +38,30 @@ describe('usernameSchema', () => {
       expect(usernameSchema.safeParse(value).success).toBe(false);
     },
   );
+
+  it('rejects every reserved username, in any case, with its own message', () => {
+    expect(RESERVED_USERNAMES).toEqual([
+      'admin',
+      'administrator',
+      'support',
+      'help',
+      'staff',
+      'moderator',
+      'system',
+      'root',
+      'liketoorder',
+    ]);
+    for (const name of [...RESERVED_USERNAMES, 'Admin', ' LikeToOrder ']) {
+      const result = usernameSchema.safeParse(name);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues[0].message).toBe(USERNAME_RESERVED);
+    }
+  });
+
+  it('allows names that only contain a reserved word', () => {
+    expect(usernameSchema.safeParse('admin_fan').success).toBe(true);
+    expect(usernameSchema.safeParse('helpful').success).toBe(true);
+  });
 
   it('trims and lowercases before validating', () => {
     expect(usernameSchema.parse(' Archan ')).toBe('archan');

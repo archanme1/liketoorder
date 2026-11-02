@@ -35,7 +35,8 @@ export function EditProfileForm() {
       </View>
     );
   }
-  if (query.isError) {
+  // A failed background refetch keeps the loaded form (and anything typed into it).
+  if (query.isError && query.data === undefined) {
     return (
       <ErrorState
         message={profileErrorMessage(query.error.code)}

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import * as api from '../api';
 import { EditProfileForm } from '../components/EditProfileForm';
@@ -69,6 +69,18 @@ describe('EditProfileForm', () => {
       await renderForm();
       expect(screen.getByLabelText('Loading profile')).toBeTruthy();
       expect(screen.queryByLabelText('Display name')).toBeNull();
+    });
+
+    it('keeps the form and typed changes when a background refetch fails', async () => {
+      const client = await renderLoaded();
+      await fireEvent.changeText(screen.getByLabelText('City'), 'Lyon');
+      mockedApi.getMyProfile.mockRejectedValueOnce(new realApi.ProfileAppError('network'));
+      await act(async () => {
+        await client.refetchQueries();
+      });
+      expect(mockedApi.getMyProfile).toHaveBeenCalledTimes(2);
+      expect(screen.getByLabelText('City').props.value).toBe('Lyon');
+      expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
     });
 
     it('shows an error with retry that refetches', async () => {

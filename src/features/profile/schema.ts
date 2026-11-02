@@ -10,11 +10,27 @@ export const CITY_MAX = 60;
 
 export const USERNAME_HINT = '3–20 characters: lowercase letters, numbers or _';
 
+// Must match profiles_username_not_reserved (supabase/migrations/20261102231654_reserved_usernames.sql).
+export const RESERVED_USERNAMES: readonly string[] = [
+  'admin',
+  'administrator',
+  'support',
+  'help',
+  'staff',
+  'moderator',
+  'system',
+  'root',
+  'liketoorder',
+];
+
+export const USERNAME_RESERVED = 'That username is reserved';
+
 export const usernameSchema = z
   .string()
   .trim()
   .toLowerCase()
-  .regex(/^[a-z0-9_]{3,20}$/, `Use ${USERNAME_HINT}`);
+  .regex(/^[a-z0-9_]{3,20}$/, `Use ${USERNAME_HINT}`)
+  .refine((value) => !RESERVED_USERNAMES.includes(value), USERNAME_RESERVED);
 
 export const displayNameSchema = z
   .string()
@@ -22,6 +38,8 @@ export const displayNameSchema = z
   .min(1, 'Enter your name')
   .max(DISPLAY_NAME_MAX, `Use ${DISPLAY_NAME_MAX} characters or fewer`);
 
+// The form trims bio and city before saving; the DB doesn't trim, so it only checks the
+// length of what is sent. Trimming can only shorten a value, so the rules still agree.
 export const bioSchema = z.string().trim().max(BIO_MAX, `Use ${BIO_MAX} characters or fewer`);
 
 export const citySchema = z.string().trim().max(CITY_MAX, `Use ${CITY_MAX} characters or fewer`);

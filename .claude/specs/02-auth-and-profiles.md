@@ -185,7 +185,7 @@ Profile (`src/features/profile/`):
   - Functions: `getProfile(id)`, `getMyProfile()`, `updateMyProfile(patch)`. The update sends only `username`, `display_name`, `bio` and `city`.
   - Maps the unique violation on `username` to `username_taken`, and check violations to field errors.
 - `schema.ts` — zod schemas that match the DB checks exactly:
-  - `usernameSchema`: trim, lowercase, `^[a-z0-9_]{3,20}$`
+  - `usernameSchema`: trim, lowercase, `^[a-z0-9_]{3,20}$`, not a reserved name (Decision 8)
   - `displayNameSchema`: 1–50 after trim
   - `bioSchema`: ≤ 160
   - `citySchema`: ≤ 60, free text (Decision 6)
@@ -198,6 +198,7 @@ Profile (`src/features/profile/`):
 
 ## Files to create
 - `supabase/migrations/<timestamp>_auth_and_profiles.sql`
+- `supabase/migrations/<timestamp>_reserved_usernames.sql` (code review, Decision 8)
 - `supabase/templates/confirmation.html`, `supabase/templates/recovery.html`
 - `supabase/tests/00_rls_enabled.test.sql`
 - `supabase/tests/02-auth-and-profiles.test.sql`
@@ -331,6 +332,7 @@ Feature-specific rules:
 - [ ] `updated_at` changes on update, and a client can't set it (there is no column grant).
 - [ ] The DB check constraints reject:
   - invalid usernames: `ab`, `has space`, `UPPER`, 21 characters
+  - reserved usernames (Decision 8), e.g. `admin`, `support`, `liketoorder`
   - display names that are empty or whitespace only
   - bios over 160 characters
   - cities over 60 characters
@@ -389,3 +391,4 @@ Feature-specific rules:
 5. **Account deletion:** not in this spec. Added to `docs/product/v1.md` §16 as "before store release".
 6. **City:** free text, ≤ 60 characters.
 7. **Profile visibility:** every profile field (display name, username, bio, city, `is_seller`) is readable by any signed-in user.
+8. **Reserved usernames (added in the code review, 2026-11-02):** nobody can take `admin`, `administrator`, `support`, `help`, `staff`, `moderator`, `system`, `root` or `liketoorder`, so no one can pass as staff. Enforced by the `profiles_username_not_reserved` check in a follow-up migration (`<timestamp>_reserved_usernames.sql`) and by the same list in `usernameSchema`. The form shows "That username is reserved". Also recorded in `docs/product/v1.md` §11.

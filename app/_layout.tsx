@@ -41,12 +41,17 @@ function RootNavigator() {
 
   const access = getRouteAccess({ hasSession: session !== null, isRecovering });
 
+  // Explicit redirects: the (auth) group has no index, so the default "first accessible route"
+  // redirect would resolve to "/" and show Unmatched Route.
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={access.signedOutScreens || access.resetPassword}>
+      <Stack.Protected guard={access.signedOutScreens || access.resetPassword} redirectTo="/">
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
-      <Stack.Protected guard={access.app}>
+      <Stack.Protected
+        guard={access.app}
+        redirectTo={isRecovering ? '/reset-password' : '/sign-in'}
+      >
         <Stack.Screen name="index" />
       </Stack.Protected>
     </Stack>

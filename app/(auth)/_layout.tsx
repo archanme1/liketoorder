@@ -7,7 +7,7 @@ export default function AuthLayout() {
   const { isRecovering } = useSession();
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={!isRecovering}>
+      <Stack.Protected guard={!isRecovering} redirectTo="/reset-password">
         <Stack.Screen name="sign-in" />
         <Stack.Screen name="sign-up" />
         <Stack.Screen name="verify-email" />

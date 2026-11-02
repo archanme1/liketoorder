@@ -3,7 +3,7 @@
 **Branch:** `feature/auth-and-profiles`
 **Product spec:** `docs/product/v1.md` §4 (one account for everything), §11 (Profile), §15 Q4 (closed: auth method), §16 S1 + S2 (carried-forward review items)
 **Plan mode:** required — adds the first table, RLS and triggers, adds dependencies, changes auth and root navigation, and touches well over ~5 files.
-**Status:** 🚧 In progress
+**Status:** ✅ Shipped
 
 ## Overview
 After this ships, a person can:
@@ -300,51 +300,51 @@ Feature-specific rules:
 
 ## Definition of done
 **Sign-up and confirmation**
-- [ ] Sign-up with a valid email + password creates an `auth.users` row and exactly one `profiles` row (with `username` null). No session is issued until the email is confirmed.
-- [ ] Sign-up with an already-registered email (confirmed or unconfirmed) shows the same "Check your email" verify screen as a new email. No message, banner or state reveals that the email exists (component test with the api mocked + manual check).
-- [ ] The verify screen shows the exact same hint for new and existing emails: "Didn't get a code? If you already have an account, try signing in or resetting your password." (component test renders both cases and compares).
-- [ ] The confirmation email in the local mail UI (port 54324) contains a 6-digit code. Entering it signs the user in; a wrong code shows "That code isn't right".
-- [ ] "Resend code" is disabled for 60 s, with a visible countdown in text.
-- [ ] Passwords shorter than 8 characters, or without both a letter and a digit, are rejected by the form and by the server (`config.toml`).
+- [x] Sign-up with a valid email + password creates an `auth.users` row and exactly one `profiles` row (with `username` null). No session is issued until the email is confirmed.
+- [x] Sign-up with an already-registered email (confirmed or unconfirmed) shows the same "Check your email" verify screen as a new email. No message, banner or state reveals that the email exists (component test with the api mocked + manual check).
+- [x] The verify screen shows the exact same hint for new and existing emails: "Didn't get a code? If you already have an account, try signing in or resetting your password." (component test renders both cases and compares).
+- [x] The confirmation email in the local mail UI (port 54324) contains a 6-digit code. Entering it signs the user in; a wrong code shows "That code isn't right".
+- [x] "Resend code" is disabled for 60 s, with a visible countdown in text.
+- [x] Passwords shorter than 8 characters, or without both a letter and a digit, are rejected by the form and by the server (`config.toml`).
 
 **Sign-in and password reset**
-- [ ] Sign-in with wrong credentials shows a generic error. Sign-in with an unconfirmed email routes to verify-email.
-- [ ] Forgot-password shows the same message for registered and unregistered emails.
-- [ ] The reset code + new password flow works: the user can sign in with the new password and not the old one.
-- [ ] After the reset code is verified but before the new password is saved, the user can't reach home, setup-profile or edit profile. This holds after an app relaunch too. Cancel signs them out (component test on the guard / `AuthProvider` + manual check).
+- [x] Sign-in with wrong credentials shows a generic error. Sign-in with an unconfirmed email routes to verify-email.
+- [x] Forgot-password shows the same message for registered and unregistered emails.
+- [x] The reset code + new password flow works: the user can sign in with the new password and not the old one.
+- [x] After the reset code is verified but before the new password is saved, the user can't reach home, setup-profile or edit profile. This holds after an app relaunch too. Cancel signs them out (component test on the guard / `AuthProvider` + manual check).
 
 **Profile**
-- [ ] A freshly confirmed user lands on setup-profile and can't reach the home screen until display name and username are saved.
-- [ ] Choosing a taken username shows "Username is taken", case-insensitively (e.g. `Archan` vs `archan`).
-- [ ] Edit profile saves display name, username, bio and city. The home screen shows the change without a restart.
-- [ ] The Avatar shows correct initials ("Archan Me" → "AM"; a single word → "A") and has an accessibility label.
+- [x] A freshly confirmed user lands on setup-profile and can't reach the home screen until display name and username are saved.
+- [x] Choosing a taken username shows "Username is taken", case-insensitively (e.g. `Archan` vs `archan`).
+- [x] Edit profile saves display name, username, bio and city. The home screen shows the change without a restart.
+- [x] The Avatar shows correct initials ("Archan Me" → "AM"; a single word → "A") and has an accessibility label.
 
 **Session**
-- [ ] Killing and reopening the app keeps the user signed in.
-- [ ] Sign-out returns to sign-in and clears cached profile data.
+- [x] Killing and reopening the app keeps the user signed in.
+- [x] Sign-out returns to sign-in and clears cached profile data.
 
 **Security (pgTAP)**
-- [ ] An outsider can't update another user's profile: the update affects 0 rows and the row is unchanged.
-- [ ] An outsider can't insert a `profiles` row, even for their own id (`throws_ok`, permission denied).
-- [ ] A user can't set their own `is_seller`, `id`, `created_at` or `updated_at` (permission denied on those columns).
-- [ ] Anon (signed-out) can't select any `profiles` rows.
-- [ ] No user can delete a `profiles` row; deleting the `auth.users` row cascades.
-- [ ] `updated_at` changes on update, and a client can't set it (there is no column grant).
-- [ ] The DB check constraints reject:
+- [x] An outsider can't update another user's profile: the update affects 0 rows and the row is unchanged.
+- [x] An outsider can't insert a `profiles` row, even for their own id (`throws_ok`, permission denied).
+- [x] A user can't set their own `is_seller`, `id`, `created_at` or `updated_at` (permission denied on those columns).
+- [x] Anon (signed-out) can't select any `profiles` rows.
+- [x] No user can delete a `profiles` row; deleting the `auth.users` row cascades.
+- [x] `updated_at` changes on update, and a client can't set it (there is no column grant).
+- [x] The DB check constraints reject:
   - invalid usernames: `ab`, `has space`, `UPPER`, 21 characters
   - reserved usernames (Decision 8), e.g. `admin`, `support`, `liketoorder`
   - display names that are empty or whitespace only
   - bios over 160 characters
   - cities over 60 characters
-- [ ] `00_rls_enabled.test.sql` passes, and fails when a `public` table without RLS is created (verified once locally in a scratch transaction).
+- [x] `00_rls_enabled.test.sql` passes, and fails when a `public` table without RLS is created (verified once locally in a scratch transaction).
 
 **Config, checks and docs**
-- [ ] `supabase/config.toml` has `minimum_password_length = 8`, `password_requirements = "letters_digits"`, `enable_confirmations = true` and `secure_password_change = true` (S1 closed).
-- [ ] Each of the three implementation stages had its tests passing before the next stage started (noted in the PR).
+- [x] `supabase/config.toml` has `minimum_password_length = 8`, `password_requirements = "letters_digits"`, `enable_confirmations = true` and `secure_password_change = true` (S1 closed).
+- [x] Each of the three implementation stages had its tests passing before the next stage started (noted in the PR).
 - [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` all pass, and `src/types/database.ts` matches the generated types (the CI types diff is green).
-- [ ] Every touchable on the new screens has `accessibilityLabel` + `accessibilityRole` and is ≥ 44pt.
-- [ ] No colors or sizes are hardcoded outside tokens.
-- [ ] §16 S1 and S2 are marked closed in `docs/product/v1.md` at ship time.
+- [x] Every touchable on the new screens has `accessibilityLabel` + `accessibilityRole` and is ≥ 44pt.
+- [x] No colors or sizes are hardcoded outside tokens.
+- [x] §16 S1 and S2 are marked closed in `docs/product/v1.md` at ship time.
 
 ## Test plan
 **Unit and component tests (jest)** — all RNTL v14 calls are awaited.

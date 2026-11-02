@@ -142,7 +142,7 @@ Feature-specific rules:
 - [x] No hardcoded hex colors, pixel spacing or font sizes outside `src/theme/tokens.ts` (checked by grep in review).
 - [x] Every interactive `ui/` component sets `accessibilityRole` and `accessibilityLabel`, and `Button` hit area is ≥ 44pt.
 - [x] `src/lib/supabase.ts` uses only the anon key; grep for `service_role` in the repo returns nothing outside docs and comments.
-- [ ] The GitHub CI workflow is green on the PR (app checks and database checks both run).
+- [x] The GitHub CI workflow is green on the PR (app checks and database checks both run).
 - [x] `ios/` and `android/` are not committed; `.env` is not committed.
 - [x] Missing `EXPO_PUBLIC_SUPABASE_URL` or `EXPO_PUBLIC_SUPABASE_ANON_KEY` produces a clear startup error (not a silent undefined).
 

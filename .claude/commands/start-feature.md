@@ -4,7 +4,7 @@ argument-hint: "<spec name> e.g. 09-pickup-requests (empty = show status board)"
 allowed-tools: Read, Edit, Glob, Grep, Bash(git status:*), Bash(git branch:*), Bash(git switch:*), Bash(git log:*)
 ---
 
-Start (or resume) work on a single Food Map feature with a small, focused context.
+Start (or resume) work on a single LikeToOrder feature with a small, focused context.
 
 Spec: $ARGUMENTS
 

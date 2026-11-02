@@ -2,7 +2,7 @@
 
 ## Project overview
 
-**Food Map** is a map-first mobile app for discovering restaurants and homemade food through country-flag markers, sending pickup and table requests, and keeping a personal food-photo log shown as a GitHub-style activity grid.
+**LikeToOrder** is a map-first mobile app for discovering restaurants and homemade food through country-flag markers, sending pickup and table requests, and keeping a personal food-photo log shown as a GitHub-style activity grid.
 
 - Product spec (the *what*): `docs/product/v1.md`. Read the relevant section before any feature work.
 - Feature specs (the *how*): `.claude/specs/NN-slug.md`, one per feature.
@@ -35,7 +35,7 @@
 ## Architecture
 
 ```
-food-map/
+liketoorder/
 ├── app/                      # expo-router routes ONLY (thin screens)
 │   ├── (auth)/               # sign-in, sign-up
 │   ├── (tabs)/               # restaurants, homemade, profile, manage (seller only)
@@ -80,6 +80,7 @@ food-map/
 - Accessibility: every touchable has `accessibilityLabel` + `accessibilityRole`; touch targets ≥ 44pt; never convey meaning by color alone.
 - Respect reduce-motion (`useReducedMotion` from reanimated) for any looping animation.
 - Dates: store `timestamptz` in UTC; activity grid uses the stored `local_date` column.
+- Tests use @testing-library/react-native **v14**: `render`, `fireEvent.*`, `userEvent.*`, `renderHook` and `act` are async — always `await` them inside `async` tests.
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`.
 
 ---
@@ -131,7 +132,6 @@ npx supabase migration new <name>
 npx supabase db reset         # LOCAL ONLY: re-applies migrations + seed.sql
 npm run db:types              # regenerate src/types/database.ts
 ```
-(Scripts are created in spec 01. Until then these may not exist.)
 
 ---
 
@@ -159,8 +159,8 @@ Plan mode is **required** when a feature: changes the database schema or RLS; to
 
 - Use the built-in **Explore** subagent for codebase exploration before implementing.
 - Use the built-in **Plan** subagent for research while in plan mode.
-- Tests: `foodmap-test-writer` (writes from the spec) then `foodmap-test-runner` (runs + diagnoses). Never let the writer read the implementation.
-- Reviews: `foodmap-security-reviewer` and `foodmap-quality-reviewer` in parallel.
+- Tests: `liketoorder-test-writer` (writes from the spec) then `liketoorder-test-runner` (runs + diagnoses). Never let the writer read the implementation.
+- Reviews: `liketoorder-security-reviewer` and `liketoorder-quality-reviewer` in parallel.
 
 ---
 
@@ -170,7 +170,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 
 | # | Feature | Status | Spec |
 |---|---|---|---|
-| 01 | project-setup | ⬜ Not started | — |
+| 01 | project-setup | ✅ Shipped | .claude/specs/01-project-setup.md |
 | 02 | auth-and-profiles | ⬜ Not started | — |
 | 03 | navigation-shell | ⬜ Not started | — |
 | 04 | cuisine-catalog | ⬜ Not started | — |

@@ -1,4 +1,4 @@
-# How we build Food Map (workflow guide)
+# How we build LikeToOrder (workflow guide)
 
 This is the guide for **you, the project manager**. `CLAUDE.md` is the guide for Claude.
 
@@ -27,10 +27,10 @@ This is the guide for **you, the project manager**. `CLAUDE.md` is the guide for
 1. **Install tools on your Mac**
    - Node LTS (you have nvm) · `npm i -g eas-cli`
    - Docker Desktop (needed for local Supabase)
-   - Supabase CLI: `brew install supabase/tap/supabase`
+   - Supabase CLI: installed by `npm install` (pinned devDependency, run as `npx supabase`). A global `brew install supabase/tap/supabase` is optional.
    - GitHub CLI: `brew install gh` then `gh auth login`
    - VS Code + the **Claude Code** extension
-2. **Create the GitHub repo** (private): `gh repo create food-map --private --source . --push`
+2. **Create the GitHub repo** (private): `gh repo create liketoorder --private --source . --push`
 3. **Protect `main`** (GitHub → Settings → Branches → Add rule for `main`): require a pull request, require status check **CI / checks** to pass, require branches up to date.
 4. **Secrets** (GitHub → Settings → Secrets → Actions): `EXPO_TOKEN` (from expo.dev → Access tokens). Add later when spec 01 sets up EAS.
 5. **MCP tokens** in your shell profile (`~/.zshrc`), never in the repo:

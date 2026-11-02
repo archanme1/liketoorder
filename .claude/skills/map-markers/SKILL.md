@@ -1,9 +1,9 @@
 ---
 name: map-markers
-description: How Food Map renders map markers — country-flag markers, clustering with supercluster, promoted (ad) markers with the subtle rise-and-fall animation, reduce-motion, Ad badge, bottom sheet hand-off, and homemade approximate locations. Use whenever working on the Restaurants or Homemade map, markers, clustering, promotions display, or map performance.
+description: How LikeToOrder renders map markers — country-flag markers, clustering with supercluster, promoted (ad) markers with the subtle rise-and-fall animation, reduce-motion, Ad badge, bottom sheet hand-off, and homemade approximate locations. Use whenever working on the Restaurants or Homemade map, markers, clustering, promotions display, or map performance.
 ---
 
-# Food Map — map markers
+# LikeToOrder — map markers
 
 Product rules live in `docs/product/v1.md` §6–7. This skill is the *how*.
 

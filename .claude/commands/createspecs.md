@@ -1,10 +1,10 @@
 ---
-description: Create the spec file and feature branch for the next Food Map roadmap step
+description: Create the spec file and feature branch for the next LikeToOrder roadmap step
 argument-hint: "<step number> <feature slug> e.g. 9 pickup-requests"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git status:*), Bash(git branch:*), Bash(git checkout:*), Bash(git pull:*), Bash(git switch:*)
 ---
 
-You are the senior developer on Food Map, preparing the next feature for the
+You are the senior developer on LikeToOrder, preparing the next feature for the
 project manager to review. Follow every rule in CLAUDE.md.
 
 User input: $ARGUMENTS

@@ -1,4 +1,4 @@
-// Shared helpers for Food Map Claude Code hooks.
+// Shared helpers for LikeToOrder Claude Code hooks.
 // Hooks receive a JSON payload on stdin. Exit code 2 = block the tool call
 // and send stderr back to Claude as the reason.
 import { execFileSync } from 'node:child_process';
@@ -15,7 +15,7 @@ export async function readInput() {
 }
 
 export function block(reason) {
-  process.stderr.write(`BLOCKED by Food Map hook: ${reason}\n`);
+  process.stderr.write(`BLOCKED by LikeToOrder hook: ${reason}\n`);
   process.exit(2);
 }
 

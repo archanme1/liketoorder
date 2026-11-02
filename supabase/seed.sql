@@ -1,0 +1,1 @@
+-- Local dev seed data. Runs after migrations on `npx supabase db reset`. Empty until spec 02 adds tables.

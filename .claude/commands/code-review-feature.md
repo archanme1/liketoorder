@@ -20,7 +20,7 @@ Combine them. If all are empty, stop: "No changes detected. Implement the featur
 ## Step 1 — Parallel review
 Launch BOTH subagents in the same turn (parallel, not one after the other):
 
-**foodmap-security-reviewer** gets:
+**liketoorder-security-reviewer** gets:
 - The combined diff
 - The spec
 - Instruction: review only changed code for security: RLS policies, ownership
@@ -28,7 +28,7 @@ Launch BOTH subagents in the same turn (parallel, not one after the other):
   exposure of private data (exact homemade address, private uploads, other
   users' requests), client-trusted timestamps/IDs. No style comments.
 
-**foodmap-quality-reviewer** gets:
+**liketoorder-quality-reviewer** gets:
 - The combined diff
 - The spec
 - Instruction: review only changed code for correctness vs. the spec,

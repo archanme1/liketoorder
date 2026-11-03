@@ -20,6 +20,8 @@ select is_empty(
   $$ with allow(relname) as (
        -- ALLOWLIST: tables guests may access on purpose; add one row per table.
        select 'cuisines'::name   -- spec 04: read-only catalog (04-cuisine-catalog.test.sql)
+       union all
+       select 'businesses'::name -- spec 05: public listing columns only (05-seller-onboarding.test.sql)
      )
      select c.relname::text
        from pg_class c

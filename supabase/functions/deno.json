@@ -1,0 +1,15 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.118.0",
+    "zod": "npm:zod@4.6.7"
+  },
+  "lock": false,
+  "nodeModulesDir": "none",
+  "tasks": {
+    "test": "deno test --allow-env tests",
+    "check": "deno check places-autocomplete/index.ts places-resolve/index.ts tests/"
+  },
+  "lint": {
+    "rules": { "tags": ["recommended"] }
+  }
+}

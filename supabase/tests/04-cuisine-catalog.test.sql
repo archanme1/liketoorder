@@ -230,8 +230,10 @@ select throws_ok(
   'P0001', 'cuisine_code_permanent: rows are never deleted',
   'deleting a row fails even as the table owner'
 );
+-- cascade: since spec 05, businesses.cuisine_code references this table, so a plain truncate is
+-- refused by the foreign key (0A000) before the guard runs. Cascade gets past that, so the guard is tested.
 select throws_ok(
-  $$ truncate public.cuisines $$,
+  $$ truncate public.cuisines cascade $$,
   'P0001', 'cuisine_code_permanent: the table is never truncated',
   'truncating the table fails even as the table owner'
 );

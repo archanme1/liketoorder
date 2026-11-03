@@ -1,6 +1,6 @@
 -- Spec 04: cuisines — read-only catalog, seed contents, sort order, permanent codes, RLS and grants.
 begin;
-select plan(55);
+select plan(60);
 
 -- ── Structure, grants and function hardening ────────────────────────────────
 select ok(
@@ -33,6 +33,20 @@ select ok(not has_function_privilege('authenticated', 'public.cuisines_guard()',
   'authenticated cannot execute cuisines_guard');
 select is((select proconfig from pg_proc where oid = 'public.cuisines_guard()'::regprocedure),
   array['search_path=""'], 'cuisines_guard pins an empty search_path');
+-- Grantee 0 is PUBLIC; the revoke was re-run after the function was replaced.
+select ok(
+  not exists (select 1 from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+               where p.oid = 'public.cuisines_guard()'::regprocedure
+                 and a.grantee = 0 and a.privilege_type = 'EXECUTE'),
+  'PUBLIC cannot execute cuisines_guard'
+);
+-- tgtype bits: BEFORE (2) + TRUNCATE (32), no ROW bit (1) = statement level.
+select is(
+  (select tgtype::int from pg_trigger
+    where tgrelid = 'public.cuisines'::regclass and tgname = 'cuisines_guard_truncate'),
+  34,
+  'cuisines_guard_truncate is a before-truncate statement trigger'
+);
 
 -- ── Seed contents ───────────────────────────────────────────────────────────
 select is((select count(*)::int from public.cuisines), 200, '200 cuisines in total');
@@ -216,6 +230,11 @@ select throws_ok(
   'P0001', 'cuisine_code_permanent: rows are never deleted',
   'deleting a row fails even as the table owner'
 );
+select throws_ok(
+  $$ truncate public.cuisines $$,
+  'P0001', 'cuisine_code_permanent: the table is never truncated',
+  'truncating the table fails even as the table owner'
+);
 select lives_ok(
   $$ update public.cuisines set name = 'Italy (test)' where code = 'IT' $$,
   'the table owner can update a name'
@@ -252,6 +271,10 @@ select throws_ok(
   $$ delete from public.cuisines where code = 'JP' $$,
   '42501', null, 'anon cannot delete cuisines'
 );
+select throws_ok(
+  $$ truncate public.cuisines $$,
+  '42501', null, 'anon cannot truncate cuisines'
+);
 
 -- ── Authenticated ───────────────────────────────────────────────────────────
 reset role;
@@ -270,6 +293,10 @@ select throws_ok(
 select throws_ok(
   $$ delete from public.cuisines where code = 'JP' $$,
   '42501', null, 'authenticated cannot delete cuisines'
+);
+select throws_ok(
+  $$ truncate public.cuisines $$,
+  '42501', null, 'authenticated cannot truncate cuisines'
 );
 
 -- ── Back to the owner: nothing the clients tried was stored ────────────────

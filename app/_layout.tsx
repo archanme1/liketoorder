@@ -131,6 +131,8 @@ function RootStack({ access, home, postAuth }: RootStackProps) {
       </Stack.Protected>
       <Stack.Protected guard={access.app} redirectTo={home}>
         <Stack.Screen name="profile/edit" />
+        {/* No business-based guard: the seller screens redirect after their own data loads. */}
+        <Stack.Screen name="seller" />
       </Stack.Protected>
     </Stack>
   );

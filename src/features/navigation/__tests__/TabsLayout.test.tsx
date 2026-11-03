@@ -155,7 +155,6 @@ describe('tab bar', () => {
       await renderRouter('./app', { initialUrl: '/restaurants' });
       await fireEvent.press(await screen.findByLabelText('Manage tab'));
       expect(await screen.findByRole('header', { name: 'Manage Business' })).toBeTruthy();
-      expect(screen.getByText('Your business tools are coming soon.')).toBeTruthy();
       expect(screen.getByLabelText('Manage tab')).toBeSelected();
     });
 

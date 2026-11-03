@@ -5,6 +5,7 @@ import { Banner, Button, Screen } from '@/components/ui';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { useSignOut } from '@/features/auth/hooks/useSignOut';
 import { authErrorMessage, PASSWORD_UPDATED } from '@/features/auth/messages';
+import { SellerModeRow } from '@/features/sellers/components/SellerModeRow';
 import { useTheme } from '@/theme/useTheme';
 
 import { ProfileHeader } from './ProfileHeader';
@@ -39,6 +40,7 @@ export function ProfileScreen() {
             router.push('/profile/edit');
           }}
         />
+        <SellerModeRow />
         <Button
           title="Sign out"
           variant="secondary"

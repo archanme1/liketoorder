@@ -8,7 +8,9 @@ export const PLACES_INPUT_MAX = 120;
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
-export const businessTypeSchema = z.enum(['restaurant', 'homemade']);
+export const businessTypeSchema = z.enum(['restaurant', 'homemade'], {
+  error: 'Choose Restaurant or Homemade',
+});
 export type BusinessType = z.infer<typeof businessTypeSchema>;
 
 export const businessNameSchema = z

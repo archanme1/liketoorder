@@ -21,7 +21,12 @@ export class CuisineAppError extends Error {
 export function mapCuisineError(error: unknown): CuisineAppError {
   if (error instanceof CuisineAppError) return error;
   if (!error || typeof error !== 'object') return new CuisineAppError('unknown');
-  const { code = '', message = '', details = '' } = error as Partial<PostgrestError>;
+  // details can be null at runtime, and a destructuring default only covers undefined.
+  const {
+    code = '',
+    message = '',
+    details,
+  } = error as Partial<Omit<PostgrestError, 'details'> & { details: string | null }>;
   const text = `${message} ${details ?? ''}`;
 
   if (!code && /network|fetch/i.test(text)) return new CuisineAppError('network');

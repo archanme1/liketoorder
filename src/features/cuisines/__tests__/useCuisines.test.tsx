@@ -134,5 +134,6 @@ describe('useCuisine', () => {
     const { result } = await renderHook(() => useCuisine(code), { wrapper: wrapperFor(client) });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toBeUndefined();
+    expect(mockedList).toHaveBeenCalledTimes(1);
   });
 });

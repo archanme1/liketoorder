@@ -9,7 +9,7 @@ import { AuthProvider } from '@/features/auth/components/AuthProvider';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { useSignOut } from '@/features/auth/hooks/useSignOut';
 import { authErrorMessage } from '@/features/auth/messages';
-import { getHomeRoute, getRouteAccess } from '@/features/auth/routeAccess';
+import { getHomeRoute, getPostAuthRoute, getRouteAccess } from '@/features/auth/routeAccess';
 import { useMyProfile } from '@/features/profile/hooks/useMyProfile';
 import { profileErrorMessage } from '@/features/profile/messages';
 import { queryClient } from '@/lib/queryClient';
@@ -71,17 +71,25 @@ function RootNavigator() {
   // Explicit redirects: the (auth) group has no index, so the default "first accessible route"
   // redirect would resolve to "/" and show Unmatched Route.
   const home = getHomeRoute(access);
+  // Signing in, finishing setup and saving a new password all land on the Profile tab.
+  const postAuth = getPostAuthRoute(access);
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={access.signedOutScreens || access.resetPassword} redirectTo={home}>
+      <Stack.Protected
+        guard={access.signedOutScreens || access.resetPassword}
+        redirectTo={postAuth}
+      >
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
-      <Stack.Protected guard={access.setupProfile} redirectTo={home}>
+      <Stack.Protected guard={access.setupProfile} redirectTo={postAuth}>
         <Stack.Screen name="setup-profile" />
       </Stack.Protected>
-      <Stack.Protected guard={access.app} redirectTo={home}>
+      <Stack.Protected guard={access.tabs} redirectTo={home}>
         <Stack.Screen name="index" />
+        <Stack.Screen name="(tabs)" />
+      </Stack.Protected>
+      <Stack.Protected guard={access.app} redirectTo={home}>
         <Stack.Screen name="profile/edit" />
       </Stack.Protected>
     </Stack>

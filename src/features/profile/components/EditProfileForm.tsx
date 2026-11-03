@@ -75,7 +75,7 @@ function EditProfileFields({ profile }: { profile: Profile }) {
   });
   const bioLength = useWatch({ control, name: 'bio' }).length;
   // Opened from a deep link there is nothing to go back to, so fall back to home.
-  const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
+  const close = () => (router.canGoBack() ? router.back() : router.replace('/profile'));
 
   const onSubmit = handleSubmit((values) => {
     setBanner(null);

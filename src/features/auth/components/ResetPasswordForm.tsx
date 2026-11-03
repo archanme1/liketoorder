@@ -98,6 +98,7 @@ function CodeStep({ email }: { email?: string }) {
 
 function NewPasswordStep() {
   const { space } = useTheme();
+  const router = useRouter();
   const update = useUpdatePassword();
   const signOut = useSignOut();
   const { control, handleSubmit, setError } = useForm<ResetPasswordValues>({
@@ -105,12 +106,14 @@ function NewPasswordStep() {
     defaultValues: { password: '', confirmPassword: '' },
   });
 
-  // Success needs no navigation: clearing isRecovering switches the route guards to home,
-  // which shows the "Password updated" notice.
+  // Clearing isRecovering already lets the guard redirect to the Profile tab; navigating here
+  // carries the notice so the "Password updated" banner shows there.
   const onSubmit = handleSubmit(({ password }) => {
     update.mutate(
       { password },
       {
+        onSuccess: () =>
+          router.replace({ pathname: '/profile', params: { notice: 'password-updated' } }),
         onError: (error) => {
           if (error.code === 'weak_password') {
             setError('password', { message: authErrorMessage('weak_password') });
@@ -174,7 +177,8 @@ function NewPasswordStep() {
         title="Cancel"
         variant="secondary"
         accessibilityHint="Signs you out without changing your password"
-        onPress={() => signOut.mutate()}
+        // Guests can still reach reset-password, so leave it explicitly for the guest prompt.
+        onPress={() => signOut.mutate(undefined, { onSuccess: () => router.replace('/profile') })}
         loading={signOut.isPending}
         disabled={update.isPending}
       />

@@ -52,8 +52,9 @@ create table public.cuisines (
   sort_order  smallint not null,
   constraint cuisines_country_shape check (
     kind <> 'country' or (code ~ '^[A-Z]{2}$' and icon is null)),
+  -- `icon is not null` is needed: a regex match on null is null, and a check passes on null.
   constraint cuisines_neutral_shape check (
-    kind <> 'neutral' or (code ~ '^[a-z]+(-[a-z]+)*$' and icon ~ '^[a-z0-9-]+$'))
+    kind <> 'neutral' or (code ~ '^[a-z]+(-[a-z]+)*$' and icon is not null and icon ~ '^[a-z0-9-]+$'))
 );
 
 alter table public.cuisines enable row level security;
@@ -307,6 +308,7 @@ Feature-specific rules:
 8. **United Kingdom only** (GB); no England, Scotland or Wales.
 9. **No shared display component** in this spec; spec 05 adds it.
 10. **Permanence trigger:** keep `cuisines_guard` (approved).
+11. **Neutral icon required (added during implementation, approved 2026-11-03):** `cuisines_neutral_shape` checks `icon is not null` before the regex. A regex match on a null icon returns null, and a check constraint passes on null, so without it a neutral row with no icon would be silently accepted.
 
 ## Open questions
 1. **Country list approval (Decision 5):** Archan to review the 197 countries above, including these naming choices: "Congo" / "DR Congo", "Cabo Verde", "Eswatini", "Timor-Leste", "Micronesia", and the accented "Côte d'Ivoire" and "São Tomé and Príncipe". The accents are why `name` uses the ICU collation.

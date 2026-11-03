@@ -10,18 +10,20 @@ description: LikeToOrder's Supabase conventions — migrations, RLS policy templ
 
 ## Core tables (logical model — created across specs)
 - `profiles` (id = auth.users.id, username unique, display_name, bio, avatar_path, city, is_seller, is_admin)
-- `cuisines` (id, iso_code nullable, name, flag_asset, icon) — read-only to clients
-- `businesses` (id, owner_id → profiles, type `restaurant|homemade`, name, cuisine_id, accepts_tables bool, lat/lng for restaurants, approx_lat/approx_lng for homemade, status)
+- `cuisines` (code PK — permanent: ISO alpha-2 `IT` or kebab slug `street-food`; kind `country|neutral`; name (`en-x-icu`); generated `flag`; icon (neutral only); sort_order) — read-only to clients (spec 04)
+- `businesses` (id, owner_id → profiles, type `restaurant|homemade`, name, cuisine_code, accepts_tables bool, lat/lng for restaurants, approx_lat/approx_lng for homemade, status)
 - `business_private_addresses` (business_id PK, full_address, lat, lng) — homemade exact location
 - `menu_items` (business_id, name, price_cents, photo_path, is_available) / `menu_photos`
 - `requests` (id, business_id, customer_id, kind `pickup|table`, status, pickup_at / reserved_at, party_size, items jsonb, note, idempotency_key unique, expires_at, arrived_at)
-- `food_logs` (id, author_id, photo_path, description, cuisine_id, is_public, created_at default now(), local_date date not null)
+- `food_logs` (id, author_id, photo_path, description, cuisine_code, is_public, created_at default now(), local_date date not null)
 - `promotions` (business_id, starts_at, ends_at, status `draft|active|ended`, activated_by)
 - `reports` (business_id, reporter_id, reason, note, status `open|confirmed|rejected`, reviewed_by)
 
 ## Grants
 Every new table migration starts with `revoke all on <table> from anon, authenticated`, then grants only what the spec lists; the anon-privileges pgTAP test enforces this.
 Every new callable function: revoke execute from anon/public, grant only where the spec says, and add a pgTAP check with an allowlist (Supabase grants execute on new `public` functions by default).
+
+**Read-only lookup tables** (e.g. `cuisines`): `revoke all … from anon, authenticated`, then `grant select … to anon, authenticated`; one `for select to anon, authenticated using (true)` policy; no write grants or policies (only migrations change it; seed rows in the migration, not `seed.sql`). Add the table to the ALLOWLIST block in `supabase/tests/03-navigation-shell.test.sql`. If keys are permanent, add a `before update or delete` guard trigger that blocks key changes and deletes, and revoke execute on its function. Reference keys from other tables as `<x>_code text not null references public.<table>(code) on update restrict on delete restrict`.
 
 ## RLS templates
 ```sql
@@ -100,7 +102,7 @@ Secrets via `npx supabase secrets set` — never in `EXPO_PUBLIC_*`.
 import { supabase } from '@/lib/supabase';
 export async function listFoodLogsByDay(userId: string, day: string) {
   const { data, error } = await supabase.from('food_logs')
-    .select('id, description, photo_path, cuisine:cuisines(iso_code,name), created_at')
+    .select('id, description, photo_path, cuisine:cuisines(code,name,flag,icon), created_at')
     .eq('author_id', userId).eq('local_date', day).order('created_at');
   if (error) throw error;
   return data;
@@ -112,7 +114,7 @@ Hooks wrap these with react-query: keys like `['food-logs', userId, day]`; inval
 Aggregate in SQL, not the app:
 ```sql
 select local_date, count(*) as n,
-       case when count(distinct cuisine_id) = 1 then min(cuisine_id::text) end as single_cuisine
+       case when count(distinct cuisine_code) = 1 then min(cuisine_code) end as single_cuisine
 from public.food_logs
 where author_id = $1 and local_date >= $2
 group by local_date;

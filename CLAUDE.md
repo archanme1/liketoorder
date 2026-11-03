@@ -41,7 +41,7 @@ liketoorder/
 │   ├── (tabs)/               # restaurants, homemade, profile, manage (seller only)
 │   └── _layout.tsx
 ├── src/
-│   ├── features/<feature>/   # one folder per domain: map, sellers, menu, requests, food-log, activity-grid, promotions, reports, profile
+│   ├── features/<feature>/   # one folder per domain: cuisines, map, sellers, menu, requests, food-log, activity-grid, promotions, reports, profile
 │   │   ├── components/
 │   │   ├── hooks/            # react-query hooks (useXQuery / useXMutation)
 │   │   ├── api.ts            # ALL supabase calls for this feature

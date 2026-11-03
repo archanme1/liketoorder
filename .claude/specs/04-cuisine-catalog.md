@@ -143,8 +143,6 @@ Totals: Africa 54 + Americas 36 + Asia 50 + Europe 43 + Oceania 14 = **197** (19
 
 The pgTAP test compares the full set of 197 codes with this list (`set_eq`), so a typo, a missing country or an extra territory fails. It also checks these required countries by name (Decision 5): Canada, United States, India, Pakistan, Sri Lanka, Philippines, China, Jamaica, Trinidad and Tobago, Nigeria, Ethiopia, Somalia, South Korea, Vietnam, Lebanon, Iran, Portugal, Greece, Poland, Ukraine.
 
-The pgTAP test includes these required countries by name (Decision 5): Canada, United States, India, Pakistan, Sri Lanka, Philippines, China, Jamaica, Trinidad and Tobago, Nigeria, Ethiopia, Somalia, South Korea, Vietnam, Lebanon, Iran, Portugal, Greece, Poland, Ukraine.
-
 ### Neutral cuisines (3)
 | code | name | sort_order | icon (Ionicons, `@expo/vector-icons`) |
 |---|---|---|---|
@@ -311,4 +309,7 @@ Feature-specific rules:
 11. **Neutral icon required (added during implementation, approved 2026-11-03):** `cuisines_neutral_shape` checks `icon is not null` before the regex. A regex match on a null icon returns null, and a check constraint passes on null, so without it a neutral row with no icon would be silently accepted.
 
 ## Open questions
-1. **Country list approval (Decision 5):** Archan to review the 197 countries above, including these naming choices: "Congo" / "DR Congo", "Cabo Verde", "Eswatini", "Timor-Leste", "Micronesia", and the accented "Côte d'Ivoire" and "São Tomé and Príncipe". The accents are why `name` uses the ICU collation.
+None.
+
+Closed:
+1. ~~**Country list approval (Decision 5):**~~ Approved with the plan on 2026-11-03, list unchanged. Archan reviewed the 197 countries above, including these naming choices: "Congo" / "DR Congo", "Cabo Verde", "Eswatini", "Timor-Leste", "Micronesia", and the accented "Côte d'Ivoire" and "São Tomé and Príncipe". The accents are why `name` uses the ICU collation.

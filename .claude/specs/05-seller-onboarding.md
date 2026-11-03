@@ -190,7 +190,7 @@ All functions are `security definer`, `set search_path = ''`, and run `revoke ex
 | `set_seller_mode(p_on boolean) returns void` | authenticated | Raises `no_business` if the caller has no business. Sets `profiles.is_seller` and `businesses.is_listed` to `p_on` together. Nothing is deleted. |
 | `get_my_business() returns jsonb` | authenticated | Returns the caller's own business. That includes `is_listed`, the business columns and, if a location exists, `formatted_address`, `lat` and `lng`. It returns `null` when there is no business. Never takes a business id. |
 | `set_business_location(p_owner_id uuid, p_place_id text, p_formatted_address text, p_lat double precision, p_lng double precision) returns jsonb` | **service_role only** | Raises `no_business` if the owner has none. Upserts `business_locations`, then updates the public point. **Restaurant:** `map_lat/lng` = the exact point and `public_address` = the formatted address. **Homemade:** if this is a new location row or `place_id` changed, it computes a fresh shifted point. If the same `place_id` is saved again, `map_lat/lng` stay as they are. `public_address` stays null. Returns the owner view (same shape as `get_my_business`). |
-| `consume_places_quota(p_user_id uuid, p_kind text) returns boolean` | **service_role only** | Atomically increments the per-minute and per-day counters (`insert … on conflict do update`). Returns `false` once either limit is exceeded. Deletes the caller's windows older than 2 days as it goes. |
+| `consume_places_quota(p_user_id uuid, p_kind text) returns boolean` | **service_role only** | First checks eligibility, before anything is counted (Decision 19): raises `profile_incomplete` if the user has no username (either kind), and for `resolve` raises `no_business` if the user has no business. Then atomically increments the per-minute and per-day counters (`insert … on conflict do update`). Returns `false` once either limit is exceeded; a refused call still counts toward the day. Deletes the caller's windows older than 2 days as it goes. Unknown `p_kind` raises `invalid_kind`. |
 
 **Homemade shift (Decision 3):**
 - Done in SQL inside `set_business_location()`, never in the app or the Edge Function.
@@ -198,7 +198,9 @@ All functions are `security definer`, `set search_path = ''`, and run `revoke ex
 - **Distance:** d = sqrt(random()·(R² − r²) + r²) metres, which is uniform over the ring area. R = 500 and r = 200 (Decision 10), so every shift is between 200 m and 500 m.
 - **Offset:** Δlat = d·cos θ / 111 320 and Δlng = d·sin θ / (111 320·cos(lat)).
 - The shifted point is stored. The offset and the random inputs are not.
+- **Edges:** the stored point always satisfies the coordinate checks (lat in [−90, 90], lng in [−180, 180]). Longitude wraps across the date line, so a seller at lng 179.9995 gets a point that is still 200–500 m away by haversine. Within about 0.6° of a pole, `cos(lat)` is floored at 0.01 and lat is clamped, so the shift can be shorter than 200 m there.
 - The shift is not re-rolled when the same place is saved again, or when the before-launch refresh (Decision 9) updates `lat/lng` for the same `place_id`. Re-rolling would let an observer average several shifted points back towards the real one.
+- **Known limitation (security review, Decision 20):** the re-roll is keyed on the `place_id` string, not the physical spot. Google can return different place IDs for the same building, so an owner who switches between them gets a fresh shifted point each time, and someone watching the public point over time could average those samples. In the other direction, a refresh that moves the coordinates of the same `place_id` never re-rolls. This matches Decision 3, and only the owner can trigger a re-roll. No change in this spec.
 
 **Function privileges (§16, first spec with callable functions):** the pgTAP test keeps an allowlist of `public` functions that `anon` or `authenticated` can execute. That list is exactly `create_my_business`, `set_seller_mode` and `get_my_business`, for authenticated only. Anon executes nothing. Any other function in `public` that is executable by `anon`/`authenticated` fails the test. Close the §16 item.
 
@@ -211,7 +213,7 @@ None (business photos are spec 06).
 Two functions, Deno + TypeScript, in `supabase/functions/`. Each `index.ts` only wires real dependencies into a pure `handler.ts` (`createHandler(deps)`), so tests inject fakes and **never call Google**.
 
 Shared code in `supabase/functions/_shared/`:
-- `auth.ts`: `requireUser(req)` calls `supabase.auth.getUser(jwt)` and rejects when there is no user. The anon key is itself a valid JWT, so platform `verify_jwt` alone would let guests through.
+- `auth.ts`: `requireUser(req, getUser)` (with `getUser` injected; in production it wraps `supabase.auth.getUser(jwt)`) and rejects when there is no user. The anon key is itself a valid JWT, so platform `verify_jwt` alone would let guests through.
 - `rateLimit.ts`: calls `consume_places_quota` with the service role.
 - `google.ts`: a thin `fetch` client for **Places API (New)**.
 - `http.ts`: JSON responses and error shape.
@@ -221,7 +223,7 @@ Shared code in `supabase/functions/_shared/`:
 - Steps:
   1. Check auth → `401 unauthorized`.
   2. Validate the input.
-  3. Consume quota `autocomplete` → `429 rate_limited`.
+  3. Consume quota `autocomplete` → `403 profile_incomplete` if the user has no username, `429 rate_limited` over the limit (Decision 19).
   4. `POST https://places.googleapis.com/v1/places:autocomplete` with header `X-Goog-Api-Key: PLACES_API_KEY` and body `{ input, sessionToken, languageCode: 'en' }`. There is no region restriction (Decision 4).
 - Output: `{ suggestions: { placeId, primaryText, secondaryText }[] }`, at most 5.
 - Errors: Google errors or timeouts (5 s) → `502 upstream_error`. The upstream body is never echoed back.
@@ -231,21 +233,21 @@ Shared code in `supabase/functions/_shared/`:
 - Steps:
   1. Check auth.
   2. Validate the input.
-  3. Consume quota `resolve`.
+  3. Consume quota `resolve` → `403 profile_incomplete`, `404 no_business` if the user has no business, `429 rate_limited` (Decision 19). All three happen before Google is called.
   4. `GET https://places.googleapis.com/v1/places/{placeId}?sessionToken=…&languageCode=en` with `X-Goog-FieldMask: id,formattedAddress,location`. That field mask keeps the call in the Essentials SKU and ends the billing session.
   5. Require `location` and `formattedAddress` → otherwise `422 not_a_place`.
   6. Call `set_business_location(user.id, …)` with the service role. The owner is **always the verified user**, never a value from the request body.
 - Output: the owner view from `set_business_location`.
-- Errors: `404 no_business`, plus the `401`, `400`, `429`, `422` and `502` cases above.
+- Errors: `403 profile_incomplete` and `404 no_business` (both from the quota step, before Google; `set_business_location` also raises `no_business` as a backstop), plus the `401`, `400`, `429`, `422` and `502` cases above.
 
 **Limits:**
 
 | Function | Per minute, per user | Per day, per user |
 |---|---|---|
-| autocomplete | 30 | 300 |
-| resolve | 5 | 20 |
+| autocomplete | 30 | 100 |
+| resolve | 5 | 5 |
 
-These numbers are approved (Decision 12).
+The minute limits are from Decision 12; the day limits were lowered in Decision 19.
 
 **Secrets:**
 - `PLACES_API_KEY`: a new key that **Archan creates**. Claude never reads, prints or sets it.
@@ -440,7 +442,8 @@ Each group is tagged with the PR that ticks it (Decision 18). When PR 1 ships, o
 **Edge Functions (Deno, no Google) — PR 1**
 - [ ] A missing token, an anon-key token or an invalid token gets `401`, and the fake Google client is not called.
 - [ ] Input under 3 or over 120 chars, control characters, a non-uuid session token or a malformed `placeId` gets `400`, with no Google call.
-- [ ] When the fake quota returns false, the response is `429 rate_limited` with no Google call. `consume_places_quota` enforces 30/min and 300/day for autocomplete (pgTAP: the 31st call in a minute returns false).
+- [ ] When the fake quota returns false, the response is `429 rate_limited` with no Google call. `consume_places_quota` enforces 30/min and 100/day for autocomplete and 5/min and 5/day for resolve (pgTAP: the 31st autocomplete call in a minute returns false).
+- [ ] Eligibility before Google (Decision 19): autocomplete or resolve for a user without a username gets `403 profile_incomplete`, and resolve for a user without a business gets `404 no_business`, with no Google call. In pgTAP, `consume_places_quota` raises `profile_incomplete` / `no_business` for those users and counts nothing.
 - [ ] Autocomplete sends the key header and session token, and maps at most 5 suggestions.
 - [ ] Resolve sends the field mask `id,formattedAddress,location` and the session token.
 - [ ] A Google error or timeout gets `502`, and the response body contains no upstream text and no key.
@@ -500,7 +503,7 @@ Each group is tagged with the PR that ticks it (Decision 18). When PR 1 ships, o
 - Owner, outsider and anon cases for select, update, insert and delete, matching the Security DoD.
 - The create / seller-mode / location function error codes.
 - Shift distance bounds over 50 rows, stability, and re-roll on a new `place_id`.
-- Rate-limit counting across minute and day windows.
+- Rate-limit counting across minute and day windows, and the eligibility refusals (Decision 19).
 - `03-navigation-shell.test.sql`: add the ALLOWLIST row.
 
 **Edge Function tests (Deno)**: `supabase/functions/tests/*.test.ts`. They call `createHandler` with fake `getUser`, `consumeQuota`, `google` and `setLocation`, and stub global `fetch` to throw. The cases are the Edge Functions DoD items. Run with `npm run test:functions`.
@@ -550,6 +553,13 @@ Each group is tagged with the PR that ticks it (Decision 18). When PR 1 ships, o
     - The Definition of done tags each group with its PR.
     - **When PR 1 ships:** `/ship-feature` ticks only the PR 1 items, sets this spec's status and CLAUDE.md row 05 to 🚧 In progress (never ✅), and adds no "shipped" changelog line.
     - **When PR 2 ships:** `/ship-feature` ticks the rest and sets ✅ Shipped.
+
+### PR 1 code review decisions (approved 2026-11-03)
+19. **Places quota eligibility and lower day limits.** The security review found that any signed-in account could use up the shared Google daily caps. `consume_places_quota` now refuses ineligible users before anything is counted or Google is called, with a distinct signal (not the rate-limit `false`):
+    - no username (either kind) → raises `profile_incomplete` → `403 profile_incomplete`;
+    - `resolve` with no business → raises `no_business` → `404 no_business`.
+    Day limits per user are lowered to autocomplete 100/day and resolve 5/day; minute limits are unchanged (30 and 5). No app-wide limit: Google's own daily caps stay the backstop. Added to `docs/product/v1.md` §16: sign-up captcha also protects the Places quota; pin or vendor Edge Function dependencies before launch; pin all GitHub Actions by SHA in a separate chore.
+20. **Shift re-roll key:** no code change. The re-roll stays keyed on the `place_id` string, recorded as a known limitation under Homemade shift.
 
 ## Open questions
 None. All resolved on 2026-11-03 (Decisions 9–18), kept for the record:

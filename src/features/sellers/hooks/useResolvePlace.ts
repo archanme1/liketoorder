@@ -1,0 +1,19 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
+import { resolvePlace, type SellerAppError } from '../api';
+import type { MyBusiness } from '../schema';
+
+import { myBusinessKey } from './useMyBusiness';
+
+type ResolveInput = { placeId: string; sessionToken: string };
+
+export function useResolvePlace() {
+  const queryClient = useQueryClient();
+
+  return useMutation<MyBusiness, SellerAppError, ResolveInput>({
+    mutationFn: ({ placeId, sessionToken }) => resolvePlace(placeId, sessionToken),
+    onSuccess: (business) => {
+      queryClient.setQueryData(myBusinessKey, business);
+    },
+  });
+}

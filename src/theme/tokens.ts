@@ -32,6 +32,9 @@ export const size = { touch: 44, avatarSm: 40, avatarMd: 64, avatarLg: 96, tabIc
 // Pressable feedback and inactive (disabled / loading) controls.
 export const opacity = { disabled: 0.5, pressed: 0.8 };
 
-export const theme = { colors, space, radius, type, weight, size, opacity };
+// Border widths: a selected option gets a thicker border as well as a check icon.
+export const stroke = { selected: 2 };
+
+export const theme = { colors, space, radius, type, weight, size, opacity, stroke };
 
 export type Theme = typeof theme;

@@ -1,7 +1,7 @@
 -- Spec 05: seller onboarding — businesses, business_locations, places_rate_limits,
 -- column grants, function privileges, homemade approximate location and Places quota.
 begin;
-select plan(166);
+select plan(192);
 
 -- ── Fixtures (as postgres) ──────────────────────────────────────────────────
 -- 0501 A  restaurant, listed, with location (the public one)
@@ -25,9 +25,34 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000000511', 'q5@example.test'),
   ('00000000-0000-0000-0000-000000000512', 'q6@example.test'),
   ('00000000-0000-0000-0000-000000000513', 'n1@example.test'),
-  ('00000000-0000-0000-0000-000000000514', 'n2@example.test');
+  ('00000000-0000-0000-0000-000000000514', 'n2@example.test'),
+  ('00000000-0000-0000-0000-000000000515', 'el1@example.test'),
+  ('00000000-0000-0000-0000-000000000516', 'ro1@example.test'),
+  ('00000000-0000-0000-0000-000000000517', 'ro2@example.test'),
+  ('00000000-0000-0000-0000-000000000518', 'ro3@example.test'),
+  ('00000000-0000-0000-0000-000000000519', 'ro4@example.test');
 -- 0513 G  fresh user with a username, no business (create_my_business name rules)
 -- 0514 H  homemade owner (direct-update name rules)
+-- Quota users all have a username (Decision 19). Users that call `resolve` also own a business:
+--   0507 (autocomplete + resolve), 0508 (resolve), 0518 (resolve day limit).
+-- 0515  username, no business (eligibility: resolve -> no_business, autocomplete still allowed)
+-- 0516  rolling window: previous-minute row at the limit, day under the limit
+-- 0517  rolling window: day at the limit, no current-minute row
+-- 0519  minute-refused calls still count toward the day
+update public.profiles set username = 'quota_1' where id = '00000000-0000-0000-0000-000000000507';
+update public.profiles set username = 'quota_2' where id = '00000000-0000-0000-0000-000000000508';
+update public.profiles set username = 'quota_3' where id = '00000000-0000-0000-0000-000000000509';
+update public.profiles set username = 'quota_4' where id = '00000000-0000-0000-0000-000000000510';
+update public.profiles set username = 'quota_5' where id = '00000000-0000-0000-0000-000000000511';
+update public.profiles set username = 'quota_6' where id = '00000000-0000-0000-0000-000000000512';
+update public.profiles set username = 'elig_g'  where id = '00000000-0000-0000-0000-000000000515';
+update public.profiles set username = 'roll_a'  where id = '00000000-0000-0000-0000-000000000516';
+update public.profiles set username = 'roll_b'  where id = '00000000-0000-0000-0000-000000000517';
+update public.profiles set username = 'roll_c'  where id = '00000000-0000-0000-0000-000000000518';
+update public.profiles set username = 'roll_d'  where id = '00000000-0000-0000-0000-000000000519';
+update public.profiles set is_seller = true
+ where id in ('00000000-0000-0000-0000-000000000507', '00000000-0000-0000-0000-000000000508',
+              '00000000-0000-0000-0000-000000000518');
 update public.profiles set username = 'name_g' where id = '00000000-0000-0000-0000-000000000513';
 update public.profiles set username = 'name_h', is_seller = true where id = '00000000-0000-0000-0000-000000000514';
 
@@ -48,7 +73,13 @@ insert into public.businesses (id, owner_id, type, name, cuisine_code, map_lat, 
   ('00000000-0000-0000-0000-0000000005d1', '00000000-0000-0000-0000-000000000504',
    'restaurant', 'Closed D', 'JP', 43.8, -79.5, '2 Side St, Toronto', false),
   ('00000000-0000-0000-0000-0000000005e1', '00000000-0000-0000-0000-000000000514',
-   'homemade', 'Kitchen H', 'IT', null, null, null, true);
+   'homemade', 'Kitchen H', 'IT', null, null, null, true),
+  ('00000000-0000-0000-0000-0000000005f7', '00000000-0000-0000-0000-000000000507',
+   'homemade', 'Quota Kitchen 1', 'IT', null, null, null, true),
+  ('00000000-0000-0000-0000-0000000005f8', '00000000-0000-0000-0000-000000000508',
+   'homemade', 'Quota Kitchen 2', 'IT', null, null, null, true),
+  ('00000000-0000-0000-0000-0000000005fa', '00000000-0000-0000-0000-000000000518',
+   'homemade', 'Quota Kitchen 3', 'IT', null, null, null, true);
 
 insert into public.business_locations (business_id, place_id, formatted_address, lat, lng) values
   ('00000000-0000-0000-0000-0000000005a1', 'pA', '1 Main St, Toronto', 43.7, -79.4),
@@ -347,6 +378,33 @@ select is(
   'get_my_business has exactly the documented keys and never owner_id'
 );
 
+-- Outsider who owns a business (A) cannot touch another owner's business (C).
+with u as (
+  update public.businesses set name = 'hacked'
+   where id = '00000000-0000-0000-0000-0000000005c1'
+  returning 1
+)
+select is(count(*)::int, 0, 'an owner updating another owner''s business affects 0 rows') from u;
+reset role;
+select results_eq(
+  $$ select name, cuisine_code from public.businesses where id = '00000000-0000-0000-0000-0000000005c1' $$,
+  $$ values ('Kitchen C'::text, 'FR'::text) $$,
+  'the other owner''s business row is unchanged');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000501","role":"authenticated"}';
+select ok(
+  (public.get_my_business()->>'id') = '00000000-0000-0000-0000-0000000005a1'
+  and (public.get_my_business()->>'id') not in
+      ('00000000-0000-0000-0000-0000000005c1', '00000000-0000-0000-0000-0000000005d1'),
+  'get_my_business as A returns A''s own id, never C''s or D''s');
+select is(position('2 Side St' in public.get_my_business()::text), 0,
+  'get_my_business as an owner with an address never leaks another owner''s address');
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000504","role":"authenticated"}';
+select is(public.get_my_business()->'location'->>'formatted_address', '2 Side St, Toronto',
+  'get_my_business as D returns only D''s own saved address');
+select is(position('1 Main St' in public.get_my_business()::text), 0,
+  'get_my_business as D never contains another owner''s address');
+
 -- ── create_my_business ──────────────────────────────────────────────────────
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000505","role":"authenticated"}';
 select throws_ok(
@@ -561,6 +619,74 @@ select ok(
   (select metres between 199 and 501 from bulk_dist where owner_id = '00000000-0000-0000-0005-000000000001'),
   'the re-rolled point is again 199-501 m from the new exact point');
 
+-- ── Shift edges: date line and pole (20 homemade sellers per case) ──────────
+-- Group 6: lng  179.9995, group 7: lng -179.9995, group 8: lat 89.9. The shift is random, so
+-- every row must satisfy the assertions (not an average).
+insert into auth.users (id, email)
+select ('00000000-0000-0000-000' || g || '-' || lpad(i::text, 12, '0'))::uuid, 'edge' || g || '_' || i || '@example.test'
+  from generate_series(6, 8) g, generate_series(1, 20) i;
+update public.profiles set username = 'e' || substr(id::text, 20, 4) || '_' || right(id::text, 2)
+ where id::text ~ '^00000000-0000-0000-000[678]-';
+insert into public.businesses (id, owner_id, type, name, cuisine_code)
+select ('00000000-0000-0000-001' || g || '-' || lpad(i::text, 12, '0'))::uuid,
+       ('00000000-0000-0000-000' || g || '-' || lpad(i::text, 12, '0'))::uuid,
+       'homemade', 'Edge ' || g || '-' || i, 'IT'
+  from generate_series(6, 8) g, generate_series(1, 20) i;
+
+create temp view edge_dist as
+select substr(b.owner_id::text, 20, 4) as grp, b.map_lat, b.map_lng, l.lat, l.lng,
+       2 * 6371008.8 * asin(sqrt(
+         power(sin(radians(b.map_lat - l.lat) / 2), 2)
+         + cos(radians(l.lat)) * cos(radians(b.map_lat)) * power(sin(radians(b.map_lng - l.lng) / 2), 2)
+       )) as metres
+  from public.businesses b
+  join public.business_locations l on l.business_id = b.id
+ where b.owner_id::text ~ '^00000000-0000-0000-000[678]-';
+
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select lives_ok(
+  $$ select public.set_business_location(
+       ('00000000-0000-0000-0006-' || lpad(i::text, 12, '0'))::uuid,
+       'edge_e_' || i, 'East ' || i, (10 + i * 0.01)::float8, 179.9995::float8)
+       from generate_series(1, 20) i $$,
+  'service_role saves 20 homemade locations at lng 179.9995');
+select lives_ok(
+  $$ select public.set_business_location(
+       ('00000000-0000-0000-0007-' || lpad(i::text, 12, '0'))::uuid,
+       'edge_w_' || i, 'West ' || i, (10 + i * 0.01)::float8, (-179.9995)::float8)
+       from generate_series(1, 20) i $$,
+  'service_role saves 20 homemade locations at lng -179.9995');
+select lives_ok(
+  $$ select public.set_business_location(
+       ('00000000-0000-0000-0008-' || lpad(i::text, 12, '0'))::uuid,
+       'edge_n_' || i, 'North ' || i, 89.9::float8, (i * 0.01)::float8)
+       from generate_series(1, 20) i $$,
+  'service_role saves 20 homemade locations at lat 89.9');
+reset role;
+
+select is(
+  (select count(*)::int from edge_dist
+    where grp = '0006' and map_lat between -90 and 90 and map_lng between -180 and 180),
+  20, 'lng 179.9995: every stored point is inside the coordinate ranges');
+select is(
+  (select count(*)::int from edge_dist where grp = '0006' and metres between 199 and 501),
+  20, 'lng 179.9995: every stored point is 199-501 m from the exact point (wrap across the date line)');
+select is(
+  (select count(*)::int from edge_dist
+    where grp = '0007' and map_lat between -90 and 90 and map_lng between -180 and 180),
+  20, 'lng -179.9995: every stored point is inside the coordinate ranges');
+select is(
+  (select count(*)::int from edge_dist where grp = '0007' and metres between 199 and 501),
+  20, 'lng -179.9995: every stored point is 199-501 m from the exact point (wrap across the date line)');
+select is(
+  (select count(*)::int from edge_dist
+    where grp = '0008' and map_lat between -90 and 90 and map_lng between -180 and 180),
+  20, 'lat 89.9: every stored point is inside the coordinate ranges');
+select is(
+  (select count(*)::int from edge_dist where grp = '0008' and (map_lat, map_lng) is distinct from (lat, lng)),
+  20, 'lat 89.9: no stored point equals the exact point');
+
 -- Restaurant: public point is exact, public_address is the formatted address.
 set local role service_role;
 set local request.jwt.claims = '{"role":"service_role"}';
@@ -627,17 +753,70 @@ reset role;
 
 -- Day window.
 insert into public.places_rate_limits (user_id, kind, window_start, window_kind, count) values
-  ('00000000-0000-0000-0000-000000000509', 'autocomplete', date_trunc('day', now(), 'UTC'), 'day', 300),
-  ('00000000-0000-0000-0000-000000000510', 'autocomplete', date_trunc('day', now(), 'UTC'), 'day', 299);
+  ('00000000-0000-0000-0000-000000000509', 'autocomplete', date_trunc('day', now(), 'UTC'), 'day', 100),
+  ('00000000-0000-0000-0000-000000000510', 'autocomplete', date_trunc('day', now(), 'UTC'), 'day', 99);
 set local role service_role;
 set local request.jwt.claims = '{"role":"service_role"}';
 select is(public.consume_places_quota('00000000-0000-0000-0000-000000000509', 'autocomplete'), false,
-  'autocomplete returns false once the day window is at 300');
+  'autocomplete returns false once the day window is at 100');
 select is(public.consume_places_quota('00000000-0000-0000-0000-000000000510', 'autocomplete'), true,
-  'the 300th autocomplete call of the day returns true');
+  'the 100th autocomplete call of the day returns true');
 select is(public.consume_places_quota('00000000-0000-0000-0000-000000000510', 'autocomplete'), false,
-  'the 301st autocomplete call of the day returns false');
+  'the 101st autocomplete call of the day returns false');
 reset role;
+
+-- Resolve day limit (5/day) and the minute window rolling over while the day carries on.
+insert into public.places_rate_limits (user_id, kind, window_start, window_kind, count) values
+  ('00000000-0000-0000-0000-000000000518', 'resolve', date_trunc('day', now(), 'UTC'), 'day', 5),
+  ('00000000-0000-0000-0000-000000000516', 'autocomplete', date_trunc('minute', now() - interval '1 minute', 'UTC'), 'minute', 30),
+  ('00000000-0000-0000-0000-000000000516', 'autocomplete', date_trunc('day', now(), 'UTC'), 'day', 50),
+  ('00000000-0000-0000-0000-000000000517', 'autocomplete', date_trunc('day', now(), 'UTC'), 'day', 100);
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select is(public.consume_places_quota('00000000-0000-0000-0000-000000000518', 'resolve'), false,
+  'resolve returns false once the day window is at 5');
+select is(public.consume_places_quota('00000000-0000-0000-0000-000000000516', 'autocomplete'), true,
+  'a previous-minute row at the limit does not block the next minute while the day is under its limit');
+select is(public.consume_places_quota('00000000-0000-0000-0000-000000000517', 'autocomplete'), false,
+  'a day row at the limit returns false even with no current-minute row');
+
+-- Calls refused by the minute limit still count toward the day.
+select is(
+  (select (count(*) filter (where r))::text || '/' || (count(*) filter (where not r))::text from (
+     select public.consume_places_quota('00000000-0000-0000-0000-000000000519', 'autocomplete') as r
+       from generate_series(1, 35)) s),
+  '30/5', '35 autocomplete calls in a minute: 30 return true, 5 return false');
+reset role;
+select is(
+  (select count from public.places_rate_limits
+    where user_id = '00000000-0000-0000-0000-000000000519' and kind = 'autocomplete'
+      and window_kind = 'day' and window_start = date_trunc('day', now(), 'UTC')),
+  35, 'the day count keeps increasing after the minute limit is passed');
+
+-- Eligibility (Decision 19): refused before anything is counted.
+-- E (0505) has no username and no business; 0515 has a username and no business.
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select throws_ok(
+  $$ select public.consume_places_quota('00000000-0000-0000-0000-000000000505', 'autocomplete') $$,
+  'P0001', 'profile_incomplete', 'autocomplete without a username raises profile_incomplete');
+select throws_ok(
+  $$ select public.consume_places_quota('00000000-0000-0000-0000-000000000505', 'resolve') $$,
+  'P0001', 'profile_incomplete', 'resolve without a username raises profile_incomplete');
+select throws_ok(
+  $$ select public.consume_places_quota('00000000-0000-0000-0000-000000000515', 'resolve') $$,
+  'P0001', 'no_business', 'resolve with a username but no business raises no_business');
+select is(public.consume_places_quota('00000000-0000-0000-0000-000000000515', 'autocomplete'), true,
+  'autocomplete still returns true for a user with a username and no business');
+reset role;
+select is(
+  (select count(*)::int from public.places_rate_limits
+    where user_id = '00000000-0000-0000-0000-000000000505'),
+  0, 'refused calls for a user without a username count nothing');
+select is(
+  (select count(*)::int from public.places_rate_limits
+    where user_id = '00000000-0000-0000-0000-000000000515' and kind = 'resolve'),
+  0, 'a refused resolve call for a user without a business counts nothing');
 
 -- Old windows are cleaned up for the calling user only.
 insert into public.places_rate_limits (user_id, kind, window_start, window_kind, count) values

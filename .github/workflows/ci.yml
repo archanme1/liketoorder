@@ -53,6 +53,8 @@ jobs:
         run: npm test -- --ci
 
       # Edge Functions (Deno). Tests use fake Google/auth/quota and run without --allow-net; no secrets.
+      # Not gated on steps.state: supabase/functions always exists now. `deno task test` is the same
+      # task that `npm run test:functions` runs.
       - uses: denoland/setup-deno@v2
         with:
           deno-version: 2.9.8

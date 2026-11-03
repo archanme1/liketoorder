@@ -7,6 +7,7 @@ import { createHandler, NoBusinessError, type ResolvedPlace } from '../places-re
 import {
   ANON_KEY_JWT,
   blockNetwork,
+  errorCode,
   fakeGetUser,
   fakeGoogleFetch,
   fakeQuota,
@@ -37,6 +38,8 @@ function placeDetails(overrides: Record<string, unknown> = {}) {
 type SetupOptions = {
   quotaResult?: QuotaResult;
   details?: () => Response | Promise<Response>;
+  // Google never answers; the client gives up after `timeoutMs`.
+  hang?: boolean;
   timeoutMs?: number;
   withoutKey?: boolean;
   noBusiness?: boolean;
@@ -45,12 +48,13 @@ type SetupOptions = {
 function setup({
   quotaResult = 'ok',
   details = () => Response.json(placeDetails()),
+  hang = false,
   timeoutMs = 5000,
   withoutKey = false,
   noBusiness = false,
 }: SetupOptions = {}) {
   const apiKey = withoutKey ? undefined : TEST_API_KEY;
-  const google = fakeGoogleFetch((_, signal) => (timeoutMs < 100 ? hangUntilAborted(signal) : details()));
+  const google = fakeGoogleFetch((_, signal) => (hang ? hangUntilAborted(signal) : details()));
   const quota = fakeQuota(quotaResult);
   const saved: [string, ResolvedPlace][] = [];
   const handler = createHandler({
@@ -66,10 +70,6 @@ function setup({
 }
 
 const validBody = { placeId: PLACE_ID, sessionToken: SESSION_TOKEN };
-
-async function errorCode(res: Response): Promise<string> {
-  return ((await res.json()) as { error: { code: string } }).error.code;
-}
 
 // ── Auth: missing, anon-key or invalid token → 401, Google not called ─────────
 for (const [name, token] of [
@@ -247,7 +247,7 @@ Deno.test('resolve: a Google response of an unexpected shape gets 502 and nothin
 });
 
 Deno.test('resolve: a Google timeout gets 502', async () => {
-  const { handler, saved } = setup({ timeoutMs: 20 });
+  const { handler, saved } = setup({ hang: true, timeoutMs: 20 });
   const res = await handler(makeRequest(validBody));
   assert.equal(res.status, 502);
   assert.equal(await errorCode(res), 'upstream_error');

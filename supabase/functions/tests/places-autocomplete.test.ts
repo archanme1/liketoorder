@@ -7,6 +7,7 @@ import { createHandler } from '../places-autocomplete/handler.ts';
 import {
   ANON_KEY_JWT,
   blockNetwork,
+  errorCode,
   fakeGetUser,
   fakeGoogleFetch,
   fakeQuota,
@@ -55,10 +56,6 @@ function setup({ quotaResult = 'ok', withoutKey = false, respond = () => Respons
 }
 
 const validBody = { input: '123 King St', sessionToken: SESSION_TOKEN };
-
-async function errorCode(res: Response): Promise<string> {
-  return ((await res.json()) as { error: { code: string } }).error.code;
-}
 
 // ── Auth: missing, anon-key or invalid token → 401, Google not called ─────────
 for (const [name, token] of [

@@ -94,9 +94,9 @@ Policy pattern: `(storage.foldername(name))[1] = (select auth.uid())::text`. Res
 
 ## Edge Functions
 - **Pattern:** `index.ts` only reads env and wires real dependencies into a pure `handler.ts` (`createHandler(deps)`); Deno tests inject fakes (`getUser`, quota, Google client, DB calls) and never reach the network. Shared code in `supabase/functions/_shared/`.
-- **Auth:** `verify_jwt = true` in `config.toml` is not enough (the anon key is a valid JWT); every function calls `requireUser(req)` → `supabase.auth.getUser(jwt)` and returns 401 without a user.
+- **Auth:** `verify_jwt = true` in `config.toml` is not enough (the anon key is a valid JWT); every handler calls `requireUser(req, deps.getUser)` and returns 401 without a user. `getUser` is injected: `index.ts` passes `createGetUser(anonClient)` (wrapping `supabase.auth.getUser(jwt)`), tests pass a fake.
 - **Owner from the JWT, never the body.** Service-role DB calls take the verified user id.
-- **Rate limit:** `consume_places_quota(user_id, kind)` (service role) before any paid upstream call; false → 429.
+- **Rate limit:** `consume_places_quota(user_id, kind)` (service role) before any paid upstream call. It refuses ineligible users before counting (`profile_incomplete` → 403; `no_business` for resolve → 404) and returns false over the limit → 429. Limits: autocomplete 30/min, 100/day; resolve 5/min, 5/day.
 - `places-autocomplete`: `{ input, sessionToken }` → `{ suggestions: { placeId, primaryText, secondaryText }[] }` (max 5).
 - `places-resolve`: `{ placeId, sessionToken }` → Place Details (field mask `id,formattedAddress,location`) → `set_business_location(user.id, …)` → returns the owner view (same shape as `get_my_business()`). The client never sends coordinates or an address string.
 - Errors are `{ error: { code } }`; upstream bodies are never echoed. Log status, function name and latency only.

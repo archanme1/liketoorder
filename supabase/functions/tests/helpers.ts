@@ -94,7 +94,12 @@ export function upstreamError(): Response {
   );
 }
 
-type RequestOptions = { token?: string | null; method?: string; rawBody?: string };
+// The `code` from an `{ error: { code } }` response.
+export async function errorCode(res: Response): Promise<string> {
+  return ((await res.json()) as { error: { code: string } }).error.code;
+}
+
+type RequestOptions ={ token?: string | null; method?: string; rawBody?: string };
 
 export function makeRequest(body: unknown, { token = USER_JWT, method = 'POST', rawBody }: RequestOptions = {}): Request {
   const headers = new Headers({ 'Content-Type': 'application/json' });

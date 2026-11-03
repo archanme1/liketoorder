@@ -13,7 +13,7 @@
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "test:functions": "deno test --config supabase/functions/deno.json --allow-env supabase/functions/tests",
+    "test:functions": "deno task --config supabase/functions/deno.json test",
     "db:types": "supabase gen types typescript --local > src/types/database.ts"
   },
   "dependencies": {

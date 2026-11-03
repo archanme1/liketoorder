@@ -3,7 +3,7 @@
 **Branch:** `feature/navigation-shell`
 **Product spec:** `docs/product/v1.md` §4 (Navigation), §2 (Seller mode + Manage Business tab), §5 Homemade specifics (exact-address privacy, for the anon-access notes)
 **Plan mode:** required — changes navigation and auth routing (guests can now reach part of the app), touches well over ~5 files, and adds a dependency (tab icons).
-**Status:** 🚧 In progress
+**Status:** ✅ Shipped
 
 ## Overview
 After this ships, the app has its real navigation:
@@ -189,39 +189,39 @@ This works only against local Supabase; it uses Studio's admin access, not the a
 
 ## Definition of done
 **Guests**
-- [ ] A signed-out user launching the app lands on the Restaurants tab and can switch to Homemade and Profile without signing in.
-- [ ] A guest sees exactly 3 tabs; no Manage tab.
-- [ ] The guest Profile tab shows the sign-in prompt with "Sign in" and "Create account"; each opens the right auth screen, and the back/close control returns to the tabs.
-- [ ] A guest opening `/manage` directly is redirected to `/restaurants`.
-- [ ] No Supabase data request is made while browsing as a guest (component test with supabase mocked asserts no `from('profiles')` call).
+- [x] A signed-out user launching the app lands on the Restaurants tab and can switch to Homemade and Profile without signing in.
+- [x] A guest sees exactly 3 tabs; no Manage tab.
+- [x] The guest Profile tab shows the sign-in prompt with "Sign in" and "Create account"; each opens the right auth screen, and the back/close control returns to the tabs.
+- [x] A guest opening `/manage` directly is redirected to `/restaurants`.
+- [x] No Supabase data request is made while browsing as a guest (component test with supabase mocked asserts no `from('profiles')` call).
 
 **Signed in**
-- [ ] A signed-in user with a complete profile sees Restaurants · Homemade · Profile; the Profile tab shows their `ProfileHeader`, "Edit profile" and "Sign out".
-- [ ] "Edit profile" opens edit profile; saving shows the change on the Profile tab without a restart.
-- [ ] Signing in from the guest prompt lands on the Profile tab showing the user's profile (Decision 1).
-- [ ] Sign-out clears cached profile data and the user stays on the Profile tab, which now shows the guest prompt; no redirect to sign-in (Decision 2).
-- [ ] A signed-in user with no username is sent to setup-profile and can't reach any tab.
-- [ ] Signed-in users are redirected away from sign-in / sign-up.
+- [x] A signed-in user with a complete profile sees Restaurants · Homemade · Profile; the Profile tab shows their `ProfileHeader`, "Edit profile" and "Sign out".
+- [x] "Edit profile" opens edit profile; saving shows the change on the Profile tab without a restart.
+- [x] Signing in from the guest prompt lands on the Profile tab showing the user's profile (Decision 1).
+- [x] Sign-out clears cached profile data and the user stays on the Profile tab, which now shows the guest prompt; no redirect to sign-in (Decision 2).
+- [x] A signed-in user with no username is sent to setup-profile and can't reach any tab.
+- [x] Signed-in users are redirected away from sign-in / sign-up.
 
 **Seller tab**
-- [ ] With `is_seller = true`, a 4th tab labelled "Manage" appears and its screen title is "Manage Business".
-- [ ] With `is_seller = false`, the tab is hidden and `/manage` redirects to `/restaurants`.
-- [ ] Flipping `is_seller` in local Studio and refetching the profile shows / hides the tab without reinstalling (manual check, steps above).
+- [x] With `is_seller = true`, a 4th tab labelled "Manage" appears and its screen title is "Manage Business".
+- [x] With `is_seller = false`, the tab is hidden and `/manage` redirects to `/restaurants`.
+- [x] Flipping `is_seller` in local Studio and refetching the profile shows / hides the tab without reinstalling (manual check, steps above).
 
 **Recovery (spec 02 regression)**
-- [ ] After a reset code is verified, no tab (public or not) is reachable until the new password is saved, including after a relaunch. Cancel signs out and lands on the Profile tab guest prompt.
-- [ ] Saving the new password lands on the Profile tab with the "Password updated" banner visible (Decision 3).
+- [x] After a reset code is verified, no tab (public or not) is reachable until the new password is saved, including after a relaunch. Cancel signs out and lands on the Profile tab guest prompt.
+- [x] Saving the new password lands on the Profile tab with the "Password updated" banner visible (Decision 3).
 
 **Security (pgTAP)**
-- [ ] `anon` can't select, insert, update or delete `public.profiles`.
-- [ ] `anon` has no table privileges on any `public` table (allowlist empty).
-- [ ] `00_rls_enabled.test.sql` and `02-auth-and-profiles.test.sql` still pass.
+- [x] `anon` can't select, insert, update or delete `public.profiles`.
+- [x] `anon` has no table privileges on any `public` table (allowlist empty).
+- [x] `00_rls_enabled.test.sql` and `02-auth-and-profiles.test.sql` still pass.
 
 **Quality**
-- [ ] Every tab and button has `accessibilityLabel` + `accessibilityRole`, is ≥ 44pt, and the focused tab is distinguishable without color (VoiceOver announces "selected").
-- [ ] No colors or sizes are hardcoded outside tokens.
-- [ ] `docs/product/v1.md` §4 updated with the guest and "Manage" decisions.
-- [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` all pass.
+- [ ] Every tab and button has `accessibilityLabel` + `accessibilityRole`, is ≥ 44pt, and the focused tab is distinguishable without color (VoiceOver announces "selected"). **Not manually checked:** the VoiceOver pass on device was not done; labels, roles and the "selected" state are covered by `TabsLayout.test.tsx` and `GuestProfilePrompt.test.tsx` only.
+- [x] No colors or sizes are hardcoded outside tokens.
+- [x] `docs/product/v1.md` §4 updated with the guest and "Manage" decisions.
+- [x] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` all pass.
 
 ## Test plan
 **Unit and component tests (jest)** — all RNTL v14 calls are awaited.

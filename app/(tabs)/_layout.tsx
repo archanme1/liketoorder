@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import { useMemo } from 'react';
 
 import { TabIcon, type TabIconName } from '@/features/navigation/components/TabIcon';
 import { TabLabel } from '@/features/navigation/components/TabLabel';
@@ -16,24 +17,32 @@ function tabOptions(label: string, icon: TabIconName) {
   };
 }
 
+// Built once: they depend only on constants, so the tab bar gets stable props.
+const RESTAURANTS_OPTIONS = tabOptions('Restaurants', 'restaurant');
+const HOMEMADE_OPTIONS = tabOptions('Homemade', 'home');
+const PROFILE_OPTIONS = tabOptions('Profile', 'person');
+const MANAGE_OPTIONS = tabOptions('Manage', 'storefront');
+
 // Hiding Manage is UX only; seller data is protected by RLS (spec 05+).
 export default function TabsLayout() {
   const { colors, size } = useTheme();
   const isSeller = useIsSeller();
+  const screenOptions = useMemo(
+    () => ({
+      headerShown: false,
+      tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+      tabBarItemStyle: { minHeight: size.touch },
+    }),
+    [colors.surface, colors.border, size.touch],
+  );
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-        tabBarItemStyle: { minHeight: size.touch },
-      }}
-    >
-      <Tabs.Screen name="restaurants" options={tabOptions('Restaurants', 'restaurant')} />
-      <Tabs.Screen name="homemade" options={tabOptions('Homemade', 'home')} />
-      <Tabs.Screen name="profile" options={tabOptions('Profile', 'person')} />
+    <Tabs screenOptions={screenOptions}>
+      <Tabs.Screen name="restaurants" options={RESTAURANTS_OPTIONS} />
+      <Tabs.Screen name="homemade" options={HOMEMADE_OPTIONS} />
+      <Tabs.Screen name="profile" options={PROFILE_OPTIONS} />
       <Tabs.Protected guard={isSeller} redirectTo="/restaurants">
-        <Tabs.Screen name="manage" options={tabOptions('Manage', 'storefront')} />
+        <Tabs.Screen name="manage" options={MANAGE_OPTIONS} />
       </Tabs.Protected>
     </Tabs>
   );

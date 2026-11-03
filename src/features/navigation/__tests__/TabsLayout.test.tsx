@@ -111,6 +111,8 @@ describe('tab bar', () => {
     it('never queries the database', async () => {
       await renderRouter('./app', { initialUrl: '/restaurants' });
       await screen.findByLabelText('Restaurants tab');
+      // Flush pending effects so a late query would be caught.
+      await act(async () => {});
       expect(mocked.from).not.toHaveBeenCalled();
     });
   });

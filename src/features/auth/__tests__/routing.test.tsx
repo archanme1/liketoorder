@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthApiError } from '@supabase/supabase-js';
+import { act } from '@testing-library/react-native';
 import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
 
 import { queryClient } from '@/lib/queryClient';
@@ -147,6 +148,8 @@ describe('route guards on cold start', () => {
       await screen.findByText(HOMEMADE_COPY);
       await fireEvent.press(screen.getByLabelText('Profile tab'));
       await screen.findByText(GUEST_PROMPT);
+      // Flush pending effects so a late query would be caught.
+      await act(async () => {});
       expect(mocked.from).not.toHaveBeenCalled();
     });
 
@@ -164,6 +167,16 @@ describe('route guards on cold start', () => {
       await renderRouter('./app', { initialUrl: '/profile' });
       await fireEvent.press(await screen.findByRole('button', { name: 'Create account' }));
       expect(screen).toHavePathname('/sign-up');
+    });
+
+    it('Close after switching from sign-in to sign-up returns to the tabs', async () => {
+      await renderRouter('./app', { initialUrl: '/profile' });
+      await fireEvent.press(await screen.findByRole('button', { name: 'Sign in' }));
+      await fireEvent.press(await screen.findByRole('button', { name: 'Create an account' }));
+      expect(screen).toHavePathname('/sign-up');
+      await fireEvent.press(screen.getByLabelText('Close and keep browsing'));
+      expect(await screen.findByText(GUEST_PROMPT)).toBeTruthy();
+      expect(screen).toHavePathname('/profile');
     });
 
     it('Close on sign-in opened directly falls back to /restaurants', async () => {

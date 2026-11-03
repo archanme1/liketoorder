@@ -57,10 +57,19 @@ describe('cuisinesKey', () => {
 
 describe('useCuisines', () => {
   it('goes from loading to success with the list', async () => {
+    // Hold the query open: the awaited renderHook flushes promises, so an instantly resolved
+    // mock could finish before the loading assertion.
+    let resolveList: (value: Cuisine[]) => void = () => {};
+    mockedList.mockReturnValueOnce(
+      new Promise<Cuisine[]>((resolve) => {
+        resolveList = resolve;
+      }),
+    );
     const client = makeClient();
     const { result } = await renderHook(() => useCuisines(), { wrapper: wrapperFor(client) });
 
     expect(result.current.isLoading).toBe(true);
+    resolveList(rows);
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(rows);
   });

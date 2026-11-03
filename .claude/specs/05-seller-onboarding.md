@@ -419,43 +419,43 @@ Each group is tagged with the PR that ticks it (Decision 18). When PR 1 ships, o
 - [ ] Every new screen shows loading, error with retry, empty and success states.
 
 **Security (pgTAP) — PR 1**
-- [ ] RLS is on for `businesses`, `business_locations` and `places_rate_limits`.
-- [ ] `anon` and `authenticated` hold no table-level privileges on `businesses`. Their column privileges are exactly: select on `id, type, name, cuisine_code, accepts_table_requests, map_lat, map_lng, public_address`, plus update on `name, cuisine_code, accepts_table_requests` for authenticated only (`column_privs_are` for every column).
-- [ ] `anon` and `authenticated` hold no table or column privileges on `business_locations` or `places_rate_limits`.
-- [ ] An outsider (anon or another signed-in user) cannot select any row of `business_locations` (42501), cannot select `owner_id` or `is_listed` from `businesses` (42501), and sees no unlisted or location-less business.
-- [ ] An outsider cannot update another user's business (0 rows affected), even with a matching `id` filter.
-- [ ] An owner cannot update their own `type`, `owner_id`, `is_listed`, `map_lat`, `map_lng`, `public_address`, `created_at` (42501), or insert/delete any business (42501).
-- [ ] An owner cannot set `accepts_table_requests = true` on a homemade business (23514).
-- [ ] `get_my_business()` returns only the caller's business, and returns null for a user with none. A second user can never get the first user's address through it.
-- [ ] `create_my_business` sets `is_seller = true`. It fails with `already_has_business` on a second call, `profile_incomplete` without a username, and `tables_restaurant_only` for homemade with tables. `anon` cannot execute it.
-- [ ] `set_seller_mode` fails with `no_business` when there is no business, and keeps `is_seller` and `is_listed` in sync.
-- [ ] `set_business_location` and `consume_places_quota` are not executable by `anon` or `authenticated` (42501). They are executable by `service_role`.
-- [ ] The function allowlist check passes: the only `public` functions executable by `authenticated` are the three listed, and `anon` can execute none.
-- [ ] `authenticated` still cannot update `profiles.is_seller` (spec 02 regression).
-- [ ] The 03 allowlist includes `businesses`. `00_rls_enabled`, `02`, `03` and `04` still pass.
+- [x] RLS is on for `businesses`, `business_locations` and `places_rate_limits`.
+- [x] `anon` and `authenticated` hold no table-level privileges on `businesses`. Their column privileges are exactly: select on `id, type, name, cuisine_code, accepts_table_requests, map_lat, map_lng, public_address`, plus update on `name, cuisine_code, accepts_table_requests` for authenticated only (`column_privs_are` for every column).
+- [x] `anon` and `authenticated` hold no table or column privileges on `business_locations` or `places_rate_limits`.
+- [x] An outsider (anon or another signed-in user) cannot select any row of `business_locations` (42501), cannot select `owner_id` or `is_listed` from `businesses` (42501), and sees no unlisted or location-less business.
+- [x] An outsider cannot update another user's business (0 rows affected), even with a matching `id` filter.
+- [x] An owner cannot update their own `type`, `owner_id`, `is_listed`, `map_lat`, `map_lng`, `public_address`, `created_at` (42501), or insert/delete any business (42501).
+- [x] An owner cannot set `accepts_table_requests = true` on a homemade business (23514).
+- [x] `get_my_business()` returns only the caller's business, and returns null for a user with none. A second user can never get the first user's address through it.
+- [x] `create_my_business` sets `is_seller = true`. It fails with `already_has_business` on a second call, `profile_incomplete` without a username, and `tables_restaurant_only` for homemade with tables. `anon` cannot execute it.
+- [x] `set_seller_mode` fails with `no_business` when there is no business, and keeps `is_seller` and `is_listed` in sync.
+- [x] `set_business_location` and `consume_places_quota` are not executable by `anon` or `authenticated` (42501). They are executable by `service_role`.
+- [x] The function allowlist check passes: the only `public` functions executable by `authenticated` are the three listed, and `anon` can execute none.
+- [x] `authenticated` still cannot update `profiles.is_seller` (spec 02 regression).
+- [x] The 03 allowlist includes `businesses`. `00_rls_enabled`, `02`, `03` and `04` still pass.
 
 **Approximate location (pgTAP) — PR 1**
-- [ ] For 50 homemade businesses, the stored `map_lat/lng` is between 200 m and 500 m (± 1 m) from the exact point by haversine, and never equals it.
-- [ ] Re-saving the same `place_id` with the same or slightly different `lat/lng` leaves `map_lat/lng` unchanged. Saving a new `place_id` changes it.
-- [ ] For restaurants, `map_lat/lng` equals the exact point and `public_address` equals `formatted_address`. For homemade, `public_address` is null.
+- [x] For 50 homemade businesses, the stored `map_lat/lng` is between 200 m and 500 m (± 1 m) from the exact point by haversine, and never equals it.
+- [x] Re-saving the same `place_id` with the same or slightly different `lat/lng` leaves `map_lat/lng` unchanged. Saving a new `place_id` changes it.
+- [x] For restaurants, `map_lat/lng` equals the exact point and `public_address` equals `formatted_address`. For homemade, `public_address` is null.
 
 **Edge Functions (Deno, no Google) — PR 1**
-- [ ] A missing token, an anon-key token or an invalid token gets `401`, and the fake Google client is not called.
-- [ ] Input under 3 or over 120 chars, control characters, a non-uuid session token or a malformed `placeId` gets `400`, with no Google call.
-- [ ] When the fake quota returns false, the response is `429 rate_limited` with no Google call. `consume_places_quota` enforces 30/min and 100/day for autocomplete and 5/min and 5/day for resolve (pgTAP: the 31st autocomplete call in a minute returns false).
-- [ ] Eligibility before Google (Decision 19): autocomplete or resolve for a user without a username gets `403 profile_incomplete`, and resolve for a user without a business gets `404 no_business`, with no Google call. In pgTAP, `consume_places_quota` raises `profile_incomplete` / `no_business` for those users and counts nothing.
-- [ ] Autocomplete sends the key header and session token, and maps at most 5 suggestions.
-- [ ] Resolve sends the field mask `id,formattedAddress,location` and the session token.
-- [ ] A Google error or timeout gets `502`, and the response body contains no upstream text and no key.
-- [ ] Resolve calls `set_business_location` with the verified user's id even when the body contains a different `owner_id`/`userId`. A missing location gets `422`.
-- [ ] No test makes a network call (global `fetch` is stubbed to throw).
+- [x] A missing token, an anon-key token or an invalid token gets `401`, and the fake Google client is not called.
+- [x] Input under 3 or over 120 chars, control characters, a non-uuid session token or a malformed `placeId` gets `400`, with no Google call.
+- [x] When the fake quota returns false, the response is `429 rate_limited` with no Google call. `consume_places_quota` enforces 30/min and 100/day for autocomplete and 5/min and 5/day for resolve (pgTAP: the 31st autocomplete call in a minute returns false).
+- [x] Eligibility before Google (Decision 19): autocomplete or resolve for a user without a username gets `403 profile_incomplete`, and resolve for a user without a business gets `404 no_business`, with no Google call. In pgTAP, `consume_places_quota` raises `profile_incomplete` / `no_business` for those users and counts nothing.
+- [x] Autocomplete sends the key header and session token, and maps at most 5 suggestions.
+- [x] Resolve sends the field mask `id,formattedAddress,location` and the session token.
+- [x] A Google error or timeout gets `502`, and the response body contains no upstream text and no key.
+- [x] Resolve calls `set_business_location` with the verified user's id even when the body contains a different `owner_id`/`userId`. A missing location gets `422`.
+- [x] No test makes a network call (global `fetch` is stubbed to throw).
 
 **Quality — PR 1**
-- [ ] `src/types/database.ts` is regenerated and includes `businesses`, `business_locations`, `places_rate_limits` and the new functions.
-- [ ] The supabase-patterns skill is updated (core tables, homemade shift, Edge Function pattern). v1.md §16 has the function-privileges item closed.
+- [x] `src/types/database.ts` is regenerated and includes `businesses`, `business_locations`, `places_rate_limits` and the new functions.
+- [x] The supabase-patterns skill is updated (core tables, homemade shift, Edge Function pattern). v1.md §16 has the function-privileges item closed.
 - [ ] The CI workflow runs the Deno tests, lint and check for `supabase/functions/` and is green on the PR 1 run. No step references `PLACES_API_KEY`.
 - [ ] `npm run lint`, `npm run typecheck`, `npm test` (existing suites), `npm run test:functions` and `npx supabase test db` all pass, in CI too.
-- [ ] CLAUDE.md row 05 and this spec's status are 🚧 In progress, with only the PR 1 items ticked.
+- [x] CLAUDE.md row 05 and this spec's status are 🚧 In progress, with only the PR 1 items ticked.
 
 **Quality — PR 2**
 - [ ] `CuisinePicker` and `CuisineLabel` follow the spec 04 display rule: the name is visible and the glyph is hidden from screen readers. The picker search finds "Côte d'Ivoire" when you type "cote".

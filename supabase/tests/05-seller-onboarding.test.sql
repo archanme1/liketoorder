@@ -1,7 +1,7 @@
 -- Spec 05: seller onboarding — businesses, business_locations, places_rate_limits,
 -- column grants, function privileges, homemade approximate location and Places quota.
 begin;
-select plan(155);
+select plan(165);
 
 -- ── Fixtures (as postgres) ──────────────────────────────────────────────────
 -- 0501 A  restaurant, listed, with location (the public one)
@@ -23,7 +23,13 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000000509', 'q3@example.test'),
   ('00000000-0000-0000-0000-000000000510', 'q4@example.test'),
   ('00000000-0000-0000-0000-000000000511', 'q5@example.test'),
-  ('00000000-0000-0000-0000-000000000512', 'q6@example.test');
+  ('00000000-0000-0000-0000-000000000512', 'q6@example.test'),
+  ('00000000-0000-0000-0000-000000000513', 'n1@example.test'),
+  ('00000000-0000-0000-0000-000000000514', 'n2@example.test');
+-- 0513 G  fresh user with a username, no business (create_my_business name rules)
+-- 0514 H  homemade owner (direct-update name rules)
+update public.profiles set username = 'name_g' where id = '00000000-0000-0000-0000-000000000513';
+update public.profiles set username = 'name_h', is_seller = true where id = '00000000-0000-0000-0000-000000000514';
 
 update public.profiles set username = 'owner_a'    where id = '00000000-0000-0000-0000-000000000501';
 update public.profiles set username = 'outsider_b' where id = '00000000-0000-0000-0000-000000000502';
@@ -40,7 +46,9 @@ insert into public.businesses (id, owner_id, type, name, cuisine_code, map_lat, 
   ('00000000-0000-0000-0000-0000000005c1', '00000000-0000-0000-0000-000000000503',
    'homemade', 'Kitchen C', 'FR', null, null, null, true),
   ('00000000-0000-0000-0000-0000000005d1', '00000000-0000-0000-0000-000000000504',
-   'restaurant', 'Closed D', 'JP', 43.8, -79.5, '2 Side St, Toronto', false);
+   'restaurant', 'Closed D', 'JP', 43.8, -79.5, '2 Side St, Toronto', false),
+  ('00000000-0000-0000-0000-0000000005e1', '00000000-0000-0000-0000-000000000514',
+   'homemade', 'Kitchen H', 'IT', null, null, null, true);
 
 insert into public.business_locations (business_id, place_id, formatted_address, lat, lng) values
   ('00000000-0000-0000-0000-0000000005a1', 'pA', '1 Main St, Toronto', 43.7, -79.4),
@@ -138,11 +146,6 @@ select is(
   array[]::text[],
   'anon can execute no public function'
 );
-select ok(
-  'business_owner_view' <> all (array['create_my_business', 'get_my_business', 'set_seller_mode']),
-  'business_owner_view is not on the allowlist'
-);
-
 select ok(not has_function_privilege('anon', 'public.business_owner_view(uuid)', 'execute'),
   'anon cannot execute business_owner_view');
 select ok(not has_function_privilege('authenticated', 'public.business_owner_view(uuid)', 'execute'),
@@ -377,6 +380,42 @@ select throws_ok(
   $$ update public.profiles set is_seller = false where id = '00000000-0000-0000-0000-000000000506' $$,
   '42501', null, 'authenticated still cannot update profiles.is_seller');
 
+-- Business name rules via create_my_business (G: username, no business). Rejections first.
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000513","role":"authenticated"}';
+select throws_ok(
+  $$ select public.create_my_business('restaurant', ' Leading', 'IT') $$,
+  '23514', null, 'create_my_business rejects a name with a leading space');
+select throws_ok(
+  $$ select public.create_my_business('restaurant', 'Trailing ', 'IT') $$,
+  '23514', null, 'create_my_business rejects a name with a trailing space');
+select throws_ok(
+  $$ select public.create_my_business('restaurant', E'Joe\tPizza', 'IT') $$,
+  '23514', null, 'create_my_business rejects a name with a control character');
+select throws_ok(
+  $$ select public.create_my_business('restaurant', repeat('a', 61), 'IT') $$,
+  '23514', null, 'create_my_business rejects a 61-character name');
+select lives_ok(
+  $$ select public.create_my_business('restaurant', repeat('a', 60), 'IT') $$,
+  'create_my_business accepts a 60-character name');
+
+-- Business name rules via direct update (H owns business 5e1).
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000514","role":"authenticated"}';
+select throws_ok(
+  $$ update public.businesses set name = ' Leading' where id = '00000000-0000-0000-0000-0000000005e1' $$,
+  '23514', null, 'owner update rejects a name with a leading space');
+select throws_ok(
+  $$ update public.businesses set name = 'Trailing ' where id = '00000000-0000-0000-0000-0000000005e1' $$,
+  '23514', null, 'owner update rejects a name with a trailing space');
+select throws_ok(
+  $$ update public.businesses set name = E'Joe\tPizza' where id = '00000000-0000-0000-0000-0000000005e1' $$,
+  '23514', null, 'owner update rejects a name with a control character');
+select throws_ok(
+  $$ update public.businesses set name = repeat('a', 61) where id = '00000000-0000-0000-0000-0000000005e1' $$,
+  '23514', null, 'owner update rejects a 61-character name');
+select lives_ok(
+  $$ update public.businesses set name = repeat('b', 60) where id = '00000000-0000-0000-0000-0000000005e1' $$,
+  'owner update accepts a 60-character name');
+
 -- ── set_seller_mode ─────────────────────────────────────────────────────────
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000502","role":"authenticated"}';
 select throws_ok($$ select public.set_seller_mode(true) $$, 'P0001', 'no_business',
@@ -546,6 +585,9 @@ reset role;
 -- Same transaction => same now() => same minute window.
 set local role service_role;
 set local request.jwt.claims = '{"role":"service_role"}';
+select throws_ok(
+  $$ select public.consume_places_quota('00000000-0000-0000-0000-000000000507', 'geocode') $$,
+  'P0001', 'invalid_kind', 'consume_places_quota rejects an unknown kind with invalid_kind');
 select is(
   (select (count(*) filter (where r))::int from (
      select public.consume_places_quota('00000000-0000-0000-0000-000000000507', 'autocomplete') as r

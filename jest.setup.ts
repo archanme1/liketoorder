@@ -11,8 +11,13 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 
 // The icon font is a bundled asset that jest's asset registry can't load; render a plain View
 // that keeps the props (name, accessibility) so tests can still inspect the icon.
+// glyphMap is the installed package's real name → codepoint map, so name checks match the app.
 jest.mock('@expo/vector-icons/Ionicons', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { createElement } = require('react');
   const { View } = require('react-native');
-  return { __esModule: true, default: View };
+  const glyphMap = require('@expo/vector-icons/build/vendor/react-native-vector-icons/glyphmaps/Ionicons.json');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const Ionicons = Object.assign((props: object) => createElement(View, props), { glyphMap });
+  return { __esModule: true, default: Ionicons };
 });

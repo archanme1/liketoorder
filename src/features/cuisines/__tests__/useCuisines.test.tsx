@@ -32,7 +32,10 @@ const other: Cuisine = {
 const rows = [italy, other];
 
 function makeClient() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return new QueryClient({
+    // gcTime Infinity: no cache-cleanup timers left running after a test.
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
 }
 
 function wrapperFor(client: QueryClient) {

@@ -18,8 +18,8 @@ select ok(
 -- lists grants visible to the current role), and also catch privileges granted to PUBLIC.
 select is_empty(
   $$ with allow(relname) as (
-       -- ALLOWLIST: tables guests may access on purpose. Empty today; add one row per table.
-       select null::name where false
+       -- ALLOWLIST: tables guests may access on purpose; add one row per table.
+       select 'cuisines'::name   -- spec 04: read-only catalog (04-cuisine-catalog.test.sql)
      )
      select c.relname::text
        from pg_class c

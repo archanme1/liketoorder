@@ -41,7 +41,7 @@ liketoorder/
 │   ├── (tabs)/               # restaurants, homemade, profile, manage (seller only)
 │   └── _layout.tsx
 ├── src/
-│   ├── features/<feature>/   # one folder per domain: map, sellers, menu, requests, food-log, activity-grid, promotions, reports, profile
+│   ├── features/<feature>/   # one folder per domain: cuisines, map, sellers, menu, requests, food-log, activity-grid, promotions, reports, profile
 │   │   ├── components/
 │   │   ├── hooks/            # react-query hooks (useXQuery / useXMutation)
 │   │   ├── api.ts            # ALL supabase calls for this feature
@@ -174,7 +174,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 01 | project-setup | ✅ Shipped | .claude/specs/01-project-setup.md |
 | 02 | auth-and-profiles | ✅ Shipped | .claude/specs/02-auth-and-profiles.md |
 | 03 | navigation-shell | ✅ Shipped | .claude/specs/03-navigation-shell.md |
-| 04 | cuisine-catalog | ⬜ Not started | — |
+| 04 | cuisine-catalog | ✅ Shipped | .claude/specs/04-cuisine-catalog.md |
 | 05 | seller-onboarding | ⬜ Not started | — |
 | 06 | menu-management | ⬜ Not started | — |
 | 07 | restaurant-map | ⬜ Not started | — |

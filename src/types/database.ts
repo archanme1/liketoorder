@@ -23,7 +23,21 @@ export type Database = {
           }
         },"public": {
           Tables: {
-            "profiles": {
+            "cuisines": {
+                  Row: {
+                    "code": string,"flag": string | null,"icon": string | null,"kind": string,"name": string,"sort_order": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "code": string,"flag"?: never,"icon"?: string | null,"kind": string,"name": string,"sort_order": number
+                  }
+                  Update: {
+                    "code"?: string,"flag"?: never,"icon"?: string | null,"kind"?: string,"name"?: string,"sort_order"?: number
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"profiles": {
                   Row: {
                     "bio": string,"city": string,"created_at": string,"display_name": string | null,"id": string,"is_seller": boolean,"updated_at": string,"username": string | null
                   }

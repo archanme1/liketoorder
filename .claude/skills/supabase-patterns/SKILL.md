@@ -19,6 +19,9 @@ description: LikeToOrder's Supabase conventions — migrations, RLS policy templ
 - `promotions` (business_id, starts_at, ends_at, status `draft|active|ended`, activated_by)
 - `reports` (business_id, reporter_id, reason, note, status `open|confirmed|rejected`, reviewed_by)
 
+## Grants
+Every new table migration starts with `revoke all on <table> from anon, authenticated`, then grants only what the spec lists; the anon-privileges pgTAP test enforces this.
+
 ## RLS templates
 ```sql
 alter table public.food_logs enable row level security;

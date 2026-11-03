@@ -156,6 +156,10 @@ describe('ResetPasswordForm', () => {
       await waitFor(() => expect(mockedApi.updatePassword).toHaveBeenCalledWith('abcdefg1'));
       await waitFor(async () => expect(await AsyncStorage.getItem(RECOVERY_KEY)).toBeNull());
       await waitFor(() => expect(screen.queryByLabelText('New password')).toBeNull());
+      expect(mockRouter.replace).toHaveBeenCalledWith({
+        pathname: '/profile',
+        params: { notice: 'password-updated' },
+      });
     });
 
     it('Cancel calls sign-out', async () => {
@@ -163,6 +167,7 @@ describe('ResetPasswordForm', () => {
       await fireEvent.press(await screen.findByRole('button', { name: 'Cancel' }));
       await waitFor(() => expect(mockedApi.signOut).toHaveBeenCalledTimes(1));
       expect(mockedApi.updatePassword).not.toHaveBeenCalled();
+      await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/profile'));
     });
   });
 });

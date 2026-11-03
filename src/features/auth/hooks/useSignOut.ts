@@ -5,7 +5,8 @@ import { signOut, type AuthAppError } from '../api';
 import { useSession } from './useSession';
 
 // The SIGNED_OUT event clears the recovery flag and the react-query cache in AuthProvider.
-export function useSignOut() {
+// `onSuccess` is a hook-level option so it still runs when sign-out unmounts the caller.
+export function useSignOut({ onSuccess }: { onSuccess?: () => void } = {}) {
   const { clearRecovering } = useSession();
 
   return useMutation<void, AuthAppError, void>({
@@ -13,5 +14,6 @@ export function useSignOut() {
       await signOut();
       await clearRecovering();
     },
+    onSuccess,
   });
 }

@@ -134,11 +134,11 @@ describe('EditProfileForm', () => {
       expect(mockRouter.replace).not.toHaveBeenCalled();
     });
 
-    it('replaces to home on save when there is nothing to go back to', async () => {
+    it('replaces to the Profile tab on save when there is nothing to go back to', async () => {
       mockRouter.canGoBack.mockReturnValue(false);
       await renderLoaded();
       await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
-      await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/'));
+      await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/profile'));
       expect(mockRouter.back).not.toHaveBeenCalled();
     });
 
@@ -217,11 +217,11 @@ describe('EditProfileForm', () => {
       expect(mockedApi.updateMyProfile).not.toHaveBeenCalled();
     });
 
-    it('goes home when it cannot go back', async () => {
+    it('goes to the Profile tab when it cannot go back', async () => {
       mockRouter.canGoBack.mockReturnValue(false);
       await renderLoaded();
       await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
-      expect(mockRouter.replace).toHaveBeenCalledWith('/');
+      expect(mockRouter.replace).toHaveBeenCalledWith('/profile');
       expect(mockedApi.updateMyProfile).not.toHaveBeenCalled();
     });
   });

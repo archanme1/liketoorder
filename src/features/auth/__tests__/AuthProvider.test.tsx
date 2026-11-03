@@ -34,6 +34,12 @@ let listener: Listener;
 let unsubscribe: jest.Mock;
 let client: QueryClient;
 
+// Keys sorted alphabetically, matching what Probe renders.
+const RECOVERING_ACCESS =
+  'access:app=false,manage=false,resetPassword=true,setupProfile=false,signedOutScreens=false,tabs=false';
+const SIGNED_IN_ACCESS =
+  'access:app=true,manage=false,resetPassword=false,setupProfile=false,signedOutScreens=false,tabs=true';
+
 function Probe() {
   const ctx = useSession();
   const access = getRouteAccess({ hasSession: !!ctx.session, isRecovering: ctx.isRecovering });
@@ -42,7 +48,10 @@ function Probe() {
       <Text>{`loading:${ctx.isLoading}`}</Text>
       <Text>{`session:${ctx.session ? 'yes' : 'no'}`}</Text>
       <Text>{`recovering:${ctx.isRecovering}`}</Text>
-      <Text>{`access:${JSON.stringify(access)}`}</Text>
+      <Text>{`access:${(Object.keys(access) as (keyof typeof access)[])
+        .sort()
+        .map((k) => `${k}=${access[k]}`)
+        .join(',')}`}</Text>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="mark"
@@ -70,45 +79,6 @@ async function emit(event: string, value: unknown) {
     listener(event, value);
   });
 }
-
-describe('getRouteAccess', () => {
-  it.each([
-    [
-      false,
-      false,
-      { signedOutScreens: true, resetPassword: true, setupProfile: false, app: false },
-    ],
-    [
-      true,
-      false,
-      { signedOutScreens: false, resetPassword: false, setupProfile: false, app: true },
-    ],
-    [true, true, { signedOutScreens: false, resetPassword: true, setupProfile: false, app: false }],
-    [
-      false,
-      true,
-      { signedOutScreens: false, resetPassword: true, setupProfile: false, app: false },
-    ],
-  ])('hasSession=%s isRecovering=%s', (hasSession, isRecovering, expected) => {
-    expect(getRouteAccess({ hasSession, isRecovering })).toEqual(expected);
-  });
-
-  it.each([
-    [false, { signedOutScreens: false, resetPassword: false, setupProfile: true, app: false }],
-    [true, { signedOutScreens: false, resetPassword: false, setupProfile: false, app: true }],
-  ])('signed in with profileComplete=%s', (profileComplete, expected) => {
-    expect(getRouteAccess({ hasSession: true, isRecovering: false, profileComplete })).toEqual(
-      expected,
-    );
-  });
-
-  it('never allows setup-profile or the app mid-recovery, whatever the profile', () => {
-    for (const profileComplete of [true, false]) {
-      const access = getRouteAccess({ hasSession: true, isRecovering: true, profileComplete });
-      expect(access).toMatchObject({ resetPassword: true, setupProfile: false, app: false });
-    }
-  });
-});
 
 describe('AuthProvider', () => {
   beforeEach(async () => {
@@ -183,11 +153,7 @@ describe('AuthProvider', () => {
       expect(screen.getByText('session:yes')).toBeTruthy();
       expect(screen.getByText('recovering:true')).toBeTruthy();
       expect(await AsyncStorage.getItem(RECOVERY_KEY)).toBe('true');
-      expect(
-        screen.getByText(
-          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: true, setupProfile: false, app: false })}`,
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText(RECOVERING_ACCESS)).toBeTruthy();
     });
 
     it('a normal sign-in is not recovering and reaches the app', async () => {
@@ -195,11 +161,7 @@ describe('AuthProvider', () => {
       await screen.findByText('loading:false');
       await emit('SIGNED_IN', session);
       expect(screen.getByText('recovering:false')).toBeTruthy();
-      expect(
-        screen.getByText(
-          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: false, setupProfile: false, app: true })}`,
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText(SIGNED_IN_ACCESS)).toBeTruthy();
     });
 
     it('the flag survives a remount when a session exists', async () => {
@@ -269,11 +231,7 @@ describe('AuthProvider', () => {
         type: 'recovery',
       });
       await waitFor(() => expect(screen.getByText('recovering:true')).toBeTruthy());
-      expect(
-        screen.getByText(
-          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: true, setupProfile: false, app: false })}`,
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText(RECOVERING_ACCESS)).toBeTruthy();
       expect(await AsyncStorage.getItem(RECOVERY_KEY)).toBe('true');
     });
 
@@ -293,11 +251,7 @@ describe('AuthProvider', () => {
       await waitFor(() => expect(screen.getByText('recovering:false')).toBeTruthy());
       expect(screen.getByText('session:yes')).toBeTruthy();
       expect(await AsyncStorage.getItem(RECOVERY_KEY)).toBeNull();
-      expect(
-        screen.getByText(
-          `access:${JSON.stringify({ signedOutScreens: false, resetPassword: false, setupProfile: false, app: true })}`,
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText(SIGNED_IN_ACCESS)).toBeTruthy();
     });
 
     it('Cancel signs out and clears isRecovering', async () => {

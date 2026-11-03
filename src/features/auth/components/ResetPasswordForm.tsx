@@ -98,15 +98,21 @@ function CodeStep({ email }: { email?: string }) {
 
 function NewPasswordStep() {
   const { space } = useTheme();
-  const update = useUpdatePassword();
-  const signOut = useSignOut();
+  const router = useRouter();
+  // Both succeed by clearing isRecovering, which unmounts this step, so navigation goes in the
+  // hook-level onSuccess (a mutate() callback would be dropped).
+  // Saving: the guard also redirects to the Profile tab; this carries the notice for the banner.
+  const update = useUpdatePassword({
+    onSuccess: () =>
+      router.replace({ pathname: '/profile', params: { notice: 'password-updated' } }),
+  });
+  // Cancel: guests can still reach reset-password, so leave it for the guest prompt.
+  const signOut = useSignOut({ onSuccess: () => router.replace('/profile') });
   const { control, handleSubmit, setError } = useForm<ResetPasswordValues>({
     resolver: zodResolver(resetPasswordSchema),
     defaultValues: { password: '', confirmPassword: '' },
   });
 
-  // Success needs no navigation: clearing isRecovering switches the route guards to home,
-  // which shows the "Password updated" notice.
   const onSubmit = handleSubmit(({ password }) => {
     update.mutate(
       { password },

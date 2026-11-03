@@ -52,6 +52,23 @@ jobs:
         if: steps.state.outputs.app == 'true'
         run: npm test -- --ci
 
+      # Edge Functions (Deno). Tests use fake Google/auth/quota and run without --allow-net; no secrets.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.8
+
+      - name: Edge Functions lint
+        working-directory: supabase/functions
+        run: deno lint
+
+      - name: Edge Functions typecheck
+        working-directory: supabase/functions
+        run: deno task check
+
+      - name: Edge Functions tests
+        working-directory: supabase/functions
+        run: deno task test
+
       - name: Supabase CLI version from package.json
         id: sbver
         if: steps.state.outputs.db == 'true'

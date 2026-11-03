@@ -7,6 +7,7 @@ export type ErrorCode =
   | 'upstream_error'
   | 'not_a_place'
   | 'no_business'
+  | 'profile_incomplete'
   | 'method_not_allowed'
   | 'internal_error';
 
@@ -27,14 +28,48 @@ export function errorResponse(status: number, code: ErrorCode): Response {
 }
 
 // Parsed JSON body, or undefined when it is missing, too large or not JSON.
+// A declared Content-Length over the cap is rejected without reading; otherwise reading stops as
+// soon as the bytes actually received pass the cap (the header can be absent or wrong).
 export async function readJsonBody(req: Request): Promise<unknown> {
-  const text = await req.text();
-  if (text.length === 0 || new TextEncoder().encode(text).length > MAX_BODY_BYTES) return undefined;
+  if (Number(req.headers.get('Content-Length')) > MAX_BODY_BYTES) {
+    await req.body?.cancel();
+    return undefined;
+  }
+  const bytes = await readAtMost(req.body, MAX_BODY_BYTES);
+  if (!bytes || bytes.byteLength === 0) return undefined;
   try {
-    return JSON.parse(text);
+    return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return undefined;
   }
+}
+
+// The whole stream, or undefined once it passes `limit` bytes.
+async function readAtMost(
+  body: ReadableStream<Uint8Array> | null,
+  limit: number,
+): Promise<Uint8Array | undefined> {
+  if (!body) return new Uint8Array();
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel();
+      return undefined;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 // Logs status, function name and latency only. Never the input, place ID, coordinates or key.

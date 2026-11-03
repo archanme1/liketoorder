@@ -2,6 +2,7 @@
 // Google is always a fake; global fetch throws and the run has no --allow-net.
 import assert from 'node:assert/strict';
 import { createGoogleClient } from '../_shared/google.ts';
+import type { QuotaResult } from '../_shared/rateLimit.ts';
 import { createHandler, NoBusinessError, type ResolvedPlace } from '../places-resolve/handler.ts';
 import {
   ANON_KEY_JWT,
@@ -34,7 +35,7 @@ function placeDetails(overrides: Record<string, unknown> = {}) {
 }
 
 type SetupOptions = {
-  allowQuota?: boolean;
+  quotaResult?: QuotaResult;
   details?: () => Response | Promise<Response>;
   timeoutMs?: number;
   withoutKey?: boolean;
@@ -42,7 +43,7 @@ type SetupOptions = {
 };
 
 function setup({
-  allowQuota = true,
+  quotaResult = 'ok',
   details = () => Response.json(placeDetails()),
   timeoutMs = 5000,
   withoutKey = false,
@@ -50,7 +51,7 @@ function setup({
 }: SetupOptions = {}) {
   const apiKey = withoutKey ? undefined : TEST_API_KEY;
   const google = fakeGoogleFetch((_, signal) => (timeoutMs < 100 ? hangUntilAborted(signal) : details()));
-  const quota = fakeQuota(allowQuota);
+  const quota = fakeQuota(quotaResult);
   const saved: [string, ResolvedPlace][] = [];
   const handler = createHandler({
     getUser: fakeGetUser().fn,
@@ -109,13 +110,49 @@ for (const [name, body] of [
 
 // ── Rate limit → 429, Google not called ──────────────────────────────────────
 Deno.test('resolve: when the quota is used up the response is 429 with no Google call', async () => {
-  const { handler, google, quota, saved } = setup({ allowQuota: false });
+  const { handler, google, quota, saved } = setup({ quotaResult: 'rate_limited' });
   const res = await handler(makeRequest(validBody));
   assert.equal(res.status, 429);
   assert.equal(await errorCode(res), 'rate_limited');
   assert.equal(google.requests.length, 0);
   assert.equal(saved.length, 0);
   assert.deepEqual(quota.calls, [[USER_ID, 'resolve']]);
+});
+
+// ── Eligibility (Decision 19) → 403 / 404, Google not called ─────────────────
+for (const [name, quotaResult, status] of [
+  ['a user without a username gets 403 profile_incomplete', 'profile_incomplete', 403],
+  ['a user without a business gets 404 no_business', 'no_business', 404],
+] as const) {
+  Deno.test(`resolve: ${name} with no Google call and nothing saved`, async () => {
+    const { handler, google, quota, saved } = setup({ quotaResult });
+    const res = await handler(makeRequest(validBody));
+    assert.equal(res.status, status);
+    assert.equal(await errorCode(res), quotaResult);
+    assert.equal(google.requests.length, 0);
+    assert.equal(saved.length, 0);
+    assert.deepEqual(quota.calls, [[USER_ID, 'resolve']]);
+  });
+}
+
+// ── Request shape: method and body size ──────────────────────────────────────
+Deno.test('resolve: a GET gets 405 with no quota or Google call', async () => {
+  const { handler, google, quota } = setup();
+  const res = await handler(makeRequest(null, { method: 'GET' }));
+  assert.equal(res.status, 405);
+  assert.equal(await errorCode(res), 'method_not_allowed');
+  assert.equal(quota.calls.length, 0);
+  assert.equal(google.requests.length, 0);
+});
+
+Deno.test('resolve: a body over 4 KB gets 400 with no quota or Google call', async () => {
+  const { handler, google, quota } = setup();
+  const rawBody = JSON.stringify({ ...validBody, padding: 'x'.repeat(5000) });
+  const res = await handler(makeRequest(null, { rawBody }));
+  assert.equal(res.status, 400);
+  assert.equal(await errorCode(res), 'invalid_input');
+  assert.equal(quota.calls.length, 0);
+  assert.equal(google.requests.length, 0);
 });
 
 // ── Google request: field mask and session token ─────────────────────────────
@@ -169,6 +206,8 @@ Deno.test('resolve: returns the owner view from set_business_location', async ()
 for (const [name, details] of [
   ['a missing location', placeDetails({ location: undefined })],
   ['a missing formattedAddress', placeDetails({ formattedAddress: undefined })],
+  ['a formattedAddress over 200 chars', placeDetails({ formattedAddress: 'a'.repeat(201) })],
+  ['a returned place id with a slash', placeDetails({ id: 'ChIJ/../x' })],
 ] as const) {
   Deno.test(`resolve: ${name} gets 422 and nothing is saved`, async () => {
     const { handler, saved } = setup({ details: () => Response.json(details) });
@@ -199,6 +238,14 @@ Deno.test('resolve: a Google error gets 502 with no upstream text and no key in 
   assert.equal(saved.length, 0);
 });
 
+Deno.test('resolve: a Google response of an unexpected shape gets 502 and nothing is saved', async () => {
+  const { handler, saved } = setup({ details: () => Response.json({ id: 12345 }) });
+  const res = await handler(makeRequest(validBody));
+  assert.equal(res.status, 502);
+  assert.equal(await errorCode(res), 'upstream_error');
+  assert.equal(saved.length, 0);
+});
+
 Deno.test('resolve: a Google timeout gets 502', async () => {
   const { handler, saved } = setup({ timeoutMs: 20 });
   const res = await handler(makeRequest(validBody));
@@ -224,10 +271,11 @@ Deno.test('resolve: without PLACES_API_KEY, a valid call gets 500 and nothing is
 
 // ── No network ───────────────────────────────────────────────────────────────
 Deno.test('resolve: global fetch is stubbed to throw', () => {
-  assert.throws(() => fetch('https://places.googleapis.com/v1/places/x'));
+  assert.equal(network.isInstalled(), true);
+  assert.throws(() => network.probe());
 });
 
+// Kept last in the file so it sees every test above.
 Deno.test('resolve: no test reached the real fetch (only the fake Google fetch was used)', () => {
-  // The previous test calls the stub on purpose; nothing else may have.
-  assert.equal(network.calls(), 1);
+  assert.equal(network.unexpectedCalls(), 0);
 });

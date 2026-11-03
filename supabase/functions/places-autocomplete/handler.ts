@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { type GetUser, requireUser } from '../_shared/auth.ts';
 import { type GoogleClient, MissingApiKeyError, UpstreamError } from '../_shared/google.ts';
 import { errorResponse, type Handler, json, readJsonBody } from '../_shared/http.ts';
-import type { ConsumeQuota } from '../_shared/rateLimit.ts';
+import { type ConsumeQuota, quotaRefusal } from '../_shared/rateLimit.ts';
 
 const Body = z.object({
   input: z
@@ -31,9 +31,8 @@ export function createHandler(deps: Deps): Handler {
     const body = Body.safeParse(await readJsonBody(req));
     if (!body.success) return errorResponse(400, 'invalid_input');
 
-    if (!(await deps.consumeQuota(user.id, 'autocomplete'))) {
-      return errorResponse(429, 'rate_limited');
-    }
+    const quota = await deps.consumeQuota(user.id, 'autocomplete');
+    if (quota !== 'ok') return quotaRefusal(quota);
 
     try {
       const suggestions = await deps.google.autocomplete(body.data.input, body.data.sessionToken);

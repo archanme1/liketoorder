@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { type GetUser, requireUser } from '../_shared/auth.ts';
 import { type GoogleClient, MissingApiKeyError, UpstreamError } from '../_shared/google.ts';
 import { errorResponse, type Handler, json, readJsonBody } from '../_shared/http.ts';
-import type { ConsumeQuota } from '../_shared/rateLimit.ts';
+import { type ConsumeQuota, quotaRefusal } from '../_shared/rateLimit.ts';
 
 const PLACE_ID = /^[A-Za-z0-9_-]{1,300}$/;
 const MAX_ADDRESS_LENGTH = 200; // business_locations.formatted_address check
@@ -15,7 +15,8 @@ const Body = z.object({
 
 export type ResolvedPlace = { placeId: string; formattedAddress: string; lat: number; lng: number };
 
-// The business owner has no business yet (set_business_location raised no_business).
+// The user has no business (set_business_location raised no_business). The quota step catches
+// this first; this is the backstop for a business deleted in between.
 export class NoBusinessError extends Error {}
 
 // Saves the location for this owner and returns the owner view. Throws NoBusinessError.
@@ -39,9 +40,9 @@ export function createHandler(deps: Deps): Handler {
     const body = Body.safeParse(await readJsonBody(req));
     if (!body.success) return errorResponse(400, 'invalid_input');
 
-    if (!(await deps.consumeQuota(user.id, 'resolve'))) {
-      return errorResponse(429, 'rate_limited');
-    }
+    // Refuses users without a username or a business before Google is called (Decision 19).
+    const quota = await deps.consumeQuota(user.id, 'resolve');
+    if (quota !== 'ok') return quotaRefusal(quota);
 
     let place;
     try {

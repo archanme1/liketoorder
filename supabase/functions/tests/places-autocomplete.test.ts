@@ -2,6 +2,7 @@
 // Google is always a fake; global fetch throws and the run has no --allow-net.
 import assert from 'node:assert/strict';
 import { createGoogleClient } from '../_shared/google.ts';
+import type { QuotaResult } from '../_shared/rateLimit.ts';
 import { createHandler } from '../places-autocomplete/handler.ts';
 import {
   ANON_KEY_JWT,
@@ -35,10 +36,16 @@ function predictions(n: number) {
   };
 }
 
-function setup({ allowQuota = true, withoutKey = false } = {}) {
-  const google = fakeGoogleFetch(() => Response.json(predictions(3)));
+type SetupOptions = {
+  quotaResult?: QuotaResult;
+  withoutKey?: boolean;
+  respond?: () => Response;
+};
+
+function setup({ quotaResult = 'ok', withoutKey = false, respond = () => Response.json(predictions(3)) }: SetupOptions = {}) {
+  const google = fakeGoogleFetch(respond);
   const getUser = fakeGetUser();
-  const quota = fakeQuota(allowQuota);
+  const quota = fakeQuota(quotaResult);
   const handler = createHandler({
     getUser: getUser.fn,
     consumeQuota: quota.fn,
@@ -105,12 +112,42 @@ Deno.test('autocomplete: 3 and 120 character inputs are accepted', async () => {
 
 // ── Rate limit → 429, Google not called ──────────────────────────────────────
 Deno.test('autocomplete: when the quota is used up the response is 429 with no Google call', async () => {
-  const { handler, google, quota } = setup({ allowQuota: false });
+  const { handler, google, quota } = setup({ quotaResult: 'rate_limited' });
   const res = await handler(makeRequest(validBody));
   assert.equal(res.status, 429);
   assert.equal(await errorCode(res), 'rate_limited');
   assert.equal(google.requests.length, 0);
   assert.deepEqual(quota.calls, [[USER_ID, 'autocomplete']]);
+});
+
+// ── Eligibility (Decision 19) → 403, Google not called ───────────────────────
+Deno.test('autocomplete: a user without a username gets 403 profile_incomplete with no Google call', async () => {
+  const { handler, google, quota } = setup({ quotaResult: 'profile_incomplete' });
+  const res = await handler(makeRequest(validBody));
+  assert.equal(res.status, 403);
+  assert.equal(await errorCode(res), 'profile_incomplete');
+  assert.equal(google.requests.length, 0);
+  assert.deepEqual(quota.calls, [[USER_ID, 'autocomplete']]);
+});
+
+// ── Request shape: method and body size ──────────────────────────────────────
+Deno.test('autocomplete: a GET gets 405 with no quota or Google call', async () => {
+  const { handler, google, quota } = setup();
+  const res = await handler(makeRequest(null, { method: 'GET' }));
+  assert.equal(res.status, 405);
+  assert.equal(await errorCode(res), 'method_not_allowed');
+  assert.equal(quota.calls.length, 0);
+  assert.equal(google.requests.length, 0);
+});
+
+Deno.test('autocomplete: a body over 4 KB gets 400 with no quota or Google call', async () => {
+  const { handler, google, quota } = setup();
+  const rawBody = JSON.stringify({ ...validBody, padding: 'x'.repeat(5000) });
+  const res = await handler(makeRequest(null, { rawBody }));
+  assert.equal(res.status, 400);
+  assert.equal(await errorCode(res), 'invalid_input');
+  assert.equal(quota.calls.length, 0);
+  assert.equal(google.requests.length, 0);
 });
 
 // ── Google request: key header and session token ─────────────────────────────
@@ -165,6 +202,13 @@ Deno.test('autocomplete: a Google error gets 502 with no upstream text and no ke
   assert.equal(text.includes(TEST_API_KEY), false);
 });
 
+Deno.test('autocomplete: a Google response of an unexpected shape gets 502', async () => {
+  const { handler } = setup({ respond: () => Response.json({ suggestions: 'not-a-list' }) });
+  const res = await handler(makeRequest(validBody));
+  assert.equal(res.status, 502);
+  assert.equal(await errorCode(res), 'upstream_error');
+});
+
 Deno.test('autocomplete: a Google timeout gets 502', async () => {
   const google = fakeGoogleFetch((_, signal) => hangUntilAborted(signal));
   const handler = createHandler({
@@ -194,10 +238,11 @@ Deno.test('autocomplete: without PLACES_API_KEY, a valid call gets 500 and Googl
 
 // ── No network ───────────────────────────────────────────────────────────────
 Deno.test('autocomplete: global fetch is stubbed to throw', () => {
-  assert.throws(() => fetch('https://places.googleapis.com/v1/places:autocomplete'));
+  assert.equal(network.isInstalled(), true);
+  assert.throws(() => network.probe());
 });
 
+// Kept last in the file so it sees every test above.
 Deno.test('autocomplete: no test reached the real fetch (only the fake Google fetch was used)', () => {
-  // The previous test calls the stub on purpose; nothing else may have.
-  assert.equal(network.calls(), 1);
+  assert.equal(network.unexpectedCalls(), 0);
 });

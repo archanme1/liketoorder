@@ -8,3 +8,11 @@ jest.mock('@react-native-async-storage/async-storage', () =>
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
 );
+
+// The icon font is a bundled asset that jest's asset registry can't load; render a plain View
+// that keeps the props (name, accessibility) so tests can still inspect the icon.
+jest.mock('@expo/vector-icons/Ionicons', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { View } = require('react-native');
+  return { __esModule: true, default: View };
+});

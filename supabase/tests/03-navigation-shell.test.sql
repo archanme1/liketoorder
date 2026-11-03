@@ -2,21 +2,31 @@
 -- grants them on purpose. A later spec that gives guests read access adds its table to the
 -- allowlist below in the same PR, with its own pgTAP test for both sides.
 begin;
-select plan(6);
+select plan(7);
 
 -- ── profiles stays authenticated-only ───────────────────────────────────────
 select table_privs_are('public', 'profiles', 'anon', array[]::text[],
   'anon has no privileges on profiles');
 
 -- ── No anon table privileges in public outside the allowlist ────────────────
+-- has_table_privilege reads the ACLs directly (information_schema only lists grants visible to
+-- the current role), and also catches privileges granted to PUBLIC.
 select is_empty(
-  $$ select table_name || ': ' || privilege_type
-       from information_schema.role_table_grants
-      where grantee = 'anon'
-        and table_schema = 'public'
-        and table_name <> all (array[]::text[]) -- allowlist: empty today
+  $$ select c.relname::text
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public'
+        and c.relkind in ('r', 'v', 'm', 'p', 'f')
+        and c.relname <> all (array[]::name[]) -- allowlist: empty today
+        and has_table_privilege('anon', c.oid,
+              'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
    $$,
   'anon holds no table privileges on any public table outside the allowlist'
+);
+select ok(
+  (select count(*) > 0 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'r'),
+  'the allowlist check has public tables to inspect'
 );
 
 -- ── Behaviour as anon ───────────────────────────────────────────────────────

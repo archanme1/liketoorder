@@ -21,6 +21,7 @@ description: LikeToOrder's Supabase conventions — migrations, RLS policy templ
 
 ## Grants
 Every new table migration starts with `revoke all on <table> from anon, authenticated`, then grants only what the spec lists; the anon-privileges pgTAP test enforces this.
+Every new callable function: revoke execute from anon/public, grant only where the spec says, and add a pgTAP check with an allowlist (Supabase grants execute on new `public` functions by default).
 
 ## RLS templates
 ```sql

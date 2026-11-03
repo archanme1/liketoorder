@@ -118,7 +118,7 @@ Profile (`src/features/profile/`):
 
 Auth (`src/features/auth/`):
 - `routeAccess.ts` — add guest tabs access, the `manage` rule and the new home route (table above).
-- `hooks/useCloseAuth.ts` — the Close control's action on sign-in / sign-up: back if possible, else `/restaurants`.
+- `hooks/useCloseAuth.ts` — the Close control's action on sign-in / sign-up: pop the whole `(auth)` group from the root stack if possible (Decision 19), else `/restaurants`.
 
 No new api functions; `is_seller` already comes back from `getMyProfile()`.
 
@@ -267,3 +267,5 @@ This works only against local Supabase; it uses Studio's admin access, not the a
 15. **Profile load after sign-in (found in testing):** the root layout blocks with a full-screen loader only on cold start. After sign-in or a password reset it keeps the Stack mounted under a loading overlay, because unmounting it dropped the navigation state and landed on `/restaurants` instead of `/profile`.
 16. **Reset navigation callbacks (found in testing):** `useUpdatePassword` / `useSignOut` take a hook-level `onSuccess`; per-`mutate()` callbacks were dropped when clearing `isRecovering` unmounted the new-password step.
 17. **Known, accepted limitation:** opening `/profile?notice=password-updated` by hand shows a harmless cosmetic "Password updated" banner; no code change.
+18. **Known, accepted limitation (review Q2):** if the profile fails to load right after sign-in, the full-screen error replaces the Stack, so after Retry the user lands on `/restaurants` instead of `/profile`. Rare and harmless; no code change.
+19. **Close after switching forms (review Q1):** sign-in pushes sign-up inside the `(auth)` stack, so `router.back()` returned to sign-in and `dismissTo('/restaurants')` / `dismissAll()` either lost the guest's tab or stayed in `(auth)`. `useCloseAuth` pops the `(auth)` group from the root stack instead, returning to the tab the guest came from.

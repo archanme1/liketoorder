@@ -3,7 +3,7 @@
 **Branch:** `feature/cuisine-catalog`
 **Product spec:** `docs/product/v1.md` §5 Onboarding step 3, §6 (flag markers, neutral icon fallback), §11 Food log uploads (required country/cuisine) and Cuisine view, §14 row 04
 **Plan mode:** required — adds a table, RLS policies, anon grants and a guard trigger (schema + RLS change).
-**Status:** 🚧 In progress
+**Status:** ✅ Shipped
 
 ## Overview
 After this ships, the database holds one read-only list of 200 cuisines: 197 countries (all 193 UN member states plus Taiwan, Palestine, Hong Kong and Puerto Rico), each with an emoji flag, plus 3 neutral cuisines (Street food, Fusion, Other) that show an Ionicons icon instead of a flag. Guests and signed-in users can read the list. Nobody can change it from the app; only migrations change it, and a cuisine's code can never be renamed or reused. The app gets `listCuisines()` in a new `src/features/cuisines/api.ts` and two react-query hooks. There are no screens. This comes now because seller onboarding (05) and food-log uploads (13) both need a cuisine picker, and the maps (07, 08) and the grid's cuisine view (15) all show the same flags.
@@ -226,39 +226,39 @@ Feature-specific rules:
 
 ## Definition of done
 **Data**
-- [ ] `public.cuisines` has exactly 200 rows: 197 countries and 3 neutral rows (`street-food`, `fusion`, `other`). There is no `vegan` row.
-- [ ] The set of the 197 country codes equals the approved list exactly: the 193 UN members plus TW, PS, HK and PR, and no other territories.
-- [ ] All 20 required countries (Decision 5) are present by name.
-- [ ] Known flags are correct: `IT` = 🇮🇹, `CA` = 🇨🇦, `JP` = 🇯🇵, `GB` = 🇬🇧, `TW` = 🇹🇼.
-- [ ] Each of the 197 country rows has a non-null flag equal to the regional-indicator pair for its code, and a null icon. Every neutral row has a null flag and a non-null icon.
-- [ ] Names match Decision 6: Taiwan, Palestine, Hong Kong, Puerto Rico, Russia, Türkiye, Czechia, United Kingdom.
-- [ ] Constraints reject: a lower-case or 3-letter country code, a country with an icon, a neutral row with an upper-case code or no icon, and a duplicate name.
-- [ ] `listCuisines()` returns countries alphabetically, with accented names in reading order (Costa Rica, Côte d'Ivoire, Croatia; San Marino, São Tomé and Príncipe, Saudi Arabia; Tunisia, Türkiye, Turkmenistan), then Street food, Fusion, Other.
+- [x] `public.cuisines` has exactly 200 rows: 197 countries and 3 neutral rows (`street-food`, `fusion`, `other`). There is no `vegan` row.
+- [x] The set of the 197 country codes equals the approved list exactly: the 193 UN members plus TW, PS, HK and PR, and no other territories.
+- [x] All 20 required countries (Decision 5) are present by name.
+- [x] Known flags are correct: `IT` = 🇮🇹, `CA` = 🇨🇦, `JP` = 🇯🇵, `GB` = 🇬🇧, `TW` = 🇹🇼.
+- [x] Each of the 197 country rows has a non-null flag equal to the regional-indicator pair for its code, and a null icon. Every neutral row has a null flag and a non-null icon.
+- [x] Names match Decision 6: Taiwan, Palestine, Hong Kong, Puerto Rico, Russia, Türkiye, Czechia, United Kingdom.
+- [x] Constraints reject: a lower-case or 3-letter country code, a country with an icon, a neutral row with an upper-case code or no icon, and a duplicate name.
+- [x] `listCuisines()` returns countries alphabetically, with accented names in reading order (Costa Rica, Côte d'Ivoire, Croatia; San Marino, São Tomé and Príncipe, Saudi Arabia; Tunisia, Türkiye, Turkmenistan), then Street food, Fusion, Other.
 
 **Codes are permanent**
-- [ ] Updating a row's `code` fails with `cuisine_code_permanent`, even as the table owner (migration role).
-- [ ] Deleting any row fails with `cuisine_code_permanent`, even as the table owner.
-- [ ] Updating `name`, `icon` or `sort_order` as the table owner still works.
+- [x] Updating a row's `code` fails with `cuisine_code_permanent`, even as the table owner (migration role).
+- [x] Deleting any row fails with `cuisine_code_permanent`, even as the table owner.
+- [x] Updating `name`, `icon` or `sort_order` as the table owner still works.
 
 **Security (pgTAP)**
-- [ ] RLS is enabled on `cuisines` (also covered by `00_rls_enabled`).
-- [ ] `anon` and `authenticated` both hold exactly `SELECT` on `cuisines` and no column privileges beyond that.
-- [ ] An outsider (anon) can read all rows but cannot insert, update or delete any cuisine (42501).
-- [ ] A signed-in user cannot insert, update or delete any cuisine (42501).
-- [ ] `anon` and `authenticated` cannot execute `public.cuisines_guard()`.
-- [ ] The 03 allowlist test passes with `cuisines` allowlisted, and still fails for any other table granted to anon.
-- [ ] `00_rls_enabled`, `02-auth-and-profiles` and `03-navigation-shell` still pass.
+- [x] RLS is enabled on `cuisines` (also covered by `00_rls_enabled`).
+- [x] `anon` and `authenticated` both hold exactly `SELECT` on `cuisines` and no column privileges beyond that.
+- [x] An outsider (anon) can read all rows but cannot insert, update or delete any cuisine (42501).
+- [x] A signed-in user cannot insert, update or delete any cuisine (42501).
+- [x] `anon` and `authenticated` cannot execute `public.cuisines_guard()`.
+- [x] The 03 allowlist test passes with `cuisines` allowlisted, and still fails for any other table granted to anon.
+- [x] `00_rls_enabled`, `02-auth-and-profiles` and `03-navigation-shell` still pass.
 
 **App**
-- [ ] `useCuisines()` exposes loading, error (with `refetch` for retry) and success, and doesn't refetch on remount within a launch (`staleTime: Infinity`).
-- [ ] `useCuisine('IT')` returns Italy from the cached list without a second request. `useCuisine('XX')` and `useCuisine(null)` return `undefined`.
-- [ ] A neutral row with an unknown icon name parses with the fallback icon. A malformed row (e.g. a country with no flag) makes `listCuisines` throw `CuisineAppError('invalid_data')`.
-- [ ] Network and Postgres errors map to `CuisineAppError` codes.
+- [x] `useCuisines()` exposes loading, error (with `refetch` for retry) and success, and doesn't refetch on remount within a launch (`staleTime: Infinity`).
+- [x] `useCuisine('IT')` returns Italy from the cached list without a second request. `useCuisine('XX')` and `useCuisine(null)` return `undefined`.
+- [x] A neutral row with an unknown icon name parses with the fallback icon. A malformed row (e.g. a country with no flag) makes `listCuisines` throw `CuisineAppError('invalid_data')`.
+- [x] Network and Postgres errors map to `CuisineAppError` codes.
 
 **Quality**
-- [ ] `src/types/database.ts` is regenerated and includes `cuisines`.
-- [ ] The supabase-patterns skill and the CLAUDE.md feature-folder list are updated.
-- [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` all pass.
+- [x] `src/types/database.ts` is regenerated and includes `cuisines`.
+- [x] The supabase-patterns skill and the CLAUDE.md feature-folder list are updated.
+- [x] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` all pass.
 
 ## Test plan
 **Unit tests (jest)** — RNTL v14 calls (`renderHook`, `act`) are awaited.

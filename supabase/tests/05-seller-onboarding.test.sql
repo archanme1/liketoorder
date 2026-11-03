@@ -1,7 +1,7 @@
 -- Spec 05: seller onboarding — businesses, business_locations, places_rate_limits,
 -- column grants, function privileges, homemade approximate location and Places quota.
 begin;
-select plan(165);
+select plan(166);
 
 -- ── Fixtures (as postgres) ──────────────────────────────────────────────────
 -- 0501 A  restaurant, listed, with location (the public one)
@@ -415,6 +415,11 @@ select throws_ok(
 select lives_ok(
   $$ update public.businesses set name = repeat('b', 60) where id = '00000000-0000-0000-0000-0000000005e1' $$,
   'owner update accepts a 60-character name');
+-- An update that matched no rows would also "live"; prove the row actually changed.
+select is(
+  (select name from public.businesses where id = '00000000-0000-0000-0000-0000000005e1'),
+  repeat('b', 60),
+  'owner update stores the 60-character name');
 
 -- ── set_seller_mode ─────────────────────────────────────────────────────────
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000502","role":"authenticated"}';

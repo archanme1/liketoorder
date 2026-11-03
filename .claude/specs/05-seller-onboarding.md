@@ -453,8 +453,8 @@ Each group is tagged with the PR that ticks it (Decision 18). When PR 1 ships, o
 **Quality — PR 1**
 - [x] `src/types/database.ts` is regenerated and includes `businesses`, `business_locations`, `places_rate_limits` and the new functions.
 - [x] The supabase-patterns skill is updated (core tables, homemade shift, Edge Function pattern). v1.md §16 has the function-privileges item closed.
-- [ ] The CI workflow runs the Deno tests, lint and check for `supabase/functions/` and is green on the PR 1 run. No step references `PLACES_API_KEY`.
-- [ ] `npm run lint`, `npm run typecheck`, `npm test` (existing suites), `npm run test:functions` and `npx supabase test db` all pass, in CI too.
+- [x] The CI workflow runs the Deno tests, lint and check for `supabase/functions/` and is green on the PR 1 run. No step references `PLACES_API_KEY`.
+- [x] `npm run lint`, `npm run typecheck`, `npm test` (existing suites), `npm run test:functions` and `npx supabase test db` all pass, in CI too.
 - [x] CLAUDE.md row 05 and this spec's status are 🚧 In progress, with only the PR 1 items ticked.
 
 **Quality — PR 2**

@@ -3,7 +3,7 @@
 **Branch:** `feature/cuisine-catalog`
 **Product spec:** `docs/product/v1.md` §5 Onboarding step 3, §6 (flag markers, neutral icon fallback), §11 Food log uploads (required country/cuisine) and Cuisine view, §14 row 04
 **Plan mode:** required — adds a table, RLS policies, anon grants and a guard trigger (schema + RLS change).
-**Status:** 📝 Spec written
+**Status:** 🚧 In progress
 
 ## Overview
 After this ships, the database holds one read-only list of 200 cuisines: 197 countries (all 193 UN member states plus Taiwan, Palestine, Hong Kong and Puerto Rico), each with an emoji flag, plus 3 neutral cuisines (Street food, Fusion, Other) that show an Ionicons icon instead of a flag. Guests and signed-in users can read the list. Nobody can change it from the app; only migrations change it, and a cuisine's code can never be renamed or reused. The app gets `listCuisines()` in a new `src/features/cuisines/api.ts` and two react-query hooks. There are no screens. This comes now because seller onboarding (05) and food-log uploads (13) both need a cuisine picker, and the maps (07, 08) and the grid's cuisine view (15) all show the same flags.
@@ -186,6 +186,7 @@ No UI components. Spec 05 adds the shared cuisine display component (Decision 9)
 - `src/types/database.ts` — regenerate with `npm run db:types`. Never edit it by hand.
 - `.claude/skills/supabase-patterns/SKILL.md` — make the core-tables line for `cuisines` match this spec: `code` PK (permanent), `kind`, `name`, generated `flag`, `icon`, `sort_order`. Rename `cuisine_id` to `cuisine_code` in the `businesses` and `food_logs` lines and in the api / activity-grid examples. Add a short "Read-only lookup tables" note: revoke all, grant select to anon + authenticated, a `using (true)` select policy, no write policies, an allowlist entry in the 03 test, and a guard trigger for permanent keys.
 - `CLAUDE.md` — add `cuisines` to the feature-folder list under Architecture, and set status row 04.
+- `docs/product/v1.md` — add a changelog line for spec 04, and a §16 carried-forward line for the spec 03 VoiceOver check on a real iOS device (added during implementation, approved 2026-11-03).
 
 ## New dependencies
 No new dependencies. `@expo/vector-icons` (Ionicons) is already installed from spec 03.

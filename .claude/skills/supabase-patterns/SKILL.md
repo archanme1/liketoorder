@@ -11,8 +11,9 @@ description: LikeToOrder's Supabase conventions — migrations, RLS policy templ
 ## Core tables (logical model — created across specs)
 - `profiles` (id = auth.users.id, username unique, display_name, bio, avatar_path, city, is_seller, is_admin)
 - `cuisines` (code PK — permanent: ISO alpha-2 `IT` or kebab slug `street-food`; kind `country|neutral`; name (`en-x-icu`); generated `flag`; icon (neutral only); sort_order) — read-only to clients (spec 04)
-- `businesses` (id, owner_id → profiles, type `restaurant|homemade`, name, cuisine_code, accepts_tables bool, lat/lng for restaurants, approx_lat/approx_lng for homemade, status)
-- `business_private_addresses` (business_id PK, full_address, lat, lng) — homemade exact location
+- `businesses` (id, owner_id → profiles unique, type `restaurant|homemade` fixed after creation, name, cuisine_code → cuisines, accepts_table_requests (restaurant only), map_lat/map_lng = public point (restaurant exact, homemade shifted), public_address (restaurant only), is_listed mirrors profiles.is_seller) — spec 05. Clients select only the public columns (not owner_id / is_listed) and update only name, cuisine_code, accepts_table_requests; everything else goes through functions.
+- `business_locations` (business_id PK, place_id, formatted_address, lat, lng, resolved_at) — exact location for every business; no client grants, read via `get_my_business()` (owner) and, from specs 09/10, an accepted-request function.
+- `places_rate_limits` (user_id, kind, window_kind, window_start, count) — per-user Places quota; only `consume_places_quota()` touches it.
 - `menu_items` (business_id, name, price_cents, photo_path, is_available) / `menu_photos`
 - `requests` (id, business_id, customer_id, kind `pickup|table`, status, pickup_at / reserved_at, party_size, items jsonb, note, idempotency_key unique, expires_at, arrived_at)
 - `food_logs` (id, author_id, photo_path, description, cuisine_code, is_public, created_at default now(), local_date date not null)
@@ -79,9 +80,9 @@ Expiry: a `pg_cron` job (or check-on-read) sets `expired` where `status='pending
 - Idempotency: `requests.idempotency_key uuid unique` generated client-side per submit attempt; insert with `on conflict do nothing` and return the existing row.
 
 ## Homemade approximate location
-Computed server-side in a trigger when the private address is saved: deterministic offset of 200–400 m (seeded by business id) then rounded to 3 decimals; written to `businesses.approx_lat/approx_lng`. Never derive in the app.
+Computed in SQL inside `set_business_location()` (spec 05, Decisions 3 and 10): a random bearing and a random distance of 200–500 m (uniform over the ring's area), stored in `businesses.map_lat/map_lng`. The offset and random inputs are never stored. Re-rolled **only when `place_id` changes**: saving the same place again, or a Places coordinate refresh, keeps the point (re-rolling would let an observer average points back to the real one). Never compute, round or display an offset in the app.
 
-Exact address readable via function `get_pickup_address(request_id)` that returns it only when the caller is the customer on an **accepted** request (or the owner).
+Exact address: the owner reads it through `get_my_business()`. Specs 09/10 add a function (e.g. `get_pickup_address(request_id)`) that returns it only to the customer on an **accepted** request.
 
 ## Storage
 | Bucket | Public? | Path | Notes |
@@ -92,7 +93,13 @@ Exact address readable via function `get_pickup_address(request_id)` that return
 Policy pattern: `(storage.foldername(name))[1] = (select auth.uid())::text`. Resize to max 1600px / JPEG 0.8 before upload (expo-image-manipulator).
 
 ## Edge Functions
-- `places-autocomplete` / `places-resolve`: proxy the map provider with the secret key; verify JWT; validate with zod; return `{ formatted_address, lat, lng }`.
+- **Pattern:** `index.ts` only reads env and wires real dependencies into a pure `handler.ts` (`createHandler(deps)`); Deno tests inject fakes (`getUser`, quota, Google client, DB calls) and never reach the network. Shared code in `supabase/functions/_shared/`.
+- **Auth:** `verify_jwt = true` in `config.toml` is not enough (the anon key is a valid JWT); every function calls `requireUser(req)` → `supabase.auth.getUser(jwt)` and returns 401 without a user.
+- **Owner from the JWT, never the body.** Service-role DB calls take the verified user id.
+- **Rate limit:** `consume_places_quota(user_id, kind)` (service role) before any paid upstream call; false → 429.
+- `places-autocomplete`: `{ input, sessionToken }` → `{ suggestions: { placeId, primaryText, secondaryText }[] }` (max 5).
+- `places-resolve`: `{ placeId, sessionToken }` → Place Details (field mask `id,formattedAddress,location`) → `set_business_location(user.id, …)` → returns the owner view (same shape as `get_my_business()`). The client never sends coordinates or an address string.
+- Errors are `{ error: { code } }`; upstream bodies are never echoed. Log status, function name and latency only.
 - `send-push`: triggered by DB webhook on request status change.
 Secrets via `npx supabase secrets set` — never in `EXPO_PUBLIC_*`.
 

@@ -5,7 +5,7 @@
 - PR 2 (Gates C + D + manual run: the app): `feature/seller-onboarding-app`, created from `main` after PR 1 is merged
 **Product spec:** `docs/product/v1.md` §2 (Seller mode + Manage Business tab), §4 (seller mode is a switch on the same account), §5 Onboarding and Homemade specifics, §3 (out of scope), §14 row 05, §16 (function privileges)
 **Plan mode:** required — adds tables, RLS, column grants and callable functions; adds the first two Edge Functions; adds dependencies (`expo-crypto`, Deno in CI); changes navigation (new routes, Manage tab content); touches well over ~5 files.
-**Status:** 📝 Spec written
+**Status:** 🚧 In progress
 
 ## Overview
 After this ships, any signed-in user with a complete profile can turn on **seller mode** from the Profile tab. They pick **Restaurant** or **Homemade** and enter a business name. They pick one **cuisine** from the spec 04 list and choose an **address** from Google Places autocomplete. Restaurants also choose whether they **accept table requests**. The listing goes live straight away, with no approval step. The Manage tab replaces the spec 03 placeholder with **Manage Business**, a summary of the listing where the seller can edit the name, cuisine, address and table setting, and switch seller mode off.

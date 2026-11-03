@@ -23,7 +23,53 @@ export type Database = {
           }
         },"public": {
           Tables: {
-            "cuisines": {
+            "business_locations": {
+                  Row: {
+                    "business_id": string,"formatted_address": string,"lat": number,"lng": number,"place_id": string,"resolved_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "business_id": string,"formatted_address": string,"lat": number,"lng": number,"place_id": string,"resolved_at"?: string
+                  }
+                  Update: {
+                    "business_id"?: string,"formatted_address"?: string,"lat"?: number,"lng"?: number,"place_id"?: string,"resolved_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "business_locations_business_id_fkey"
+      columns: ["business_id"]
+isOneToOne: true
+      referencedRelation: "businesses"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"businesses": {
+                  Row: {
+                    "accepts_table_requests": boolean,"created_at": string,"cuisine_code": string,"id": string,"is_listed": boolean,"map_lat": number | null,"map_lng": number | null,"name": string,"owner_id": string,"public_address": string | null,"type": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "accepts_table_requests"?: boolean,"created_at"?: string,"cuisine_code": string,"id"?: string,"is_listed"?: boolean,"map_lat"?: number | null,"map_lng"?: number | null,"name": string,"owner_id": string,"public_address"?: string | null,"type": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "accepts_table_requests"?: boolean,"created_at"?: string,"cuisine_code"?: string,"id"?: string,"is_listed"?: boolean,"map_lat"?: number | null,"map_lng"?: number | null,"name"?: string,"owner_id"?: string,"public_address"?: string | null,"type"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "businesses_cuisine_code_fkey"
+      columns: ["cuisine_code"]
+isOneToOne: false
+      referencedRelation: "cuisines"
+      referencedColumns: ["code"]
+    },{
+      foreignKeyName: "businesses_owner_id_fkey"
+      columns: ["owner_id"]
+isOneToOne: true
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"cuisines": {
                   Row: {
                     "code": string,"flag": string | null,"icon": string | null,"kind": string,"name": string,"sort_order": number
                   }
@@ -33,6 +79,20 @@ export type Database = {
                   }
                   Update: {
                     "code"?: string,"flag"?: never,"icon"?: string | null,"kind"?: string,"name"?: string,"sort_order"?: number
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"places_rate_limits": {
+                  Row: {
+                    "count": number,"kind": string,"user_id": string,"window_kind": string,"window_start": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "count"?: number,"kind": string,"user_id": string,"window_kind": string,"window_start": string
+                  }
+                  Update: {
+                    "count"?: number,"kind"?: string,"user_id"?: string,"window_kind"?: string,"window_start"?: string
                   }
                   Relationships: [
                     
@@ -57,7 +117,24 @@ export type Database = {
             [_ in never]: never
           }
           Functions: {
-            [_ in never]: never
+            "business_owner_view":
+{ Args: { "p_owner_id": string }; Returns: Json
+                           },
+"consume_places_quota":
+{ Args: { "p_kind": string,"p_user_id": string }; Returns: boolean
+                           },
+"create_my_business":
+{ Args: { "p_accepts_table_requests"?: boolean,"p_cuisine_code": string,"p_name": string,"p_type": string }; Returns: string
+                           },
+"get_my_business":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"set_business_location":
+{ Args: { "p_formatted_address": string,"p_lat": number,"p_lng": number,"p_owner_id": string,"p_place_id": string }; Returns: Json
+                           },
+"set_seller_mode":
+{ Args: { "p_on": boolean }; Returns: undefined
+                           }
           }
           Enums: {
             [_ in never]: never

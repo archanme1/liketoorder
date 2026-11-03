@@ -144,6 +144,7 @@ No new api functions; `is_seller` already comes back from `getMyProfile()`.
 ## New dependencies
 Install with `npx expo install`.
 - `@expo/vector-icons` — tab bar icons (Ionicons: restaurant, home, person, storefront). Already part of the Expo SDK; it is not in `package.json` today, so importing it needs an explicit dependency (Decision 4).
+- `expo-font` and `expo-asset` — required peers of `@expo/vector-icons` (it loads its icon font through `expo-font`, which needs `expo-asset`). Without them at the top level, both Metro and jest fail to resolve `expo-asset`.
 
 ## Rules for implementation
 Always include:
@@ -263,3 +264,5 @@ This works only against local Supabase; it uses Studio's admin access, not the a
 12. **Headers:** tab headers are off; each screen renders its own `h1` (like `AuthScreen`). Sign-in / sign-up get a "Close" control (label "Close and keep browsing") via `AuthScreen`'s `onClose`.
 13. **Tokens:** only `size.tabIcon` added; tab colors use existing `primary`, `textMuted`, `surface`, `border`.
 14. **Tab role on iOS:** the bundled bottom tab bar reports role "button" on iOS (library FIXME) but announces "selected"; accepted for now.
+15. **Profile load after sign-in (found in testing):** the root layout blocks with a full-screen loader only on cold start. After sign-in or a password reset it keeps the Stack mounted under a loading overlay, because unmounting it dropped the navigation state and landed on `/restaurants` instead of `/profile`.
+16. **Reset navigation callbacks (found in testing):** `useUpdatePassword` / `useSignOut` take a hook-level `onSuccess`; per-`mutate()` callbacks were dropped when clearing `isRecovering` unmounted the new-password step.

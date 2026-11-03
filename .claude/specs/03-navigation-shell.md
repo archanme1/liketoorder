@@ -266,3 +266,4 @@ This works only against local Supabase; it uses Studio's admin access, not the a
 14. **Tab role on iOS:** the bundled bottom tab bar reports role "button" on iOS (library FIXME) but announces "selected"; accepted for now.
 15. **Profile load after sign-in (found in testing):** the root layout blocks with a full-screen loader only on cold start. After sign-in or a password reset it keeps the Stack mounted under a loading overlay, because unmounting it dropped the navigation state and landed on `/restaurants` instead of `/profile`.
 16. **Reset navigation callbacks (found in testing):** `useUpdatePassword` / `useSignOut` take a hook-level `onSuccess`; per-`mutate()` callbacks were dropped when clearing `isRecovering` unmounted the new-password step.
+17. **Known, accepted limitation:** opening `/profile?notice=password-updated` by hand shows a harmless cosmetic "Password updated" banner; no code change.

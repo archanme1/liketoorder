@@ -502,7 +502,7 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - [x] `get_my_business()` includes `currency_code`.
 - [x] 03 ALLOWLIST updated; `02`–`05` tests still pass.
 - [x] `src/types/database.ts` is regenerated. The supabase-patterns skill and CLAUDE.md storage wording are updated.
-- [ ] `npx supabase test db` passes locally and in CI (with Storage started in CI if needed).
+- [x] `npx supabase test db` passes locally and in CI (with Storage started in CI if needed).
 
 **Shared media (jest) — PR 2**
 - [ ] `assertNoHiddenMetadata` rejects the EXIF-GPS fixture, the XMP-GPS fixture, an APP13 segment, a COM segment and non-JPEG bytes. It accepts the clean fixture and JFIF + ICC + Adobe segments.

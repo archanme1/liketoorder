@@ -39,6 +39,12 @@ jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
   getMyBusiness: jest.fn(),
 }));
+// The Menu and Photos rows load their own summary (spec 06). Mocked so that query can't fail
+// late against the supabase mock and change the screen mid-test (the PR #8 lesson).
+jest.mock('@/features/menu/api', () => ({
+  ...jest.requireActual('@/features/menu/api'),
+  getMenu: jest.fn(async () => ({ items: [], photos: [] })),
+}));
 
 const auth = supabase.auth as unknown as Record<string, jest.Mock>;
 const mockedGetBusiness = getMyBusiness as unknown as jest.Mock;
@@ -67,6 +73,7 @@ const restaurant: MyBusiness = {
   map_lng: -79.38,
   public_address: '1 Main St, Toronto, ON',
   is_listed: true,
+  currency_code: null,
   created_at: '2026-11-01T00:00:00Z',
   updated_at: '2026-11-01T00:00:00Z',
   location: { formatted_address: '1 Main St, Toronto, ON', lat: 43.65, lng: -79.38 },

@@ -59,6 +59,8 @@ export const myBusinessSchema = z.object({
   map_lng: z.number().nullable(),
   public_address: z.string().nullable(),
   is_listed: z.boolean(),
+  /** The menu currency (spec 06); null until the seller first needs a price. */
+  currency_code: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
   location: z

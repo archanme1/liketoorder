@@ -7,12 +7,13 @@ import { useIsSeller } from '@/features/navigation/hooks/useIsSeller';
 import { useMyBusiness } from '../hooks/useMyBusiness';
 import { sellerErrorMessage } from '../messages';
 import type { MyBusiness } from '../schema';
-import { getSellerRoute } from '../sellerRoutes';
+import { getSellerRoute, type SellerScreen } from '../sellerRoutes';
 
 import { SellerLoading } from './SellerLoading';
 
 type SellerScreenGateProps = {
-  screen: 'edit' | 'address';
+  /** Every screen that needs a business (seller mode on or off), so not onboarding. */
+  screen: Exclude<SellerScreen, 'onboarding'>;
   children: (business: MyBusiness) => ReactNode;
 };
 

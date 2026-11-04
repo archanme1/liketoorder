@@ -44,6 +44,13 @@ jest.mock('@/lib/supabase', () => ({
   },
 }));
 
+// Manage Business's Menu and Photos rows load their own summary (spec 06). Mocked so that query
+// can't fail late against the supabase mock and change the screen mid-test (the PR #8 lesson).
+jest.mock('@/features/menu/api', () => ({
+  ...jest.requireActual('@/features/menu/api'),
+  getMenu: jest.fn(async () => ({ items: [], photos: [] })),
+}));
+
 const mocked = supabase as unknown as {
   auth: { getSession: jest.Mock };
   from: jest.Mock;
@@ -73,6 +80,7 @@ const businessView = {
   map_lng: -79.38,
   public_address: '1 Main St, Toronto, ON',
   is_listed: true,
+  currency_code: null,
   created_at: '2026-11-01T00:00:00Z',
   updated_at: '2026-11-01T00:00:00Z',
   location: { formatted_address: '1 Main St, Toronto, ON', lat: 43.65, lng: -79.38 },

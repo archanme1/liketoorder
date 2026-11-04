@@ -72,6 +72,7 @@ const restaurant: MyBusiness = {
   map_lng: -79.38,
   public_address: '1 Main St',
   is_listed: true,
+  currency_code: null,
   created_at: '2026-11-01T00:00:00Z',
   updated_at: '2026-11-01T00:00:00Z',
   location: { formatted_address: '1 Main St, Toronto, ON', lat: 43.65, lng: -79.38 },

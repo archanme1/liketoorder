@@ -463,7 +463,7 @@ Each group is tagged with the PR that ticks it (Decision 18). When PR 1 ships, o
 - [x] "Powered by Google" is shown with the suggestions.
 - [x] No hardcoded colors or sizes outside tokens.
 - [ ] The manual device run is done (Test plan), with Archan's key. *(Partly done 2026-11-03: restaurant and homemade onboarding, cuisine search, autocomplete, seller mode off/on, Studio look at the homemade point. Not manually checked: Google usage after fast typing, flag/icon rendering, VoiceOver/TalkBack, leave-after-step-1 flow; carried to v1.md §16.)*
-- [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:functions` and `npx supabase test db` all pass, in CI too.
+- [x] `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:functions` and `npx supabase test db` all pass, in CI too.
 - [x] CLAUDE.md row 05 and this spec's status are ✅ Shipped, and the v1.md changelog has a spec 05 shipped line.
 
 ## Test plan

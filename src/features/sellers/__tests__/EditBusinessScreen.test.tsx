@@ -90,23 +90,13 @@ const cuisines = [
   { code: 'FR', kind: 'country', name: 'France', flag: '🇫🇷', icon: null, sort_order: 120 },
 ];
 
-type Element = ReturnType<typeof screen.getByRole>;
-
-function isOn(el: Element): boolean {
-  try {
-    expect(el).toBeChecked();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// A switch may be a bare Switch (valueChange) or wrapped in a pressable; try the value change first.
+// A user's flip of an RN Switch fires onValueChange; a Switch has no press handler. The form
+// field drives the switch, so it must show the new value afterwards.
 async function setSwitch(next: boolean) {
   const get = () => screen.getByRole('switch', { name: 'Accept table requests' });
-  if (isOn(get()) === next) return;
   await fireEvent(get(), 'valueChange', next);
-  if (isOn(get()) !== next) await fireEvent.press(get());
+  if (next) expect(get()).toBeChecked();
+  else expect(get()).not.toBeChecked();
 }
 
 async function renderScreen() {
@@ -309,18 +299,72 @@ describe('EditBusinessScreen saving', () => {
     await fireEvent.changeText(name, 'Renamed');
     await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByText(sellerErrorMessage('invalid_input'))).toBeTruthy();
+    expect(mockRouter.back).not.toHaveBeenCalled();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+    expect(mockRouter.push).not.toHaveBeenCalled();
   });
+});
 
-  it('Cancel leaves without saving', async () => {
+// Leaving Edit: back to the screen that opened it, or replace with /manage when there is nothing
+// to go back to (a deep link). A UX choice; the spec doesn't fix the navigation method.
+describe('EditBusinessScreen leaving', () => {
+  function expectBackOnly() {
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+    expect(mockRouter.push).not.toHaveBeenCalled();
+  }
+
+  function expectReplaceManageOnly() {
+    expect(mockRouter.replace).toHaveBeenCalledTimes(1);
+    expect(mockRouter.replace).toHaveBeenCalledWith('/manage');
+    expect(mockRouter.back).not.toHaveBeenCalled();
+    expect(mockRouter.push).not.toHaveBeenCalled();
+  }
+
+  it('Cancel goes back without saving', async () => {
     await renderScreen();
     const name = await screen.findByLabelText('Business name');
     await fireEvent.changeText(name, 'Changed but cancelled');
     await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
     expect(mockedUpdate).not.toHaveBeenCalled();
-    const left =
-      mockRouter.back.mock.calls.length +
-      mockRouter.replace.mock.calls.length +
-      mockRouter.push.mock.calls.length;
-    expect(left).toBeGreaterThan(0);
+    expectBackOnly();
+  });
+
+  it('Cancel replaces with /manage when there is no screen to go back to', async () => {
+    mockRouter.canGoBack.mockReturnValue(false);
+    try {
+      await renderScreen();
+      await screen.findByLabelText('Business name');
+      await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+      expect(mockedUpdate).not.toHaveBeenCalled();
+      expectReplaceManageOnly();
+    } finally {
+      mockRouter.canGoBack.mockReturnValue(true);
+    }
+  });
+
+  it('a successful Save goes back', async () => {
+    await renderScreen();
+    const name = await screen.findByLabelText('Business name');
+    await fireEvent.changeText(name, 'Renamed');
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockRouter.back).toHaveBeenCalledTimes(1));
+    expect(mockedUpdate).toHaveBeenCalledTimes(1);
+    expectBackOnly();
+  });
+
+  it('a successful Save replaces with /manage when there is no screen to go back to', async () => {
+    mockRouter.canGoBack.mockReturnValue(false);
+    try {
+      await renderScreen();
+      const name = await screen.findByLabelText('Business name');
+      await fireEvent.changeText(name, 'Renamed');
+      await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(mockRouter.replace).toHaveBeenCalled());
+      expect(mockedUpdate).toHaveBeenCalledTimes(1);
+      expectReplaceManageOnly();
+    } finally {
+      mockRouter.canGoBack.mockReturnValue(true);
+    }
   });
 });

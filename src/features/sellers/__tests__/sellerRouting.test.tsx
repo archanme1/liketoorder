@@ -335,10 +335,8 @@ describe('seller route guards (Decision 14)', () => {
       expect(await screen.findByLabelText('Manage tab')).toBeTruthy();
       const sw = await screen.findByRole('switch', { name: 'Seller mode' });
 
+      // A user's flip of an RN Switch fires onValueChange; a Switch has no press handler.
       await fireEvent(sw, 'valueChange', false);
-      if (!mocked.rpc.mock.calls.some((call: unknown[]) => call[0] === 'set_seller_mode')) {
-        await fireEvent.press(screen.getByRole('switch', { name: 'Seller mode' }));
-      }
 
       await waitFor(() =>
         expect(mocked.rpc).toHaveBeenCalledWith('set_seller_mode', { p_on: false }),

@@ -83,10 +83,12 @@ const homemade: MyBusiness = {
   location: { formatted_address: '9 Elm Rd, Toronto, ON', lat: 43.65, lng: -79.38 },
 };
 
-function navigatedTo(path: string) {
-  return [...mockRouter.push.mock.calls, ...mockRouter.replace.mock.calls].some(
-    (call: unknown[]) => call[0] === path,
-  );
+// Manage opens seller screens with push, so Back returns to Manage. A UX choice; the spec fixes
+// only the destination.
+function expectPushedOnly(path: string) {
+  expect(mockRouter.push).toHaveBeenCalledTimes(1);
+  expect(mockRouter.push).toHaveBeenCalledWith(path);
+  expect(mockRouter.replace).not.toHaveBeenCalled();
 }
 
 async function renderScreen() {
@@ -148,7 +150,7 @@ describe('ManageBusinessScreen states', () => {
     await renderScreen();
     expect(await screen.findByText('You don’t have a business yet.')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Start selling' }));
-    expect(navigatedTo('/seller/onboarding')).toBe(true);
+    expectPushedOnly('/seller/onboarding');
   });
 
   it('shows the business on success under a Manage Business header', async () => {
@@ -237,7 +239,7 @@ describe('ManageBusinessScreen listing status', () => {
     });
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: 'Add address' }));
-    expect(navigatedTo('/seller/address')).toBe(true);
+    expectPushedOnly('/seller/address');
   });
 
   it('does not offer Add address when an address exists', async () => {
@@ -251,12 +253,12 @@ describe('ManageBusinessScreen actions', () => {
   it('Edit details opens the edit screen', async () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: 'Edit details' }));
-    expect(navigatedTo('/seller/edit')).toBe(true);
+    expectPushedOnly('/seller/edit');
   });
 
   it('Change address opens the address screen', async () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: 'Change address' }));
-    expect(navigatedTo('/seller/address')).toBe(true);
+    expectPushedOnly('/seller/address');
   });
 });

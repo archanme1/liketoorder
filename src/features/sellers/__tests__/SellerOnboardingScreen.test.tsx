@@ -110,24 +110,16 @@ const cuisines = [
 let business: MyBusiness | null;
 let profile: profileApi.Profile;
 
-type Element = ReturnType<typeof screen.getByRole>;
-
-function isOn(el: Element): boolean {
-  try {
-    expect(el).toBeChecked();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
+// A user's flip of an RN Switch fires onValueChange; a Switch has no press handler. The form
+// field drives the switch, so it must show the new value afterwards.
 async function setTables(next: boolean) {
   const get = () => screen.getByRole('switch', { name: 'Accept table requests' });
-  if (isOn(get()) === next) return;
   await fireEvent(get(), 'valueChange', next);
-  if (isOn(get()) !== next) await fireEvent.press(get());
+  if (next) expect(get()).toBeChecked();
+  else expect(get()).not.toBeChecked();
 }
 
+// Only used for "has not navigated" checks; positive checks pin the exact method.
 function navigatedTo(path: string) {
   return [...mockRouter.push.mock.calls, ...mockRouter.replace.mock.calls].some(
     (call: unknown[]) => call[0] === path,
@@ -257,8 +249,7 @@ describe('SellerOnboardingScreen step 1', () => {
   it('shows the table-requests switch only for Restaurant, off by default', async () => {
     await renderScreen();
     await pickType('Restaurant');
-    const sw = await screen.findByRole('switch', { name: 'Accept table requests' });
-    expect(isOn(sw)).toBe(false);
+    expect(await screen.findByRole('switch', { name: 'Accept table requests' })).not.toBeChecked();
 
     await pickType('Homemade');
     expect(screen.queryByRole('switch', { name: 'Accept table requests' })).toBeNull();
@@ -338,7 +329,21 @@ describe('SellerOnboardingScreen step 1', () => {
     expect(await screen.findByText(sellerErrorMessage('already_has_business'))).toBeTruthy();
     expect(screen.queryByText('Step 2 of 2')).toBeNull();
     await fireEvent.press(screen.getByRole('button', { name: 'Go to Manage Business' }));
-    expect(navigatedTo('/manage')).toBe(true);
+    expect(mockRouter.replace).toHaveBeenCalledWith('/manage');
+  });
+
+  it('Go to Manage Business replaces the route with /manage and does not push', async () => {
+    // push vs replace is a UX choice the spec doesn't fix. We use replace so that Back does not
+    // reopen onboarding for a user who already has a business.
+    mockedCreate.mockRejectedValue(new SellerAppError('already_has_business'));
+    await renderScreen();
+    await fillStep1('Restaurant', "Joe's Pizza");
+    await fireEvent.press(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText(sellerErrorMessage('already_has_business'))).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Go to Manage Business' }));
+    expect(mockRouter.replace).toHaveBeenCalledWith('/manage');
+    expect(mockRouter.push).not.toHaveBeenCalled();
   });
 
   it('shows other create errors and stays on step 1', async () => {
@@ -403,7 +408,11 @@ describe('SellerOnboardingScreen step 2', () => {
     expect(navigatedTo('/manage')).toBe(false);
     await fireEvent.press(row);
 
+    // Replace, so Back doesn't reopen the finished wizard. A UX choice; the spec says only
+    // "On success → /manage".
     await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/manage'));
+    expect(mockRouter.replace).toHaveBeenCalledTimes(1);
+    expect(mockRouter.push).not.toHaveBeenCalled();
     expect(mockedResolve).toHaveBeenCalledTimes(1);
     expect(mockedResolve.mock.calls[0][0]).toBe('p1');
   });

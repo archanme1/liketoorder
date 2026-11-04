@@ -64,23 +64,9 @@ const listed: MyBusiness = {
   location: { formatted_address: '1 Main St, Toronto, ON', lat: 43.65, lng: -79.38 },
 };
 
-type Element = ReturnType<typeof screen.getByRole>;
-
-function isOn(el: Element): boolean {
-  try {
-    expect(el).toBeChecked();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// A switch may be a bare Switch (valueChange) or wrapped in a pressable. The state only follows the
-// server, so decide whether the first attempt fired by looking at the mutation, not the checked state.
+// A user's flip of an RN Switch fires onValueChange; a Switch has no press handler.
 async function flipSeller(next: boolean) {
-  const get = () => screen.getByRole('switch', { name: 'Seller mode' });
-  await fireEvent(get(), 'valueChange', next);
-  if (mockedSetMode.mock.calls.length === 0) await fireEvent.press(get());
+  await fireEvent(screen.getByRole('switch', { name: 'Seller mode' }), 'valueChange', next);
 }
 
 async function renderRow() {
@@ -125,10 +111,9 @@ describe('SellerModeRow', () => {
     const start = await screen.findByRole('button', { name: 'Start selling' });
     expect(screen.queryByRole('switch')).toBeNull();
     await fireEvent.press(start);
-    const targets = [...mockRouter.push.mock.calls, ...mockRouter.replace.mock.calls].map(
-      (call: unknown[]) => call[0],
-    );
-    expect(targets).toContain('/seller/onboarding');
+    // Push, so Back returns to Profile. A UX choice; the spec fixes only the destination.
+    expect(mockRouter.push).toHaveBeenCalledWith('/seller/onboarding');
+    expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 
   it('shows a Seller mode switch when a business exists, with no Start selling button', async () => {
@@ -145,8 +130,7 @@ describe('SellerModeRow', () => {
   it('shows the switch off when seller mode is off', async () => {
     mockedGetBusiness.mockResolvedValue({ ...listed, is_listed: false });
     await renderRow();
-    const sw = await screen.findByRole('switch', { name: 'Seller mode' });
-    expect(isOn(sw)).toBe(false);
+    expect(await screen.findByRole('switch', { name: 'Seller mode' })).not.toBeChecked();
   });
 
   it('turning it off calls set_seller_mode(false)', async () => {

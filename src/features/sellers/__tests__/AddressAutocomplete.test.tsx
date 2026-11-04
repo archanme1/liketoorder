@@ -257,6 +257,33 @@ describe('AddressAutocomplete picking a suggestion', () => {
     expect(onResolved).not.toHaveBeenCalled();
   });
 
+  // Code review Info 2: the details call ends Google's billed session even when the save fails,
+  // so the suggestions are fetched again under a new token, and later searches use it too.
+  it('starts a new session token after a failed save and keeps a list to pick from', async () => {
+    mockedResolve.mockRejectedValueOnce(new SellerAppError('not_a_place'));
+    const onResolved = await renderAddress();
+    await type('123 Main');
+    expect(mockedAutocomplete).toHaveBeenCalledTimes(1);
+    const first = mockedAutocomplete.mock.calls[0][1];
+    await fireEvent.press(screen.getByRole('button', { name: SUGGESTION_LABEL }));
+    await settle();
+
+    expect(screen.getByText(sellerErrorMessage('not_a_place'))).toBeTruthy();
+    expect(onResolved).not.toHaveBeenCalled();
+    expect(mockedAutocomplete).toHaveBeenCalledTimes(2);
+    const refreshed = mockedAutocomplete.mock.calls[1];
+    expect(refreshed[0]).toBe('123 Main');
+    expect(refreshed[1]).not.toBe(first);
+    expect(screen.getByRole('button', { name: SUGGESTION_LABEL })).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('button', { name: SUGGESTION_LABEL }));
+    await settle();
+    expect(mockedResolve).toHaveBeenCalledTimes(2);
+    expect(mockedResolve.mock.calls[0][1]).toBe(first);
+    expect(mockedResolve.mock.calls[1][1]).toBe(refreshed[1]);
+    expect(onResolved).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the rate-limited message when saving is rate limited', async () => {
     mockedResolve.mockRejectedValue(new SellerAppError('rate_limited'));
     const onResolved = await renderAddress();

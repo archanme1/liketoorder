@@ -44,8 +44,13 @@ export function usePlaceAutocomplete(text: string) {
     retry: false,
   });
 
-  const renewSession = useCallback(() => {
-    setSearch(null);
+  /**
+   * Starts a new billed session. By default the current suggestions are cleared (the address was
+   * saved and the screen moves on). With keepSearch, the current search re-runs under the new
+   * token, so the user still has a list to pick from (e.g. after a failed save).
+   */
+  const renewSession = useCallback(({ keepSearch = false }: { keepSearch?: boolean } = {}) => {
+    if (!keepSearch) setSearch(null);
     setSessionToken(randomUUID());
   }, []);
 

@@ -12,6 +12,8 @@ export function useResolvePlace() {
 
   return useMutation<MyBusiness, SellerAppError, ResolveInput>({
     mutationFn: ({ placeId, sessionToken }) => resolvePlace(placeId, sessionToken),
+    // Drop the finished mutation (and its place ID) from the cache as soon as nothing observes it.
+    gcTime: 0,
     onSuccess: (business) => {
       queryClient.setQueryData(myBusinessKey, business);
     },

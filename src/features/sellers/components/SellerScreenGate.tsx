@@ -34,7 +34,9 @@ export function SellerScreenGate({ screen, children }: SellerScreenGateProps) {
       />
     );
   }
+  // getSellerRoute is non-null exactly when there is no business for these screens.
   const redirect = getSellerRoute(business.data ?? null, isSeller, screen);
-  if (redirect || !business.data) return <Redirect href={redirect ?? '/seller/onboarding'} />;
+  if (redirect) return <Redirect href={redirect} />;
+  if (!business.data) return <Redirect href="/seller/onboarding" />;
   return children(business.data);
 }

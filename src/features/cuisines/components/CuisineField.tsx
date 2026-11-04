@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button, Screen, Text } from '@/components/ui';
@@ -25,6 +25,14 @@ export function CuisineField({ value, onChange, error, label = 'Cuisine' }: Cuis
   const [open, setOpen] = useState(false);
   const selected = useCuisine(value);
   const current = value ? (selected.data?.name ?? 'Selected') : 'Not chosen';
+  // Stable, so the picker's memoised rows don't all re-render when this field does.
+  const select = useCallback(
+    (code: string) => {
+      onChange(code);
+      setOpen(false);
+    },
+    [onChange],
+  );
 
   return (
     <View style={{ gap: space.xs }}>
@@ -83,13 +91,7 @@ export function CuisineField({ value, onChange, error, label = 'Cuisine' }: Cuis
                 onPress={() => setOpen(false)}
               />
             </View>
-            <CuisinePicker
-              value={value}
-              onChange={(code) => {
-                onChange(code);
-                setOpen(false);
-              }}
-            />
+            <CuisinePicker value={value} onChange={select} />
           </View>
         </Screen>
       </Modal>

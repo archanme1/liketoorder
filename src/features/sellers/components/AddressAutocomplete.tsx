@@ -33,10 +33,12 @@ export function AddressAutocomplete({ businessType, onResolved }: AddressAutocom
       { placeId: suggestion.placeId, sessionToken: places.sessionToken },
       {
         onSuccess: (business) => {
-          // The details call ends the billed session; the next search starts a new one.
           places.renewSession();
           onResolved(business);
         },
+        // The details call ends the billed session whether or not the save succeeds, so the
+        // next search always starts a new one. Keep the list so the user can pick another.
+        onError: () => places.renewSession({ keepSearch: true }),
       },
     );
   };

@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { memo, useCallback, useMemo, useState } from 'react';
+import { FlatList, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
 
 import { EmptyState, ErrorState, Skeleton, Text, TextField } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
@@ -34,6 +34,12 @@ export function CuisinePicker({ value, onChange }: CuisinePickerProps) {
     () => (cuisines.data ? filterCuisines(cuisines.data, query) : []),
     [cuisines.data, query],
   );
+  // Rows are memoised and get only stable props, so typing in the search box or changing the
+  // selection re-renders just the rows whose `checked` changed.
+  const renderItem = useCallback<ListRenderItem<Cuisine>>(
+    ({ item }) => <CuisineRow cuisine={item} checked={item.code === value} onSelect={onChange} />,
+    [value, onChange],
+  );
 
   let body;
   if (cuisines.isPending) {
@@ -56,16 +62,11 @@ export function CuisinePicker({ value, onChange }: CuisinePickerProps) {
     body = (
       <FlatList
         data={filtered}
-        keyExtractor={(cuisine) => cuisine.code}
+        extraData={value}
+        keyExtractor={keyExtractor}
         keyboardShouldPersistTaps="handled"
         accessibilityRole="radiogroup"
-        renderItem={({ item }) => (
-          <CuisineRow
-            cuisine={item}
-            checked={item.code === value}
-            onPress={() => onChange(item.code)}
-          />
-        )}
+        renderItem={renderItem}
         ListEmptyComponent={<EmptyState message="No cuisines match" />}
         contentContainerStyle={{ gap: space.xs, paddingBottom: space.xl }}
       />
@@ -88,14 +89,18 @@ export function CuisinePicker({ value, onChange }: CuisinePickerProps) {
   );
 }
 
-type CuisineRowProps = { cuisine: Cuisine; checked: boolean; onPress: () => void };
+function keyExtractor(cuisine: Cuisine): string {
+  return cuisine.code;
+}
+
+type CuisineRowProps = { cuisine: Cuisine; checked: boolean; onSelect: (code: string) => void };
 
 // Selection is shown by a check icon and a thicker border, not by color alone.
-function CuisineRow({ cuisine, checked, onPress }: CuisineRowProps) {
+const CuisineRow = memo(function CuisineRow({ cuisine, checked, onSelect }: CuisineRowProps) {
   const { colors, space, radius, size, type, weight, opacity, stroke } = useTheme();
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => onSelect(cuisine.code)}
       accessibilityRole="radio"
       accessibilityState={{ checked }}
       accessibilityLabel={cuisine.name}
@@ -124,7 +129,7 @@ function CuisineRow({ cuisine, checked, onPress }: CuisineRowProps) {
       />
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },

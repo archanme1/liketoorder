@@ -175,7 +175,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 02 | auth-and-profiles | ✅ Shipped | .claude/specs/02-auth-and-profiles.md |
 | 03 | navigation-shell | ✅ Shipped | .claude/specs/03-navigation-shell.md |
 | 04 | cuisine-catalog | ✅ Shipped | .claude/specs/04-cuisine-catalog.md |
-| 05 | seller-onboarding | 🚧 In progress | .claude/specs/05-seller-onboarding.md |
+| 05 | seller-onboarding | ✅ Shipped | .claude/specs/05-seller-onboarding.md |
 | 06 | menu-management | ⬜ Not started | — |
 | 07 | restaurant-map | ⬜ Not started | — |
 | 08 | homemade-map | ⬜ Not started | — |

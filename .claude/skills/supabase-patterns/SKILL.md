@@ -8,6 +8,9 @@ description: LikeToOrder's Supabase conventions — migrations, RLS policy templ
 ## Golden rules
 1. RLS on every table. 2. Ownership checked in SQL. 3. Status changes only via functions. 4. Migrations append-only. 5. Regenerate types after every migration (`npm run db:types`).
 
+## Local stack
+After editing anything in `supabase/templates/`, run `npx supabase stop` then `npx supabase start`: `db reset` does not refresh Kong's template mount, and a stale mount makes GoTrue silently send its default link email instead of our code template.
+
 ## Core tables (logical model — created across specs)
 - `profiles` (id = auth.users.id, username unique, display_name, bio, avatar_path, city, is_seller, is_admin)
 - `cuisines` (code PK — permanent: ISO alpha-2 `IT` or kebab slug `street-food`; kind `country|neutral`; name (`en-x-icu`); generated `flag`; icon (neutral only); sort_order) — read-only to clients (spec 04)

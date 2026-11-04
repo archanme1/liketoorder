@@ -43,16 +43,42 @@ isOneToOne: true
       referencedColumns: ["id"]
     }
                   ]
-                },"businesses": {
+                },"business_photos": {
                   Row: {
-                    "accepts_table_requests": boolean,"created_at": string,"cuisine_code": string,"id": string,"is_listed": boolean,"map_lat": number | null,"map_lng": number | null,"name": string,"owner_id": string,"public_address": string | null,"type": string,"updated_at": string
+                    "business_id": string,"created_at": string,"id": string,"kind": string,"menu_item_id": string | null,"path": string,"position": number | null,"status": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "accepts_table_requests"?: boolean,"created_at"?: string,"cuisine_code": string,"id"?: string,"is_listed"?: boolean,"map_lat"?: number | null,"map_lng"?: number | null,"name": string,"owner_id": string,"public_address"?: string | null,"type": string,"updated_at"?: string
+                    "business_id": string,"created_at"?: string,"id"?: string,"kind": string,"menu_item_id"?: string | null,"path": string,"position"?: number | null,"status"?: string
                   }
                   Update: {
-                    "accepts_table_requests"?: boolean,"created_at"?: string,"cuisine_code"?: string,"id"?: string,"is_listed"?: boolean,"map_lat"?: number | null,"map_lng"?: number | null,"name"?: string,"owner_id"?: string,"public_address"?: string | null,"type"?: string,"updated_at"?: string
+                    "business_id"?: string,"created_at"?: string,"id"?: string,"kind"?: string,"menu_item_id"?: string | null,"path"?: string,"position"?: number | null,"status"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "business_photos_business_id_fkey"
+      columns: ["business_id"]
+isOneToOne: false
+      referencedRelation: "businesses"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "business_photos_menu_item_id_fkey"
+      columns: ["menu_item_id"]
+isOneToOne: false
+      referencedRelation: "menu_items"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"businesses": {
+                  Row: {
+                    "accepts_table_requests": boolean,"created_at": string,"cuisine_code": string,"currency_code": string | null,"id": string,"is_listed": boolean,"map_lat": number | null,"map_lng": number | null,"name": string,"owner_id": string,"public_address": string | null,"type": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "accepts_table_requests"?: boolean,"created_at"?: string,"cuisine_code": string,"currency_code"?: string | null,"id"?: string,"is_listed"?: boolean,"map_lat"?: number | null,"map_lng"?: number | null,"name": string,"owner_id": string,"public_address"?: string | null,"type": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "accepts_table_requests"?: boolean,"created_at"?: string,"cuisine_code"?: string,"currency_code"?: string | null,"id"?: string,"is_listed"?: boolean,"map_lat"?: number | null,"map_lng"?: number | null,"name"?: string,"owner_id"?: string,"public_address"?: string | null,"type"?: string,"updated_at"?: string
                   }
                   Relationships: [
                     {
@@ -60,6 +86,12 @@ isOneToOne: true
       columns: ["cuisine_code"]
 isOneToOne: false
       referencedRelation: "cuisines"
+      referencedColumns: ["code"]
+    },{
+      foreignKeyName: "businesses_currency_code_fkey"
+      columns: ["currency_code"]
+isOneToOne: false
+      referencedRelation: "currencies"
       referencedColumns: ["code"]
     },{
       foreignKeyName: "businesses_owner_id_fkey"
@@ -82,6 +114,40 @@ isOneToOne: true
                   }
                   Relationships: [
                     
+                  ]
+                },"currencies": {
+                  Row: {
+                    "code": string,"minor_units": number,"name": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "code": string,"minor_units": number,"name": string
+                  }
+                  Update: {
+                    "code"?: string,"minor_units"?: number,"name"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"menu_items": {
+                  Row: {
+                    "business_id": string,"created_at": string,"description": string | null,"id": string,"is_available": boolean,"name": string,"position": number,"price_minor": number | null,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "business_id": string,"created_at"?: string,"description"?: string | null,"id"?: string,"is_available"?: boolean,"name": string,"position": number,"price_minor"?: number | null,"updated_at"?: string
+                  }
+                  Update: {
+                    "business_id"?: string,"created_at"?: string,"description"?: string | null,"id"?: string,"is_available"?: boolean,"name"?: string,"position"?: number,"price_minor"?: number | null,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "menu_items_business_id_fkey"
+      columns: ["business_id"]
+isOneToOne: false
+      referencedRelation: "businesses"
+      referencedColumns: ["id"]
+    }
                   ]
                 },"places_rate_limits": {
                   Row: {
@@ -111,29 +177,70 @@ isOneToOne: true
                   Relationships: [
                     
                   ]
+                },"storage_cleanup_queue": {
+                  Row: {
+                    "business_id": string,"path": string,"queued_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "business_id": string,"path": string,"queued_at"?: string
+                  }
+                  Update: {
+                    "business_id"?: string,"path"?: string,"queued_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 }
           }
           Views: {
             [_ in never]: never
           }
           Functions: {
-            "business_owner_view":
+            "begin_photo_upload":
+{ Args: { "p_kind": string,"p_menu_item_id"?: string }; Returns: Json
+                           },
+"business_owner_view":
 { Args: { "p_owner_id": string }; Returns: Json
+                           },
+"claim_photo_cleanup":
+{ Args: Record<PropertyKey, never>; Returns: string[]
                            },
 "consume_places_quota":
 { Args: { "p_kind": string,"p_user_id": string }; Returns: boolean
                            },
+"create_menu_item":
+{ Args: { "p_description": string,"p_is_available"?: boolean,"p_name": string,"p_price_minor": number }; Returns: string
+                           },
 "create_my_business":
 { Args: { "p_accepts_table_requests"?: boolean,"p_cuisine_code": string,"p_name": string,"p_type": string }; Returns: string
+                           },
+"delete_business_photo":
+{ Args: { "p_photo_id": string }; Returns: undefined
+                           },
+"delete_menu_item":
+{ Args: { "p_item_id": string }; Returns: undefined
+                           },
+"finish_photo_upload":
+{ Args: { "p_photo_id": string }; Returns: Json
                            },
 "get_my_business":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
+"move_menu_item":
+{ Args: { "p_direction": string,"p_item_id": string }; Returns: undefined
+                           },
 "set_business_location":
 { Args: { "p_formatted_address": string,"p_lat": number,"p_lng": number,"p_owner_id": string,"p_place_id": string }; Returns: Json
                            },
+"set_menu_currency":
+{ Args: { "p_code": string }; Returns: undefined
+                           },
 "set_seller_mode":
 { Args: { "p_on": boolean }; Returns: undefined
+                           },
+"update_menu_item":
+{ Args: { "p_description": string,"p_is_available": boolean,"p_item_id": string,"p_name": string,"p_price_minor": number }; Returns: undefined
                            }
           }
           Enums: {

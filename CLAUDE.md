@@ -41,7 +41,7 @@ liketoorder/
 │   ├── (tabs)/               # restaurants, homemade, profile, manage (seller only)
 │   └── _layout.tsx
 ├── src/
-│   ├── features/<feature>/   # one folder per domain: cuisines, map, sellers, menu, requests, food-log, activity-grid, promotions, reports, profile
+│   ├── features/<feature>/   # one folder per domain: cuisines, map, sellers, menu, media (shared photo pick/prepare/upload), requests, food-log, activity-grid, promotions, reports, profile
 │   │   ├── components/
 │   │   ├── hooks/            # react-query hooks (useXQuery / useXMutation)
 │   │   ├── api.ts            # ALL supabase calls for this feature
@@ -92,7 +92,7 @@ liketoorder/
 - **Status changes go through Postgres functions** (e.g. `respond_to_request(request_id, decision)`) that check the caller owns the business and the transition is valid.
 - **Migrations are append-only.** Never edit a migration that exists on `main`. Fix forward with a new migration.
 - After any migration: `npm run db:types` to regenerate `src/types/database.ts`.
-- Storage buckets have policies: users write only to `<bucket>/<auth.uid()>/...`.
+- Storage buckets have policies: users write only inside their own folder: `<auth.uid()>/…` or, for business media, `<business_id>/…` of a business they own.
 - Homemade exact addresses live in a separate table readable only by the owner and by customers with an **accepted** request.
 - Timestamps that matter for rules (upload time, request time) are set by the server (`default now()`), never trusted from the client.
 - Never use the `service_role` key in the app. Only Edge Functions may use it.
@@ -176,7 +176,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 03 | navigation-shell | ✅ Shipped | .claude/specs/03-navigation-shell.md |
 | 04 | cuisine-catalog | ✅ Shipped | .claude/specs/04-cuisine-catalog.md |
 | 05 | seller-onboarding | ✅ Shipped | .claude/specs/05-seller-onboarding.md |
-| 06 | menu-management | ⬜ Not started | — |
+| 06 | menu-management | 🚧 In progress | .claude/specs/06-menu-management.md |
 | 07 | restaurant-map | ⬜ Not started | — |
 | 08 | homemade-map | ⬜ Not started | — |
 | 09 | pickup-requests | ⬜ Not started | — |

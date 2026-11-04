@@ -467,7 +467,8 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - [ ] `begin_photo_upload` raises `invalid_input` for a missing or someone else's item id, and `set_menu_currency(null)` raises `invalid_input`.
 - [ ] `finish_photo_upload` raises `upload_missing` when no object exists at the path, or when its mimetype isn't allowed.
 - [ ] Replacing a cover or item photo leaves exactly one `ready` row and queues the old path in the same transaction.
-- [ ] Deleting an item, a photo, or the whole business (cascade) queues every affected path. `claim_photo_cleanup` drops queue rows whose object is gone and returns only the caller's still-present paths.
+- [ ] Deleting an item, a photo, the whole business, or the owner's account (cascade) queues every affected path.
+- [ ] A reservation 59 minutes old can still be uploaded to and finished. `claim_photo_cleanup` drops queue rows whose object is gone and returns only the caller's still-present paths.
 - [ ] Storage, `business-media`:
   - The bucket is private, with a 2 MB limit and exactly JPEG/PNG/WebP.
   - An owner can insert only at a path reserved by a fresh pending row of their own business.
@@ -515,6 +516,8 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - Owner vs. outsider vs. anon for each function and each select policy; direct write attempts (42501).
 - Limits (items, each photo kind), the currency lock, move/delete position invariants.
 - Pending expiry: backdate `created_at` as the superuser inside the test, then check the limit ignores the row and it's queued.
+- Expiry boundary: a reservation backdated to 59 minutes can still be uploaded to and finished (and still counts toward the limit).
+- Account deletion: deleting the owner's `auth.users` row (cascade: profile → business → items and photos) leaves every one of the business's photo paths (cover, gallery, menu, item; pending and ready) in `storage_cleanup_queue`.
 - Storage: as each role, `insert into storage.objects (bucket_id, name, …)` for reserved, unreserved, other-business, expired and malformed paths. `select` visibility before and after `set_seller_mode(false)`. `delete` of live vs. queued objects. The bucket row's `public`, `file_size_limit` and `allowed_mime_types`.
 - `finish_photo_upload` with and without an object row (and with a disallowed mimetype in `metadata`).
 - Cleanup queue contents after item delete, photo delete, replace and business cascade; `claim_photo_cleanup` behaviour.

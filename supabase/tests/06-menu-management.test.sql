@@ -4,7 +4,7 @@
 -- The function allowlist, the `private` schema checks, businesses.currency_code column
 -- privileges and the get_my_business key list live in the 05 file.
 begin;
-select plan(275);
+select plan(288);
 
 -- ── Fixtures (as postgres) ──────────────────────────────────────────────────
 -- users (…0006NN)            businesses (…0006xN)
@@ -708,8 +708,9 @@ select throws_ok($$ call pg_temp.put('00000000-0000-0000-0000-0000000006a3/00000
   '42501', null, 'an owner cannot upload at an unreserved path in their own folder');
 select lives_ok($$ call pg_temp.put(pg_temp.rp('m4')) $$,
   'an owner can upload at a path reserved by a fresh pending row of their business');
-select throws_ok($$ call pg_temp.put(pg_temp.rp('g7')) $$, null::char(5), null::text,
-  'uploading again to a path that already has an object is refused');
+-- The insert policy refuses (42501) before the unique name index is reached (23505).
+select throws_ok($$ call pg_temp.put(pg_temp.rp('g7')) $$, '42501', null,
+  'uploading again to a path that already has an object is refused by the insert policy');
 reset role;
 delete from storage.objects where name = pg_temp.rp('g7');
 set local role authenticated;
@@ -929,6 +930,96 @@ select is((select count(*)::int from storage.objects
   'the malformed rows are still there after the delete attempt');
 delete from storage.objects
  where name in ('not-a-uuid/x.jpg', 'x.jpg', 'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz/a.jpg');
+
+-- ── Expiry boundary: a 59-minute reservation is still live (owner 0612, business 06a7) ──
+reset role;
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000612', 'm612@example.test');
+update public.profiles set username = 'menu_612', is_seller = true
+ where id = '00000000-0000-0000-0000-000000000612';
+insert into public.businesses (id, owner_id, type, name, cuisine_code, map_lat, map_lng, public_address, is_listed) values
+  ('00000000-0000-0000-0000-0000000006a7', '00000000-0000-0000-0000-000000000612',
+   'restaurant', 'Menu E', 'IT', 43.78, -79.48, '9 Side St, Toronto', true);
+
+-- Order: (1) reserve the boundary photo e1, (2) backdate it to 59 minutes as postgres,
+-- (3) reserve five more so the gallery holds 6 pending rows including e1, (4) the next
+-- reservation must raise photo_limit because e1 still counts, (5) only then upload to e1's
+-- path and finish it, which proves the 59-minute row was neither expired nor purged.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000612","role":"authenticated"}';
+insert into res select 'e1', public.begin_photo_upload('gallery');
+reset role;
+update public.business_photos set created_at = now() - interval '59 minutes'
+ where id = pg_temp.rid('e1');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000612","role":"authenticated"}';
+insert into res select 'e2', public.begin_photo_upload('gallery');
+insert into res select 'e3', public.begin_photo_upload('gallery');
+insert into res select 'e4', public.begin_photo_upload('gallery');
+insert into res select 'e5', public.begin_photo_upload('gallery');
+insert into res select 'e6', public.begin_photo_upload('gallery');
+select throws_ok($$ select public.begin_photo_upload('gallery') $$, 'P0001', 'photo_limit',
+  'a 59-minute pending gallery row still counts toward the gallery limit');
+select lives_ok($$ call pg_temp.put(pg_temp.rp('e1')) $$,
+  'the owner can upload to a reservation that is 59 minutes old');
+select lives_ok($$ select public.finish_photo_upload(pg_temp.rid('e1')) $$,
+  'finish_photo_upload succeeds for a reservation that is 59 minutes old');
+reset role;
+select is((select status from public.business_photos where id = pg_temp.rid('e1')), 'ready',
+  'the 59-minute reservation is ready after the upload and finish');
+
+-- ── Account deletion cascade queues every photo path (owner 0613, business 06a8) ──
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000613', 'm613@example.test');
+update public.profiles set username = 'menu_613', is_seller = true
+ where id = '00000000-0000-0000-0000-000000000613';
+insert into public.businesses (id, owner_id, type, name, cuisine_code, map_lat, map_lng, public_address, is_listed) values
+  ('00000000-0000-0000-0000-0000000006a8', '00000000-0000-0000-0000-000000000613',
+   'restaurant', 'Menu D', 'IT', 43.79, -79.49, '10 Side St, Toronto', true);
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000613","role":"authenticated"}';
+select public.set_menu_currency('CAD');
+select public.create_menu_item('Doomed dish', null, null);
+insert into res select 'd_cover', public.begin_photo_upload('cover');
+insert into res select 'd_gal', public.begin_photo_upload('gallery');
+insert into res select 'd_menu', public.begin_photo_upload('menu');
+insert into res select 'd_item', public.begin_photo_upload('item',
+  (select id from public.menu_items where name = 'Doomed dish' and business_id = '00000000-0000-0000-0000-0000000006a8'));
+insert into res select 'd_pend', public.begin_photo_upload('gallery');
+call pg_temp.put(pg_temp.rp('d_cover'));
+call pg_temp.put(pg_temp.rp('d_gal'));
+call pg_temp.put(pg_temp.rp('d_menu'));
+call pg_temp.put(pg_temp.rp('d_item'));
+select public.finish_photo_upload(pg_temp.rid('d_cover'));
+select public.finish_photo_upload(pg_temp.rid('d_gal'));
+select public.finish_photo_upload(pg_temp.rid('d_menu'));
+select public.finish_photo_upload(pg_temp.rid('d_item'));
+-- d_pend stays pending (never uploaded or finished)
+
+reset role;
+delete from auth.users where id = '00000000-0000-0000-0000-000000000613';
+select is((select count(*)::int from public.storage_cleanup_queue where path = pg_temp.rp('d_cover')), 1,
+  'account deletion queued the cover path');
+select is((select count(*)::int from public.storage_cleanup_queue where path = pg_temp.rp('d_gal')), 1,
+  'account deletion queued the ready gallery path');
+select is((select count(*)::int from public.storage_cleanup_queue where path = pg_temp.rp('d_menu')), 1,
+  'account deletion queued the menu photo path');
+select is((select count(*)::int from public.storage_cleanup_queue where path = pg_temp.rp('d_item')), 1,
+  'account deletion queued the item photo path');
+select is((select count(*)::int from public.storage_cleanup_queue where path = pg_temp.rp('d_pend')), 1,
+  'account deletion queued the pending gallery path');
+select is((select count(*)::int from public.business_photos where business_id = '00000000-0000-0000-0000-0000000006a8'), 0,
+  'account deletion removed the business''s photo rows');
+select is((select count(*)::int from public.menu_items where business_id = '00000000-0000-0000-0000-0000000006a8'), 0,
+  'account deletion removed the business''s menu items');
+select is((select count(*)::int from public.businesses where id = '00000000-0000-0000-0000-0000000006a8'), 0,
+  'account deletion removed the business');
+select is((select count(*)::int from public.storage_cleanup_queue
+            where business_id = '00000000-0000-0000-0000-0000000006a8'
+              and path in (pg_temp.rp('d_cover'), pg_temp.rp('d_gal'), pg_temp.rp('d_menu'),
+                           pg_temp.rp('d_item'), pg_temp.rp('d_pend'))), 5,
+  'the queued rows keep the deleted business id');
 
 select * from finish();
 rollback;

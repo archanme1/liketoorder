@@ -210,16 +210,16 @@ create policy business_photos_select_own on public.business_photos for select to
 | photo `path`, `status`, `position`, `created_at` | never directly | `begin_photo_upload()` / `finish_photo_upload()` / `delete_business_photo()` |
 
 ### Functions
-All functions are `security definer` with `set search_path = ''`. Each runs `revoke execute … from public, anon, authenticated` followed by `grant execute … to authenticated`. Owner = `auth.uid()`. No function takes a business id: each finds the caller's own business and raises `no_business` if there is none. Any item or photo id that isn't the caller's raises `not_found`, with no difference between "missing" and "someone else's".
+All functions are `security definer` with `set search_path = ''`. Each runs `revoke execute … from public, anon, authenticated` followed by `grant execute … to authenticated`. Owner = `auth.uid()`. No function takes a business id: each finds the caller's own business and raises `no_business` if there is none. Any item or photo id that isn't the caller's raises `not_found`, with no difference between "missing" and "someone else's". One exception, by design: `begin_photo_upload`'s `p_menu_item_id` is an input check, so a missing or someone else's item there raises `invalid_input` (still the same error for both).
 
 | Function | Behaviour |
 |---|---|
-| `set_menu_currency(p_code text) returns void` | Locks the business. If `p_code` differs from the current value and any item has a price → `prices_exist`. An unknown code → 23503. |
+| `set_menu_currency(p_code text) returns void` | Locks the business. A null `p_code` → `invalid_input` (the currency can't be unset). If `p_code` differs from the current value and any item has a price → `prices_exist`. An unknown code → 23503. |
 | `create_menu_item(p_name text, p_description text, p_price_minor integer, p_is_available boolean default true) returns uuid` | Locks the business. At 100 items → `item_limit`. A price with no currency → `currency_required`. Empty description → null. `position` = max + 1. |
 | `update_menu_item(p_item_id uuid, p_name text, p_description text, p_price_minor integer, p_is_available boolean) returns void` | Locks the business. `not_found`, `currency_required`. Doesn't change position. |
 | `move_menu_item(p_item_id uuid, p_direction text) returns void` | `'up'` / `'down'` swaps it with its neighbour (the deferred unique constraint allows the swap). At either end it does nothing. Anything else → `invalid_direction`. |
 | `delete_menu_item(p_item_id uuid) returns void` | Deletes the item. Its photo row cascades and the trigger queues the file. Then closes the position gap. |
-| `begin_photo_upload(p_kind text, p_menu_item_id uuid default null) returns jsonb` | Locks the business. First deletes this business's `pending` rows older than 1 hour (the trigger queues their paths). Then checks the limit:<br>• gallery: ready + pending ≤ 6<br>• menu: ready + pending ≤ 10<br>• cover / item: at most 1 pending (the ready one is replaced on finish)<br>A full section → `photo_limit`. `p_menu_item_id` must be the caller's item for `item` and null otherwise → `invalid_input`. Inserts a `pending` row and returns `{ photo_id, path }`. |
+| `begin_photo_upload(p_kind text, p_menu_item_id uuid default null) returns jsonb` | Locks the business. First deletes this business's `pending` rows older than 1 hour (the trigger queues their paths). Then:<br>• gallery: ready + pending ≤ 6, else `photo_limit`<br>• menu: ready + pending ≤ 10, else `photo_limit`<br>• cover / item: one slot. A new reservation **replaces** any pending row for the same slot (the cover, or that item's photo): the old pending row is deleted and the trigger queues its file. So a failed upload can be retried at once. Never `photo_limit`. The ready photo is replaced only on finish.<br>Gallery and menu pending rows keep counting, so the app deletes a failed one right away with `delete_business_photo`; the 1-hour expiry is the backstop. `p_menu_item_id` must be the caller's item for `item` and null otherwise → `invalid_input` (missing and someone else's give the same error). Inserts a `pending` row and returns `{ photo_id, path }`. |
 | `finish_photo_upload(p_photo_id uuid) returns jsonb` | The caller's `pending` row, otherwise `not_found`. The object must exist in `storage.objects` (bucket `business-media`, `name = path`), with `metadata->>'mimetype'` one of the allowed types and a size within the limit. Otherwise → `upload_missing`. Sets `ready` and the next `position` for gallery/menu. For cover/item, deletes the previous `ready` row in the same transaction, and the trigger queues its file. Returns the photo. |
 | `delete_business_photo(p_photo_id uuid) returns void` | Deletes the caller's row, pending or ready. The trigger queues the file. Closes the position gap. |
 | `claim_photo_cleanup() returns setof text` | For the caller's business: drops queue rows whose object no longer exists in `storage.objects`, then returns the queued paths whose object still exists. The app removes those through the Storage API. The server checks what's actually gone, so the app can't mark a file as removed by mistake. |
@@ -461,14 +461,17 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - [ ] `create_menu_item` raises `item_limit` on the 101st item and `currency_required` for a price with no currency.
 - [ ] `set_menu_currency` raises `prices_exist` once any item has a price, and succeeds again after the prices are removed.
 - [ ] `move_menu_item` swaps neighbours, does nothing at the ends and keeps positions 1..n. Delete closes the gap.
-- [ ] `begin_photo_upload` raises `photo_limit` for the 7th gallery photo, the 11th menu photo, and a second pending cover or item photo. Pending rows older than 1 hour don't count and are queued for cleanup.
+- [ ] `begin_photo_upload` raises `photo_limit` for the 7th gallery photo and the 11th menu photo, counting pending rows. Pending rows older than 1 hour don't count and are queued for cleanup.
+- [ ] A second `begin_photo_upload` for the cover, or for the same item, replaces the pending reservation: the old pending row is gone, its path is queued, the new reservation can be uploaded to and finished at once, and the old path can no longer be uploaded to.
+- [ ] Deleting a pending gallery or menu photo with `delete_business_photo` frees its slot at once and queues its path; `claim_photo_cleanup` then drops the queue row if no file was uploaded.
+- [ ] `begin_photo_upload` raises `invalid_input` for a missing or someone else's item id, and `set_menu_currency(null)` raises `invalid_input`.
 - [ ] `finish_photo_upload` raises `upload_missing` when no object exists at the path, or when its mimetype isn't allowed.
 - [ ] Replacing a cover or item photo leaves exactly one `ready` row and queues the old path in the same transaction.
 - [ ] Deleting an item, a photo, or the whole business (cascade) queues every affected path. `claim_photo_cleanup` drops queue rows whose object is gone and returns only the caller's still-present paths.
 - [ ] Storage, `business-media`:
   - The bucket is private, with a 2 MB limit and exactly JPEG/PNG/WebP.
   - An owner can insert only at a path reserved by a fresh pending row of their own business.
-  - Inserting into another business's folder, at an unreserved path, at an expired reservation's path, or at a malformed path fails.
+  - Inserting into another business's folder, at another user's reserved path, at an unreserved path, at a path whose photo is already ready, at an expired reservation's path, or at a malformed path (folder not a UUID) fails. A malformed folder name fails closed: refused or no access, never an error that lets anything through.
   - Anon can read only ready objects of public businesses.
   - An owner cannot delete a live object; an outsider cannot delete any.
   - There is no update policy.
@@ -507,7 +510,8 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 
 ## Test plan
 **Database tests (pgTAP)**: `supabase/tests/06-menu-management.test.sql`, using the spec 05 impersonation pattern (fixed UUIDs `…0601`–`…06xx`: listed restaurant owner, listed homemade owner, unlisted owner, owner with no location, outsider, user with no business, anon).
-- RLS flags, exact `table_privs_are` / `column_privs_are` on all four tables and on `businesses.currency_code`.
+- RLS flags, exact `table_privs_are` / `column_privs_are` on all four tables (every column, anon and authenticated) and on `businesses.currency_code`.
+- Retry: a second cover/item reservation replaces the pending one and can be uploaded and finished at once. Deleting a pending gallery photo frees the slot.
 - Owner vs. outsider vs. anon for each function and each select policy; direct write attempts (42501).
 - Limits (items, each photo kind), the currency lock, move/delete position invariants.
 - Pending expiry: backdate `created_at` as the superuser inside the test, then check the limit ignores the row and it's queued.
@@ -579,6 +583,12 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 18. **Homemade photo hint (Q6):** homemade sellers only, on the Photos screen: "Photos are public. Avoid showing your house number, front door or street sign." Restaurants don't see it.
 19. **Unavailable items (Q8):** unavailable items stay readable by everyone (the public select policy doesn't filter on `is_available`). Wherever they are shown, "Unavailable" is text, never colour alone.
 20. **Item description in the product spec (Q9):** when spec 06 ships, update `docs/product/v1.md` §5 to list "name, optional description, optional price, optional photo, available yes/no", with a changelog note.
+
+### Gate A1 review decisions (approved 2026-11-04)
+21. **Malformed folder names fail closed:** the storage select/delete policies check the folder is a UUID before casting, so a bad name means "no access", never an error.
+22. **`invalid_input` for a missing or someone else's item in `begin_photo_upload`**, as in the function table; the general `not_found` rule notes the exception.
+23. **`set_menu_currency(null)` raises `invalid_input`.**
+24. **Retry for cover and item photos:** a new reservation replaces the pending one for the same slot (second migration, `photo_slot_retry`). Gallery and menu pending rows keep counting; the app deletes a failed one at once, and the 1-hour expiry is the backstop.
 
 ### Design choices also accepted with the spec
 - All menu and photo writes go through functions that lock the business row, not direct table writes. This is the only race-free way to enforce the limits and the currency lock.

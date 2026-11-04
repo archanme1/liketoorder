@@ -23,3 +23,88 @@ jest.mock('@expo/vector-icons/Ionicons', () => {
   const Ionicons = Object.assign((props: object) => createElement(View, props), { glyphMap });
   return { __esModule: true, default: Ionicons };
 });
+
+// ── Spec 06 media modules: native under jest, so each gets a small controllable fake. ──
+// Tests override behaviour with jest.mocked(...).mockImplementation / jest.spyOn.
+
+// Default: the user cancels. Tests resolve { canceled: false, assets: [{ uri, width, height }] }.
+jest.mock('expo-image-picker', () => ({
+  launchImageLibraryAsync: jest.fn(async () => ({ canceled: true, assets: null })),
+}));
+
+// A chainable fake of the contextual API: manipulate(uri) → context; context.resize(size) records
+// the size and returns the context; context.renderAsync() → an image ref of 1200 × 900 (override
+// renderAsync to change it) whose saveAsync(options) → { uri, width, height }.
+jest.mock('expo-image-manipulator', () => {
+  function makeImageRef(width: number, height: number) {
+    return {
+      width,
+      height,
+      saveAsync: jest.fn(async () => ({ uri: 'file:///mock/manipulated.jpg', width, height })),
+      release: jest.fn(),
+    };
+  }
+  type MockContext = {
+    resize: jest.Mock<MockContext, [object]>;
+    renderAsync: jest.Mock<Promise<ReturnType<typeof makeImageRef>>, []>;
+    reset: jest.Mock<MockContext, []>;
+  };
+  function makeContext(): MockContext {
+    const context: MockContext = {
+      resize: jest.fn((_size: object): MockContext => context),
+      renderAsync: jest.fn(async () => makeImageRef(1200, 900)),
+      reset: jest.fn((): MockContext => context),
+    };
+    return context;
+  }
+  return {
+    ImageManipulator: { manipulate: jest.fn(() => makeContext()) },
+    SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
+    __makeImageRef: makeImageRef,
+  };
+});
+
+// File#bytes() is a prototype method, so tests can jest.spyOn(File.prototype, 'bytes') and read
+// `this.uri`. Default: the smallest JPEG header the metadata check accepts (SOI, DQT, SOS).
+jest.mock('expo-file-system', () => {
+  class File {
+    uri: string;
+    constructor(uri: string) {
+      this.uri = uri;
+    }
+    async bytes(): Promise<Uint8Array> {
+      return new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x02, 0xff, 0xda, 0x00, 0x02]);
+    }
+  }
+  return { File };
+});
+
+// Default device: US English, US dollars. Tests override getLocales for other locales/currencies.
+jest.mock('expo-localization', () => ({
+  getLocales: jest.fn(() => [
+    {
+      languageTag: 'en-US',
+      languageCode: 'en',
+      regionCode: 'US',
+      currencyCode: 'USD',
+      currencySymbol: '$',
+      decimalSeparator: '.',
+      digitGroupingSeparator: ',',
+      textDirection: 'ltr',
+      measurementSystem: 'us',
+      temperatureUnit: 'fahrenheit',
+    },
+  ]),
+  getCalendars: jest.fn(() => [{ calendar: 'gregory', timeZone: 'UTC', uses24hourClock: false }]),
+}));
+
+// expo-image renders a plain View that keeps every prop (source incl. cacheKey, cachePolicy,
+// onLoad, onError), so tests can inspect them and call the handlers directly.
+jest.mock('expo-image', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { createElement } = require('react');
+  const { View } = require('react-native');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const Image = (props: object) => createElement(View, { testID: 'expo-image', ...props });
+  return { Image };
+});

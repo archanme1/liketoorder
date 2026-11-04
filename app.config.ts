@@ -23,7 +23,20 @@ const config: ExpoConfig = {
       monochromeImage: './assets/android-icon-monochrome.png',
     },
   },
-  plugins: ['expo-router'],
+  plugins: [
+    'expo-router',
+    'expo-image',
+    'expo-localization',
+    [
+      'expo-image-picker',
+      {
+        photosPermission: 'LikeToOrder uses your photos to add pictures to your menu and listing.',
+        // Library only (spec 06): no camera or microphone permission strings.
+        cameraPermission: false,
+        microphonePermission: false,
+      },
+    ],
+  ],
 };
 
 export default config;

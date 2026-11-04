@@ -5,7 +5,7 @@
 - PR 2 (Gates B + C + D + manual run: the app): `feature/menu-management-app`, created from `main` after PR 1 is merged
 **Product spec:** `docs/product/v1.md` §5 Sellers & listings (Menus, "change … menu any time from Manage Business", Homemade specifics), §6 (the bottom sheet will show photos, menu, prices and availability; not built here), §3 (out of scope), §14 row 06
 **Plan mode:** required — adds tables, RLS, callable functions, a storage bucket and storage policies; adds dependencies (image picker, manipulator, image, file system, localization); adds routes under `app/seller/`; touches well over ~5 files.
-**Status:** 📝 Spec written
+**Status:** 🚧 In progress (PR 1 database and storage on `feature/menu-management-backend`)
 
 ## Overview
 After this ships, a seller can build their menu from **Manage Business**. A menu is one ordered list of items, with no sections. Each item has a name and can also have a description, a price, one photo and an available/unavailable setting. The seller moves items up and down with buttons, so reordering never depends on dragging. A seller can also upload **menu photos** (up to 10) instead of items, or as well as items, plus one **cover photo** and up to 6 **gallery photos**. Prices are optional. When used, they are in **one currency per business**, which the seller chooses.

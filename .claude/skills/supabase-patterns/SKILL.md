@@ -17,7 +17,11 @@ After editing anything in `supabase/templates/`, run `npx supabase stop` then `n
 - `businesses` (id, owner_id → profiles unique, type `restaurant|homemade` fixed after creation, name, cuisine_code → cuisines, accepts_table_requests (restaurant only), map_lat/map_lng = public point (restaurant exact, homemade shifted), public_address (restaurant only), is_listed mirrors profiles.is_seller) — spec 05. Clients select only the public columns (not owner_id / is_listed) and update only name, cuisine_code, accepts_table_requests; everything else goes through functions.
 - `business_locations` (business_id PK, place_id, formatted_address, lat, lng, resolved_at) — exact location for every business; no client grants, read via `get_my_business()` (owner) and, from specs 09/10, an accepted-request function.
 - `places_rate_limits` (user_id, kind, window_kind, window_start, count) — per-user Places quota; only `consume_places_quota()` touches it.
-- `menu_items` (business_id, name, price_cents, photo_path, is_available) / `menu_photos`
+- `currencies` (code PK ISO 4217, name, minor_units 0|2|3) — read-only catalog like `cuisines` (spec 06). `businesses.currency_code` → currencies, one per business, written only by `set_menu_currency()`; locked once any item has a price (`prices_exist`).
+- `menu_items` (id, business_id, name, description, price_minor integer in the currency's minor unit (never floats), is_available, position 1..n, deferred unique per business) — one ordered list per business, max 100 (spec 06).
+- `business_photos` (id, business_id, kind `cover|gallery|menu|item`, menu_item_id (item only), path, status `pending|ready`, position (gallery/menu), created_at) — limits 1 cover / 6 gallery / 10 menu / 1 per item (spec 06).
+- `storage_cleanup_queue` (path PK, business_id, queued_at) — outbox of files whose row is gone; no client grants (spec 06).
+- Menu/photo writes: only via functions (`create_menu_item`, `update_menu_item`, `move_menu_item`, `delete_menu_item`, `begin_photo_upload`, `finish_photo_upload`, `delete_business_photo`, `claim_photo_cleanup`) that lock the caller's business row (`select … where owner_id = auth.uid() for update`), so limits hold under concurrent calls.
 - `requests` (id, business_id, customer_id, kind `pickup|table`, status, pickup_at / reserved_at, party_size, items jsonb, note, idempotency_key unique, expires_at, arrived_at)
 - `food_logs` (id, author_id, photo_path, description, cuisine_code, is_public, created_at default now(), local_date date not null)
 - `promotions` (business_id, starts_at, ends_at, status `draft|active|ended`, activated_by)
@@ -91,9 +95,20 @@ Exact address: the owner reads it through `get_my_business()`. Specs 09/10 add a
 | Bucket | Public? | Path | Notes |
 |---|---|---|---|
 | `food-logs` | private | `<uid>/<uuid>.jpg` | served with signed URLs; public uploads can use longer-lived signed URLs |
-| `business-media` | public | `<business_id>/<uuid>.jpg` | owner-only write via policy joining businesses |
+| `business-media` | **private** | `<business_id>/<photo_id>.jpg` | spec 06: created in the migration (2 MB, jpeg/png/webp); signed URLs (1 h), so photos vanish when seller mode is off. Never a user id in the path (would link a listing to an account) |
 | `avatars` | public | `<uid>/avatar.jpg` | |
-Policy pattern: `(storage.foldername(name))[1] = (select auth.uid())::text`. Resize to max 1600px / JPEG 0.8 before upload (expo-image-manipulator).
+User-folder policy pattern: `(storage.foldername(name))[1] = (select auth.uid())::text`. Photos go through `src/features/media` `prepareImage` (max 1600 px long edge, JPEG 0.8 → 0.6 retry, EXIF/GPS check on the output bytes) before upload. Buckets are created in migrations (`insert into storage.buckets …`), not `config.toml`, so local and remote match.
+
+**Reserve → upload → finish (business-media):** the client never picks a path.
+1. `begin_photo_upload(kind, item_id)` checks the limit under the business lock, inserts a `pending` row and returns `{photo_id, path}`. Cover/item: a new reservation replaces the pending one for that slot (retry). Pending rows expire after 1 hour.
+2. The app uploads to that path (upsert false). The insert policy allows only a fresh pending path of a business the caller owns (`private.photo_upload_allowed(name)`).
+3. `finish_photo_upload(photo_id)` checks the object exists in `storage.objects` with an allowed `metadata->>'mimetype'` and `size`, then marks the row `ready` (and deletes a replaced cover/item row). Storage checks the *declared* content type, not the bytes (known v1 limit).
+
+**Cleanup outbox ("row first, file later"):** an `AFTER DELETE` trigger on `business_photos` (also fires on FK cascades) writes the path to `storage_cleanup_queue` in the same transaction. The app calls `claim_photo_cleanup()`, removes the returned paths via the Storage API, and calls it again; the server drops queue rows whose object is gone. The delete policy allows only files whose row is gone (`not private.photo_is_live(name)`). No server sweeper in v1.
+
+**`private` schema for cross-table policies:** a policy can't read columns clients have no privilege on (e.g. `businesses.owner_id`), so it calls a `security definer stable` helper with `set search_path = ''` in the `private` schema (not in `[api] schemas`, so PostgREST can't call it): `private.business_is_public`, `owns_business`, `photo_upload_allowed`, `photo_is_public`, `photo_is_live`. Revoke execute from `public`, grant to `anon, authenticated`. Guard casts in policies: `case when (storage.foldername(name))[1] ~ '<uuid regex>' then … ::uuid … else false end`, so a malformed name fails closed instead of erroring.
+
+**pgTAP on storage:** insert into `storage.objects (bucket_id, name, metadata)` as the impersonated role to simulate an upload (RLS applies). Supabase blocks direct SQL deletes on `storage.objects` with a statement trigger (42501); `set local storage.allow_delete_query = 'true'` first so delete tests exercise the policy — a refused delete then removes 0 rows rather than erroring. CI's database-only `supabase db start` + `db reset` includes the full storage schema (checked in spec 06), so no Storage container is needed for tests.
 
 ## Edge Functions
 - **Pattern:** `index.ts` only reads env and wires real dependencies into a pure `handler.ts` (`createHandler(deps)`); Deno tests inject fakes (`getUser`, quota, Google client, DB calls) and never reach the network. Shared code in `supabase/functions/_shared/`.

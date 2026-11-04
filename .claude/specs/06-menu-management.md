@@ -93,7 +93,7 @@ create table public.currencies (
   name         text not null check (char_length(name) between 1 and 60),  -- English name
   minor_units  smallint not null check (minor_units in (0, 2, 3))         -- ISO 4217 "minor unit"
 );
--- Seeded in the migration (~155 rows). Excludes fund codes (e.g. CLF, UYW: 4 decimals),
+-- Seeded in the migration (154 rows). Excludes fund codes (e.g. CLF, UYW: 4 decimals),
 -- precious metals (XAU …), SDR/XDR, XTS, XXX. Same guard pattern as cuisines: no client writes.
 
 -- ── Businesses: one menu currency ──────────────────────────────────────────────
@@ -137,6 +137,9 @@ create unique index business_photos_one_cover on public.business_photos (busines
 create unique index business_photos_one_per_item on public.business_photos (menu_item_id)
   where kind = 'item' and status = 'ready';
 create index business_photos_business_idx on public.business_photos (business_id, kind, status);
+-- Lets the menu_items cascade find pending item photos too (the unique index above is ready-only).
+create index business_photos_menu_item_idx on public.business_photos (menu_item_id)
+  where menu_item_id is not null;
 
 -- ── Storage cleanup queue (outbox): files to remove after their row is gone ───
 create table public.storage_cleanup_queue (
@@ -215,17 +218,17 @@ All functions are `security definer` with `set search_path = ''`. Each runs `rev
 | Function | Behaviour |
 |---|---|
 | `set_menu_currency(p_code text) returns void` | Locks the business. A null `p_code` → `invalid_input` (the currency can't be unset). If `p_code` differs from the current value and any item has a price → `prices_exist`. An unknown code → 23503. |
-| `create_menu_item(p_name text, p_description text, p_price_minor integer, p_is_available boolean default true) returns uuid` | Locks the business. At 100 items → `item_limit`. A price with no currency → `currency_required`. Empty description → null. `position` = max + 1. |
-| `update_menu_item(p_item_id uuid, p_name text, p_description text, p_price_minor integer, p_is_available boolean) returns void` | Locks the business. `not_found`, `currency_required`. Doesn't change position. |
+| `create_menu_item(p_name text, p_description text, p_price_minor integer, p_is_available boolean default true) returns uuid` | Locks the business. At 100 items → `item_limit`. A price with no currency → `currency_required`. The description is stored trimmed (leading and trailing spaces removed); empty or blank → null. `position` = max + 1. |
+| `update_menu_item(p_item_id uuid, p_name text, p_description text, p_price_minor integer, p_is_available boolean) returns void` | Locks the business. `not_found`, `currency_required`. The description is trimmed as in `create_menu_item`. Doesn't change position. |
 | `move_menu_item(p_item_id uuid, p_direction text) returns void` | `'up'` / `'down'` swaps it with its neighbour (the deferred unique constraint allows the swap). At either end it does nothing. Anything else → `invalid_direction`. |
 | `delete_menu_item(p_item_id uuid) returns void` | Deletes the item. Its photo row cascades and the trigger queues the file. Then closes the position gap. |
-| `begin_photo_upload(p_kind text, p_menu_item_id uuid default null) returns jsonb` | Locks the business. First deletes this business's `pending` rows older than 1 hour (the trigger queues their paths). Then:<br>• gallery: ready + pending ≤ 6, else `photo_limit`<br>• menu: ready + pending ≤ 10, else `photo_limit`<br>• cover / item: one slot. A new reservation **replaces** any pending row for the same slot (the cover, or that item's photo): the old pending row is deleted and the trigger queues its file. So a failed upload can be retried at once. Never `photo_limit`. The ready photo is replaced only on finish.<br>Gallery and menu pending rows keep counting, so the app deletes a failed one right away with `delete_business_photo`; the 1-hour expiry is the backstop. `p_menu_item_id` must be the caller's item for `item` and null otherwise → `invalid_input` (missing and someone else's give the same error). Inserts a `pending` row and returns `{ photo_id, path }`. |
+| `begin_photo_upload(p_kind text, p_menu_item_id uuid default null) returns jsonb` | Locks the business. First deletes this business's `pending` rows older than 1 hour (the trigger queues their paths). Then, if the business has **20 or more queued files that still exist in storage** → `cleanup_required` (the app runs the cleanup and tries again; Decision 25). Then:<br>• gallery: ready + pending ≤ 6, else `photo_limit`<br>• menu: ready + pending ≤ 10, else `photo_limit`<br>• cover / item: one slot. A new reservation **replaces** any pending row for the same slot (the cover, or that item's photo): the old pending row is deleted and the trigger queues its file. So a failed upload can be retried at once. Never `photo_limit`. The ready photo is replaced only on finish.<br>Gallery and menu pending rows keep counting, so the app deletes a failed one right away with `delete_business_photo`; the 1-hour expiry is the backstop. `p_menu_item_id` must be the caller's item for `item` and null otherwise → `invalid_input` (missing and someone else's give the same error). Inserts a `pending` row and returns `{ photo_id, path }`. |
 | `finish_photo_upload(p_photo_id uuid) returns jsonb` | The caller's `pending` row, otherwise `not_found`. The object must exist in `storage.objects` (bucket `business-media`, `name = path`), with `metadata->>'mimetype'` one of the allowed types and a size within the limit. Otherwise → `upload_missing`. Sets `ready` and the next `position` for gallery/menu. For cover/item, deletes the previous `ready` row in the same transaction, and the trigger queues its file. Returns the photo. |
 | `delete_business_photo(p_photo_id uuid) returns void` | Deletes the caller's row, pending or ready. The trigger queues the file. Closes the position gap. |
-| `claim_photo_cleanup() returns setof text` | For the caller's business: drops queue rows whose object no longer exists in `storage.objects`, then returns the queued paths whose object still exists. The app removes those through the Storage API. The server checks what's actually gone, so the app can't mark a file as removed by mistake. |
+| `claim_photo_cleanup() returns setof text` | For the caller's business: drops queue rows **older than 10 minutes** whose object no longer exists in `storage.objects` (a younger row may belong to an upload still in flight; Decision 26), then returns the queued paths whose object still exists. The app removes those through the Storage API. The server checks what's actually gone, so the app can't mark a file as removed by mistake. |
 | `get_my_business()` / `business_owner_view(uuid)` | `create or replace`: adds `currency_code` to the owner view. Grants are unchanged. |
 
-**Function allowlist (spec 05 test):** authenticated may execute exactly `claim_photo_cleanup`, `begin_photo_upload`, `create_menu_item`, `create_my_business`, `delete_business_photo`, `delete_menu_item`, `finish_photo_upload`, `get_my_business`, `move_menu_item`, `set_menu_currency`, `set_seller_mode` and `update_menu_item`. Anon executes no `public` function. A new check covers the `private` schema: its functions are exactly the five helpers above, all `security definer` with an empty `search_path`, and `private` is not in the API schemas.
+**Function allowlist (spec 05 test):** authenticated may execute exactly `claim_photo_cleanup`, `begin_photo_upload`, `create_menu_item`, `create_my_business`, `delete_business_photo`, `delete_menu_item`, `finish_photo_upload`, `get_my_business`, `move_menu_item`, `set_menu_currency`, `set_seller_mode` and `update_menu_item`. Anon executes no `public` function. A new check covers the `private` schema: its functions are exactly the five helpers above, all `security definer` with an empty `search_path`. That `private` is not in the API schemas is checked by a jest test that reads `supabase/config.toml` (Decision 28), because the exposed schemas are set there, not in the database.
 
 No request status transitions in this spec.
 
@@ -242,21 +245,28 @@ No request status transitions in this spec.
 create policy business_media_insert_own on storage.objects for insert to authenticated
   with check (bucket_id = 'business-media'
               and (select private.photo_upload_allowed(name)));     -- pending row, caller's business, < 1 h
+-- The case keeps the ::uuid cast away from folder names that aren't UUIDs (fails closed: false).
 create policy business_media_select on storage.objects for select to anon, authenticated
   using (bucket_id = 'business-media'
-         and ((select private.photo_is_public(name))
-              or (select private.owns_business(((storage.foldername(name))[1])::uuid))));
+         and case when (storage.foldername(name))[1]
+                       ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  then (select private.photo_is_public(name))
+                       or (select private.owns_business(((storage.foldername(name))[1])::uuid))
+                  else false end);
 create policy business_media_delete_own on storage.objects for delete to authenticated
   using (bucket_id = 'business-media'
-         and (select private.owns_business(((storage.foldername(name))[1])::uuid))
-         and not (select private.photo_is_live(name)));            -- only files whose row is gone
+         and case when (storage.foldername(name))[1]
+                       ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  then (select private.owns_business(((storage.foldername(name))[1])::uuid))
+                       and not (select private.photo_is_live(name))   -- only files whose row is gone
+                  else false end);
 -- No update policy: files are never overwritten (no upsert). Replace = new path + delete the old one.
 ```
 Together these mean:
 - An object can only be written at a path the server reserved, inside the caller's business folder.
-- The number of objects is capped by the photo-row limits, because every insert needs its own pending row and every row has one fixed path.
+- The number of objects is capped by the photo-row limits **plus fewer than 20 queued files still in storage** (`cleanup_required`, Decision 25). Every insert needs its own pending row and every row has one fixed path, but a replaced or deleted row's file stays until the cleanup removes it.
 - A seller can't delete another business's files, or their own live ones.
-- The `::uuid` cast on a malformed folder name must fail closed. A test covers that.
+- A malformed folder name (not a UUID) fails closed: the `case` returns false before any `::uuid` cast (Decision 21). A test covers that.
 
 **Image size (Decision 14):**
 
@@ -287,6 +297,7 @@ Together these mean:
 1. Every path that loses its row (delete item, delete photo, replaced cover or item photo, expired pending reservation, business cascade) is written to `storage_cleanup_queue` by a trigger, **in the same transaction** as the delete. No file is ever forgotten.
 2. After any delete or replace, and when the Menu or Photos screen opens, the app calls `claim_photo_cleanup()`, removes the returned paths through the Storage API, and calls it again so the server drops the rows that are now gone.
 3. A failed removal stays queued and is retried next time.
+4. If the app never drains the queue, `begin_photo_upload` refuses new reservations with `cleanup_required` once 20 queued files are still in storage (Decision 25). The app then runs the cleanup and retries once.
 4. The order is always "row first, file later". The worst case is a file waiting in the queue, never a live row pointing to a missing file.
 5. **Gap:** if a seller never opens the app again, queued files stay until a server-side sweeper exists. The sweeper is not built in v1. It is tracked in `docs/product/v1.md` §16 together with account deletion, which must also remove the account's files (Decision 13).
 
@@ -335,8 +346,8 @@ None. A server-side metadata check is not in v1 (Decision 13; tracked in v1.md �
   - `getMenu(businessId)`: items ordered by position, plus photos. Owner and guests use the same query; RLS decides.
   - `setMenuCurrency`, `createMenuItem`, `updateMenuItem`, `moveMenuItem`, `deleteMenuItem`
   - `beginPhotoUpload`, `finishPhotoUpload`, `deleteBusinessPhoto`, `claimPhotoCleanup`
-  - `MenuAppError` codes: `'no_business' | 'item_limit' | 'photo_limit' | 'currency_required' | 'prices_exist' | 'not_found' | 'upload_missing' | 'invalid_input' | 'network' | 'unknown'`, with `mapMenuError`, following `mapSellerError`.
-- `uploadBusinessPhoto.ts`: orchestrates the steps `prepareImage` → `beginPhotoUpload` → `uploadToBucket` → `finishPhotoUpload`. If the upload or finish fails, it calls `deleteBusinessPhoto(photo_id)` and then runs cleanup.
+  - `MenuAppError` codes: `'no_business' | 'item_limit' | 'photo_limit' | 'currency_required' | 'prices_exist' | 'not_found' | 'upload_missing' | 'invalid_input' | 'cleanup_required' | 'network' | 'unknown'`, with `mapMenuError`, following `mapSellerError`.
+- `uploadBusinessPhoto.ts`: orchestrates the steps `prepareImage` → `beginPhotoUpload` → `uploadToBucket` → `finishPhotoUpload`. If the upload or finish fails, it calls `deleteBusinessPhoto(photo_id)` and then runs cleanup. If `beginPhotoUpload` raises `cleanup_required`, it runs the cleanup (claim → remove → claim) and retries `beginPhotoUpload` once; a second `cleanup_required` shows an error with retry (Decision 25).
 - `hooks/`:
   - `useCurrencies` (key `['currencies']`, `staleTime: Infinity`)
   - `useMyMenu` (key `['menu', businessId]`)
@@ -360,8 +371,9 @@ Menu photos are pictures of text that screen readers can't read; the hint on the
 **Move controls:** "Move <item name> up" / "Move <item name> down", `accessibilityRole="button"`. The first item's "up" and the last item's "down" are disabled (`accessibilityState.disabled`). After a move, focus stays on the moved item's button and a short announcement says "<name> moved to position 3 of 12" (`AccessibilityInfo.announceForAccessibility`).
 
 ## Files to create
-- `supabase/migrations/<timestamp>_menu_management.sql`
+- `supabase/migrations/<timestamp>_menu_management.sql`, plus the fix-forward migrations `<timestamp>_photo_slot_retry.sql` (Decision 24) and `<timestamp>_photo_cleanup_limits.sql` (Decisions 25–27)
 - `supabase/tests/06-menu-management.test.sql`
+- `src/lib/__tests__/supabaseConfig.test.ts` (PR 1): reads `supabase/config.toml` and asserts the API schemas are exactly `public` and `graphql_public` (Decision 28)
 - `src/features/media/` (`pickImage.ts`, `prepareImage.ts`, `jpegMetadata.ts`, `api.ts`, `errors.ts`, `components/`, `hooks/`, `__tests__/` + `__tests__/fixtures/` with small JPEGs: one with EXIF GPS, one with XMP GPS, one clean)
 - `src/features/menu/` (schema, `price.ts`, api, `uploadBusinessPhoto.ts`, hooks, components above, `__tests__/`)
 - `app/seller/menu/index.tsx`, `app/seller/menu/new.tsx`, `app/seller/menu/[itemId].tsx`, `app/seller/photos.tsx`
@@ -369,7 +381,7 @@ Menu photos are pictures of text that screen readers can't read; the hint on the
 ## Files to change
 - `supabase/tests/05-seller-onboarding.test.sql`: add `currency_code` to the exact `businesses` column privileges and to the `get_my_business` shape; extend the function allowlist.
 - `supabase/tests/03-navigation-shell.test.sql`: add `currencies`, `menu_items` and `business_photos` to the ALLOWLIST.
-- `supabase/config.toml`: no bucket block (the migration creates it, so local and remote match). Confirm `private` is not in `[api] schemas`.
+- `supabase/config.toml`: no bucket block (the migration creates it, so local and remote match). `private` must not be in `[api] schemas` (checked by `supabaseConfig.test.ts`).
 - `.github/workflows/ci.yml`: **only if needed.** CI runs `supabase db start` (database only). If `storage.buckets`, `storage.objects`, `storage.foldername` or the storage triggers the migration and tests rely on aren't present without the Storage service, start it (`supabase start -x` with everything else excluded). This is checked at Gate A (see Rules).
 - `app/seller/_layout.tsx`: titles for "Menu", "Add item", "Edit item", "Photos".
 - `src/features/sellers/sellerRoutes.ts`, `schema.ts`, `components/ManageBusinessScreen.tsx` (+ tests).
@@ -463,7 +475,16 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - [ ] `move_menu_item` swaps neighbours, does nothing at the ends and keeps positions 1..n. Delete closes the gap.
 - [ ] `begin_photo_upload` raises `photo_limit` for the 7th gallery photo and the 11th menu photo, counting pending rows. Pending rows older than 1 hour don't count and are queued for cleanup.
 - [ ] A second `begin_photo_upload` for the cover, or for the same item, replaces the pending reservation: the old pending row is gone, its path is queued, the new reservation can be uploaded to and finished at once, and the old path can no longer be uploaded to.
-- [ ] Deleting a pending gallery or menu photo with `delete_business_photo` frees its slot at once and queues its path; `claim_photo_cleanup` then drops the queue row if no file was uploaded.
+- [ ] Deleting a pending gallery or menu photo with `delete_business_photo` frees its slot at once and queues its path; once the queue row is older than 10 minutes, `claim_photo_cleanup` drops it if no file was uploaded.
+- [ ] `begin_photo_upload` raises `cleanup_required` while the business has 20 or more queued files still in storage (any kind, including cover and item retries), and succeeds again once enough of them are removed. Queued rows whose file is gone don't count.
+- [ ] `claim_photo_cleanup` keeps a queue row younger than 10 minutes even when its file is gone (an upload may be in flight), drops it after 10 minutes, and never returns a path whose file is gone.
+- [ ] `create_menu_item` and `update_menu_item` store the description trimmed (`'  Tasty  '` → `'Tasty'`); an empty or blank description is stored as null.
+- [ ] Table checks reached through the functions raise 23514: an empty or untrimmed name, and a price of 0, below 0 or above 999 999 999.
+- [ ] `finish_photo_upload` raises `upload_missing` for an object of size 0, with a missing or non-numeric size, or over 2 097 152 bytes, and for an object with the same name in another bucket.
+- [ ] Deleting an item also removes its pending item photo and queues its path.
+- [ ] A pending menu reservation older than 1 hour stops counting toward the menu limit and is queued, like gallery.
+- [ ] The `currencies` guard trigger blocks a code change, a delete and a truncate even for the table owner (an error whose message starts with `currency_code_permanent`), and an insert with 4 decimals fails (23514).
+- [ ] An owner's direct `update` of a live `storage.objects` row in `business-media` changes nothing (no update policy of any command type).
 - [ ] `begin_photo_upload` raises `invalid_input` for a missing or someone else's item id, and `set_menu_currency(null)` raises `invalid_input`.
 - [ ] `finish_photo_upload` raises `upload_missing` when no object exists at the path, or when its mimetype isn't allowed.
 - [ ] Replacing a cover or item photo leaves exactly one `ready` row and queues the old path in the same transaction.
@@ -476,7 +497,7 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
   - Anon can read only ready objects of public businesses.
   - An owner cannot delete a live object; an outsider cannot delete any.
   - There is no update policy.
-- [ ] The function allowlist is exactly the 12 names listed for authenticated, none for anon. The `private` schema holds exactly the five helpers and isn't exposed by the API.
+- [ ] The function allowlist is exactly the 12 names listed for authenticated, none for anon. The `private` schema holds exactly the five helpers (pgTAP) and isn't exposed by the API (`supabaseConfig.test.ts`, jest).
 - [ ] `currencies` minor units: JPY, KRW, VND, CLP and ISK = 0; USD, CAD and EUR = 2; BHD, KWD, JOD, OMR, TND and IQD = 3. No code has 4 decimals. Clients can't write the table.
 - [ ] `get_my_business()` includes `currency_code`.
 - [ ] 03 ALLOWLIST updated; `02`–`05` tests still pass.
@@ -500,6 +521,7 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - [ ] Item limit: "Add item" is disabled at 100 with a reason, and the server error `item_limit` shows a message.
 - [ ] A seller adds, replaces and removes the cover and item photos, and adds and removes gallery and menu photos. Counts show "n of N", and Add is disabled when full.
 - [ ] After a delete or replace, the cleanup runs and removes the returned paths. A failed removal is retried on the next screen open.
+- [ ] On `cleanup_required` from `beginPhotoUpload`, the upload runs the cleanup and retries once; a second `cleanup_required` shows an error with retry.
 - [ ] The Menu, item and Photos screens redirect to onboarding for a user with no business only after the business loads. The Stack stays mounted while loading (routing test).
 - [ ] Every new screen shows loading, error with retry, empty and success states.
 - [ ] Photos have the accessible names listed. Every touchable has `accessibilityLabel` + `accessibilityRole` and is ≥ 44pt. "Unavailable" is shown as text, not color alone.
@@ -518,10 +540,21 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - Pending expiry: backdate `created_at` as the superuser inside the test, then check the limit ignores the row and it's queued.
 - Expiry boundary: a reservation backdated to 59 minutes can still be uploaded to and finished (and still counts toward the limit).
 - Account deletion: deleting the owner's `auth.users` row (cascade: profile → business → items and photos) leaves every one of the business's photo paths (cover, gallery, menu, item; pending and ready) in `storage_cleanup_queue`.
+- Cleanup limit: with 20 queued files still in storage, `begin_photo_upload` (cover and gallery) raises `cleanup_required`; with 19, or after the owner removes files, it succeeds. Queue rows whose file is gone don't count.
+- Cleanup wait: a queue row younger than 10 minutes with no file is kept by `claim_photo_cleanup` and not returned; backdated to 11 minutes it is dropped. Existing claim tests backdate `queued_at` past 10 minutes where they expect a drop.
+- Description trimming: `'  Tasty  '` is stored as `'Tasty'` on create and update; `'   '` → null (asserting the row exists).
+- Table checks through the functions: empty name, untrimmed name, price 0, −1 and 1 000 000 000 → 23514.
+- `finish_photo_upload` size branches: size 0, size missing, size `'abc'`, size 2 097 153 → `upload_missing`; an object with the reserved name in another bucket → `upload_missing`.
+- Deleting an item with a pending item photo removes the photo row and queues its path.
+- Pending menu reservation expiry (backdated over 1 hour): it no longer counts toward the 10 and is queued.
+- `currencies` guard as postgres: update of a code, delete and truncate raise an error whose message starts with `currency_code_permanent` (P0001); an insert with `minor_units = 4` raises 23514.
+- No update path on storage: an owner's `update storage.objects set name = …` on a live object affects 0 rows.
 - Storage: as each role, `insert into storage.objects (bucket_id, name, …)` for reserved, unreserved, other-business, expired and malformed paths. `select` visibility before and after `set_seller_mode(false)`. `delete` of live vs. queued objects. The bucket row's `public`, `file_size_limit` and `allowed_mime_types`.
 - `finish_photo_upload` with and without an object row (and with a disallowed mimetype in `metadata`).
 - Cleanup queue contents after item delete, photo delete, replace and business cascade; `claim_photo_cleanup` behaviour.
 - `currencies` minor-unit samples and write refusal; the function allowlist and `private` checks (in the 05 file, which owns the allowlist).
+
+**Config test (jest, PR 1)**: `src/lib/__tests__/supabaseConfig.test.ts` reads `supabase/config.toml` and asserts the `[api]` `schemas` list is exactly `public` and `graphql_public`, so `private` is never exposed (Decision 28).
 
 **Unit and component tests (jest)**: supabase and native modules mocked. All RNTL v14 calls are awaited.
 - `media/__tests__/jpegMetadata.test.ts`: the committed fixtures plus hand-built byte arrays for each marker case.
@@ -534,7 +567,7 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
   - Accessible label and role in view and edit modes.
 - `menu/__tests__/price.test.ts`: a table of currency × locale × input cases.
 - `menu/__tests__/api.test.ts`: RPC names and arguments, error mapping for every `MenuAppError` code.
-- `menu/__tests__/uploadBusinessPhoto.test.ts`: the step order; on failure it deletes the pending row and runs cleanup; it never uploads the original URI.
+- `menu/__tests__/uploadBusinessPhoto.test.ts`: the step order; on failure it deletes the pending row and runs cleanup; it never uploads the original URI; on `cleanup_required` it runs the cleanup and retries `beginPhotoUpload` once.
 - `menu/__tests__/MenuScreen.test.tsx`, `MenuItemFormScreen.test.tsx`, `BusinessPhotosScreen.test.tsx`, `CurrencyPicker.test.tsx`: the 4 states, limits, move controls and announcements, the currency lock, accessible names, the homemade note.
 - `sellers/__tests__/sellerRoutes.test.ts` (new rows), `sellerRouting.test.tsx`: push `/seller/menu` while `getMyBusiness` is pending. The mount counter doesn't increase and the skeleton is visible. Then resolve `null` → `/seller/onboarding`, and Back still returns to the previous screen.
 - `sellers/__tests__/ManageBusinessScreen.test.tsx`: the Menu and Photos rows and their summaries.
@@ -592,6 +625,14 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 22. **`invalid_input` for a missing or someone else's item in `begin_photo_upload`**, as in the function table; the general `not_found` rule notes the exception.
 23. **`set_menu_currency(null)` raises `invalid_input`.**
 24. **Retry for cover and item photos:** a new reservation replaces the pending one for the same slot (second migration, `photo_slot_retry`). Gallery and menu pending rows keep counting; the app deletes a failed one at once, and the 1-hour expiry is the backstop.
+
+### PR 1 code review decisions (approved 2026-11-04)
+25. **`cleanup_required`:** `begin_photo_upload` refuses new reservations while the business has 20 or more queued files still in storage (third migration, `photo_cleanup_limits`). A hostile client that never runs the cleanup can otherwise grow storage without limit. PR 2 runs the cleanup and retries once on this error. v1.md §16 tracks storage monitoring before launch.
+26. **10-minute wait in `claim_photo_cleanup`:** a queue row is dropped only when older than 10 minutes and its file is gone, so an upload still in flight can't leave a file that nothing tracks. Only paths whose file exists are returned.
+27. **Descriptions are stored trimmed** by `create_menu_item` / `update_menu_item`; blank → null.
+28. **The "private is not exposed" check is a jest test on `supabase/config.toml`**, replacing a pgTAP assertion that could not fail (the exposed schemas are configured there, not in the database).
+
+The repeated business-lock prologue and the UUID regex in the storage policies stay inline: a shared helper would be a sixth `private` function, and the spec allows exactly five.
 
 ### Design choices also accepted with the spec
 - All menu and photo writes go through functions that lock the business row, not direct table writes. This is the only race-free way to enforce the limits and the currency lock.

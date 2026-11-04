@@ -3,8 +3,17 @@
 -- policies, and the menu / photo functions.
 -- The function allowlist, the `private` schema checks, businesses.currency_code column
 -- privileges and the get_my_business key list live in the 05 file.
+--
+-- ORDER-DEPENDENT: the sections below share state and must not be reordered. In particular:
+--   * the reservation chain g1..g7 / gn (business P) builds on earlier reservations, expiry
+--     backdating and finishes, and later upload-policy tests reuse those paths;
+--   * the `res` temp table holds each reservation under a key (g1, c1, i2, d_cover, cl20, ...);
+--     a key must be written before any later section reads it with pg_temp.rp / pg_temp.rid;
+--   * seller mode for business R (06a1) is switched off and back on inside one section, and the
+--     visibility counts before and after depend on that toggle being done in place;
+--   * queue rows are backdated (queued_at) just before the claim that must drop them (Decision 26).
 begin;
-select plan(288);
+select plan(347);
 
 -- ── Fixtures (as postgres) ──────────────────────────────────────────────────
 -- users (…0006NN)            businesses (…0006xN)
@@ -19,7 +28,14 @@ select plan(288);
 -- 0609 M  move / delete positions                06a4
 -- 0610 C  whole-business cascade                 06a5
 -- 0611 Q  cover / item retry, replace, queue, claim 06a6
--- items 06f1..06f7, photos 0621..0626 and 0631..0633
+-- 0612 E  59-minute boundary (inserted mid-file)    06a7
+-- 0613 D  account-deletion cascade (inserted mid-file) 06a8
+-- 0614 F  cleanup_required, 20 queued files (inserted late)  06a9
+-- 0615 G  10-minute claim wait (inserted late)       06aa
+-- 0616 T  description trimming, table checks, pending item photo cascade (inserted late)  06ab
+-- 0617 S  finish size branches, pending menu expiry (inserted late)  06ac
+-- items 06f1..06f7, photos 0621..0626 and 0631..0633; late photo ids 0000-0003-… (menu expiry),
+-- queue paths 0000-0001-… (cleanup_required) and 0000-0002-… (claim wait)
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000000601', 'm601@example.test'),
   ('00000000-0000-0000-0000-000000000602', 'm602@example.test'),
@@ -192,7 +208,7 @@ select is((select array_agg(policyname::text order by policyname) from pg_polici
   array['business_media_delete_own', 'business_media_insert_own', 'business_media_select'],
   'business-media has exactly an insert, a select and a delete policy on storage.objects');
 select is((select count(*)::int from pg_policies
-            where schemaname = 'storage' and tablename = 'objects' and cmd = 'UPDATE'
+            where schemaname = 'storage' and tablename = 'objects' and cmd in ('UPDATE', 'ALL')
               and (policyname || ' ' || coalesce(qual, '') || ' ' || coalesce(with_check, '')) ilike '%business%media%'),
   0, 'there is no UPDATE policy on storage.objects for business-media');
 
@@ -206,8 +222,8 @@ select is((select array_agg(code order by code) from public.currencies
 select is((select array_agg(code order by code) from public.currencies
             where minor_units = 3 and code in ('BHD', 'KWD', 'JOD', 'OMR', 'TND', 'IQD')),
   array['BHD', 'IQD', 'JOD', 'KWD', 'OMR', 'TND'], 'BHD KWD JOD OMR TND IQD have 3 minor units');
-select is((select count(*)::int from public.currencies where minor_units not in (0, 2, 3)), 0,
-  'no currency has minor units outside 0, 2 and 3');
+select throws_ok($$ insert into public.currencies (code, name, minor_units) values ('ZZA', 'Four decimals', 4) $$,
+  '23514', null, 'a currency with 4 minor units is rejected by the table check');
 select is((select count(*)::int from public.currencies
             where code in ('CLF', 'UYW', 'XAU', 'XAG', 'XDR', 'XTS', 'XXX')), 0,
   'fund, precious-metal, SDR, test and no-currency codes are absent');
@@ -470,8 +486,9 @@ select throws_ok($$ select public.set_menu_currency('ZZZ') $$, '23503', null,
 select throws_ok($$ select public.create_menu_item('Priced', null, 1250) $$, 'P0001', 'currency_required',
   'a price with no currency raises currency_required');
 select lives_ok($$ select public.create_menu_item('Plain', '', null) $$, 'create_menu_item with no price works');
-select is((select description from public.menu_items where name = 'Plain' and business_id = '00000000-0000-0000-0000-0000000006a2'),
-  null::text, 'an empty description is stored as null');
+select ok(exists(select 1 from public.menu_items
+                  where name = 'Plain' and business_id = '00000000-0000-0000-0000-0000000006a2' and description is null),
+  'the item exists and an empty description is stored as null');
 select lives_ok($$ select public.create_menu_item('Fancy', 'A nice dish', null) $$, 'create_menu_item with a description works');
 select is((select description from public.menu_items where name = 'Fancy' and business_id = '00000000-0000-0000-0000-0000000006a2'),
   'A nice dish', 'a non-empty description is kept');
@@ -486,8 +503,9 @@ select lives_ok($$ select public.set_menu_currency('CAD') $$, 'setting the same 
 select lives_ok($$ select public.update_menu_item(
     (select id from public.menu_items where name = 'Priced' and business_id = '00000000-0000-0000-0000-0000000006a2'),
     'Priced', null, null, true) $$, 'update_menu_item can remove a price');
-select is((select price_minor from public.menu_items where name = 'Priced' and business_id = '00000000-0000-0000-0000-0000000006a2'),
-  null::integer, 'the price is now null');
+select ok(exists(select 1 from public.menu_items
+                  where name = 'Priced' and business_id = '00000000-0000-0000-0000-0000000006a2' and price_minor is null),
+  'the item still exists and its price is now null');
 select lives_ok($$ select public.set_menu_currency('USD') $$, 'set_menu_currency works again after the prices are removed');
 select is(public.get_my_business()->>'currency_code', 'USD', 'get_my_business reflects the new currency');
 select is((select array_agg(mi.name order by mi.position) from public.menu_items mi
@@ -506,8 +524,9 @@ select is((select count(*)::int from public.menu_items where business_id = '0000
 select lives_ok($$ select public.delete_menu_item(
     (select id from public.menu_items where name = 'Plain' and business_id = '00000000-0000-0000-0000-0000000006a2')) $$,
   'delete_menu_item removes the first item');
-select ok((select array_agg(mi.position order by mi.position) = (select array_agg(g order by g) from generate_series(1, 99) g)
+select is((select array_agg(mi.position order by mi.position)
              from public.menu_items mi where mi.business_id = '00000000-0000-0000-0000-0000000006a2'),
+  (select array_agg(g order by g) from generate_series(1, 99) g),
   'deleting an item closes the gap, positions are 1..99');
 select lives_ok($$ select public.create_menu_item('Back to 100', null, null) $$,
   'deleting an item frees a slot under the limit');
@@ -589,6 +608,8 @@ select lives_ok($$ select public.delete_business_photo(pg_temp.rid('g6')) $$,
 reset role;
 select is((select count(*)::int from public.storage_cleanup_queue where path = pg_temp.rp('g6')), 1,
   'the deleted pending photo''s path is queued');
+-- Decision 26: a queue row is dropped only once it is older than 10 minutes.
+update public.storage_cleanup_queue set queued_at = now() - interval '11 minutes' where path = pg_temp.rp('g6');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000608","role":"authenticated"}';
 select is((select count(*)::int from public.claim_photo_cleanup() as p where p = pg_temp.rp('g6')), 0,
@@ -710,7 +731,7 @@ select lives_ok($$ call pg_temp.put(pg_temp.rp('m4')) $$,
   'an owner can upload at a path reserved by a fresh pending row of their business');
 -- The insert policy refuses (42501) before the unique name index is reached (23505).
 select throws_ok($$ call pg_temp.put(pg_temp.rp('g7')) $$, '42501', null,
-  'uploading again to a path that already has an object is refused by the insert policy');
+  'uploading to a ready photo''s path is refused by the insert policy (object still present)');
 reset role;
 delete from storage.objects where name = pg_temp.rp('g7');
 set local role authenticated;
@@ -745,6 +766,8 @@ reset role;
 select is((select count(*)::int from public.business_photos
             where business_id = '00000000-0000-0000-0000-0000000006a6' and kind = 'cover' and status = 'ready'), 1,
   'there is exactly one ready cover');
+-- Decision 26: a queue row is dropped only once it is older than 10 minutes.
+update public.storage_cleanup_queue set queued_at = now() - interval '11 minutes' where path = pg_temp.rp('c1');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000611","role":"authenticated"}';
 select is((select count(*)::int from public.claim_photo_cleanup() as p where p = pg_temp.rp('c1')), 0,
@@ -773,6 +796,15 @@ select is((select count(*)::int from public.claim_photo_cleanup() as p where p =
 select is((select count(*)::int from public.claim_photo_cleanup() as p where p like '00000000-0000-0000-0000-0000000006a3/%'), 0,
   'claim_photo_cleanup never returns another business''s paths');
 
+-- no update path: an owner's rename of a live object changes nothing
+with u as (update storage.objects set name = name || '.moved' where name = pg_temp.rp('c3') returning 1)
+select is((select count(*)::int from u), 0, 'an owner''s update of a live business-media object affects 0 rows');
+reset role;
+select is((select count(*)::int from storage.objects where name = pg_temp.rp('c3')), 1,
+  'the live object kept its name after the owner''s update attempt');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000611","role":"authenticated"}';
+
 -- delete rules for live vs queued objects
 with d as (delete from storage.objects where name = pg_temp.rp('c3') returning 1)
 select is((select count(*)::int from d), 0, 'an owner cannot delete a live object');
@@ -789,6 +821,8 @@ reset role;
 select is((select count(*)::int from storage.objects where name in (pg_temp.rp('c2'), pg_temp.rp('c3'))), 2,
   'the outsider''s delete attempts removed nothing');
 delete from storage.objects where name = pg_temp.rp('c2');
+-- Decision 26: a queue row is dropped only once it is older than 10 minutes.
+update public.storage_cleanup_queue set queued_at = now() - interval '11 minutes' where path = pg_temp.rp('c2');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000611","role":"authenticated"}';
 select is((select count(*)::int from public.claim_photo_cleanup() as p where p = pg_temp.rp('c2')), 0,
@@ -883,18 +917,12 @@ select is((select (select count(*) from public.menu_items where business_id = '0
 -- ── Malformed folder names fail closed ──────────────────────────────────────
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000608","role":"authenticated"}';
-do $$
-declare n text;
-begin
-  foreach n in array array['not-a-uuid/x.jpg', 'x.jpg', 'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz/a.jpg'] loop
-    begin
-      insert into storage.objects (bucket_id, name, metadata)
-      values ('business-media', n, '{"mimetype":"image/jpeg","size":1000}');
-    exception when others then
-      null;
-    end;
-  end loop;
-end $$;
+select throws_ok($$ call pg_temp.put('not-a-uuid/x.jpg') $$, '42501', null,
+  'an upload into a non-uuid folder raises insufficient_privilege');
+select throws_ok($$ call pg_temp.put('x.jpg') $$, '42501', null,
+  'an upload with no folder raises insufficient_privilege');
+select throws_ok($$ call pg_temp.put('zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz/a.jpg') $$, '42501', null,
+  'an upload into a uuid-shaped but invalid folder raises insufficient_privilege');
 reset role;
 select is((select count(*)::int from storage.objects where name = 'not-a-uuid/x.jpg'), 0,
   'an upload into a non-uuid folder is refused');
@@ -979,8 +1007,8 @@ insert into public.businesses (id, owner_id, type, name, cuisine_code, map_lat, 
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000613","role":"authenticated"}';
-select public.set_menu_currency('CAD');
-select public.create_menu_item('Doomed dish', null, null);
+select lives_ok($$ select public.set_menu_currency('CAD') $$, 'D: set the currency');
+select lives_ok($$ select public.create_menu_item('Doomed dish', null, null) $$, 'D: create an item');
 insert into res select 'd_cover', public.begin_photo_upload('cover');
 insert into res select 'd_gal', public.begin_photo_upload('gallery');
 insert into res select 'd_menu', public.begin_photo_upload('menu');
@@ -991,10 +1019,10 @@ call pg_temp.put(pg_temp.rp('d_cover'));
 call pg_temp.put(pg_temp.rp('d_gal'));
 call pg_temp.put(pg_temp.rp('d_menu'));
 call pg_temp.put(pg_temp.rp('d_item'));
-select public.finish_photo_upload(pg_temp.rid('d_cover'));
-select public.finish_photo_upload(pg_temp.rid('d_gal'));
-select public.finish_photo_upload(pg_temp.rid('d_menu'));
-select public.finish_photo_upload(pg_temp.rid('d_item'));
+select lives_ok($$ select public.finish_photo_upload(pg_temp.rid('d_cover')) $$, 'D: finish the cover');
+select lives_ok($$ select public.finish_photo_upload(pg_temp.rid('d_gal')) $$, 'D: finish the gallery photo');
+select lives_ok($$ select public.finish_photo_upload(pg_temp.rid('d_menu')) $$, 'D: finish the menu photo');
+select lives_ok($$ select public.finish_photo_upload(pg_temp.rid('d_item')) $$, 'D: finish the item photo');
 -- d_pend stays pending (never uploaded or finished)
 
 reset role;
@@ -1020,6 +1048,237 @@ select is((select count(*)::int from public.storage_cleanup_queue
               and path in (pg_temp.rp('d_cover'), pg_temp.rp('d_gal'), pg_temp.rp('d_menu'),
                            pg_temp.rp('d_item'), pg_temp.rp('d_pend'))), 5,
   'the queued rows keep the deleted business id');
+
+-- ── Late fixtures: owners 0614-0617, businesses 06a9-06ac (all as postgres) ──
+reset role;
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000614', 'm614@example.test'),
+  ('00000000-0000-0000-0000-000000000615', 'm615@example.test'),
+  ('00000000-0000-0000-0000-000000000616', 'm616@example.test'),
+  ('00000000-0000-0000-0000-000000000617', 'm617@example.test');
+update public.profiles set username = 'menu_' || right(id::text, 3), is_seller = true
+ where id between '00000000-0000-0000-0000-000000000614' and '00000000-0000-0000-0000-000000000617';
+insert into public.businesses (id, owner_id, type, name, cuisine_code, map_lat, map_lng, public_address, is_listed) values
+  ('00000000-0000-0000-0000-0000000006a9', '00000000-0000-0000-0000-000000000614',
+   'restaurant', 'Menu F', 'IT', 43.80, -79.50, '11 Side St, Toronto', true),
+  ('00000000-0000-0000-0000-0000000006aa', '00000000-0000-0000-0000-000000000615',
+   'restaurant', 'Menu G', 'IT', 43.81, -79.51, '12 Side St, Toronto', true),
+  ('00000000-0000-0000-0000-0000000006ab', '00000000-0000-0000-0000-000000000616',
+   'restaurant', 'Menu T', 'IT', 43.82, -79.52, '13 Side St, Toronto', true),
+  ('00000000-0000-0000-0000-0000000006ac', '00000000-0000-0000-0000-000000000617',
+   'restaurant', 'Menu S', 'IT', 43.83, -79.53, '14 Side St, Toronto', true);
+
+-- ── cleanup_required (Decision 25), business 06a9 / owner 0614 ──────────────
+-- 20 queued files that are still in storage, all inside the business's folder.
+insert into public.storage_cleanup_queue (path, business_id)
+select '00000000-0000-0000-0000-0000000006a9/00000000-0000-0000-0001-' || lpad(g::text, 12, '0') || '.jpg',
+       '00000000-0000-0000-0000-0000000006a9'
+  from generate_series(1, 20) g;
+insert into storage.objects (bucket_id, name, metadata)
+select 'business-media', path, '{"mimetype":"image/jpeg","size":1000}'::jsonb
+  from public.storage_cleanup_queue
+ where business_id = '00000000-0000-0000-0000-0000000006a9';
+insert into res values
+  ('cl01', jsonb_build_object('path', '00000000-0000-0000-0000-0000000006a9/00000000-0000-0000-0001-000000000001.jpg')),
+  ('cl02', jsonb_build_object('path', '00000000-0000-0000-0000-0000000006a9/00000000-0000-0000-0001-000000000002.jpg')),
+  ('cl20', jsonb_build_object('path', '00000000-0000-0000-0000-0000000006a9/00000000-0000-0000-0001-000000000020.jpg'));
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000614","role":"authenticated"}';
+select throws_ok($$ select public.begin_photo_upload('cover') $$, 'P0001', 'cleanup_required',
+  'cleanup_required: a cover reservation is refused with 20 queued files still in storage');
+select throws_ok($$ select public.begin_photo_upload('gallery') $$, 'P0001', 'cleanup_required',
+  'cleanup_required: a gallery reservation is refused with 20 queued files still in storage');
+
+-- down to 19 queued files in storage
+reset role;
+delete from public.storage_cleanup_queue where path = pg_temp.rp('cl20');
+delete from storage.objects where name = pg_temp.rp('cl20');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000614","role":"authenticated"}';
+select lives_ok($$ insert into res select 'cl_c', public.begin_photo_upload('cover') $$,
+  'with 19 queued files in storage, a cover reservation succeeds');
+select lives_ok($$ insert into res select 'cl_g', public.begin_photo_upload('gallery') $$,
+  'with 19 queued files in storage, a gallery reservation succeeds');
+
+-- back to 20, then the owner removes two of the queued files
+reset role;
+insert into public.storage_cleanup_queue (path, business_id)
+values (pg_temp.rp('cl20'), '00000000-0000-0000-0000-0000000006a9');
+insert into storage.objects (bucket_id, name, metadata)
+values ('business-media', pg_temp.rp('cl20'), '{"mimetype":"image/jpeg","size":1000}'::jsonb);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000614","role":"authenticated"}';
+select throws_ok($$ select public.begin_photo_upload('gallery') $$, 'P0001', 'cleanup_required',
+  'cleanup_required: back at 20 queued files in storage the reservation is refused again');
+with d as (delete from storage.objects where name in (pg_temp.rp('cl01'), pg_temp.rp('cl02')) returning 1)
+select is((select count(*)::int from d), 2, 'the owner can delete two queued files');
+select lives_ok($$ insert into res select 'cl_g2', public.begin_photo_upload('gallery') $$,
+  'after the owner deletes enough queued files, a reservation succeeds again');
+reset role;
+select is((select count(*)::int from public.storage_cleanup_queue
+            where business_id = '00000000-0000-0000-0000-0000000006a9'), 20,
+  'queue rows whose file is gone are still queued (cleanup has not run) but no longer count');
+
+-- ── 10-minute wait in claim_photo_cleanup (Decision 26), business 06aa / owner 0615 ──
+insert into res values
+  ('w1', jsonb_build_object('path', '00000000-0000-0000-0000-0000000006aa/00000000-0000-0000-0002-000000000001.jpg')),
+  ('w2', jsonb_build_object('path', '00000000-0000-0000-0000-0000000006aa/00000000-0000-0000-0002-000000000002.jpg'));
+insert into public.storage_cleanup_queue (path, business_id, queued_at) values
+  (pg_temp.rp('w1'), '00000000-0000-0000-0000-0000000006aa', now() - interval '5 minutes'),
+  (pg_temp.rp('w2'), '00000000-0000-0000-0000-0000000006aa', now() - interval '11 minutes');
+insert into storage.objects (bucket_id, name, metadata)
+values ('business-media', pg_temp.rp('w2'), '{"mimetype":"image/jpeg","size":1000}'::jsonb);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000615","role":"authenticated"}';
+select is((select count(*)::int from public.claim_photo_cleanup() as p where p = pg_temp.rp('w1')), 0,
+  'claim_photo_cleanup does not return a path whose file is gone (queue row under 10 minutes old)');
+select is((select count(*)::int from public.claim_photo_cleanup() as p where p = pg_temp.rp('w2')), 1,
+  'claim_photo_cleanup returns a queued path whose file still exists, however old');
+reset role;
+select is((select count(*)::int from public.storage_cleanup_queue where path = pg_temp.rp('w1')), 1,
+  'claim_photo_cleanup keeps a missing-file queue row younger than 10 minutes');
+update public.storage_cleanup_queue set queued_at = now() - interval '11 minutes' where path = pg_temp.rp('w1');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000615","role":"authenticated"}';
+select is((select count(*)::int from public.claim_photo_cleanup() as p where p = pg_temp.rp('w1')), 0,
+  'claim_photo_cleanup never returns a path whose file is gone (queue row 11 minutes old)');
+reset role;
+select is((select count(*)::int from public.storage_cleanup_queue where path = pg_temp.rp('w1')), 0,
+  'claim_photo_cleanup drops a missing-file queue row once it is 11 minutes old');
+
+-- ── Description trimming, table checks, pending item photo cascade (business 06ab / owner 0616) ──
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000616","role":"authenticated"}';
+select lives_ok($$ select public.create_menu_item('T1', '  Tasty  ', null) $$, 'create_menu_item with a padded description works');
+select ok(exists(select 1 from public.menu_items
+                  where name = 'T1' and business_id = '00000000-0000-0000-0000-0000000006ab' and description = 'Tasty'),
+  'create_menu_item stores ''  Tasty  '' as ''Tasty''');
+select lives_ok($$ select public.create_menu_item('T2', 'Old', null) $$, 'create_menu_item for the update test works');
+select lives_ok($$ select public.update_menu_item(
+    (select id from public.menu_items where name = 'T2' and business_id = '00000000-0000-0000-0000-0000000006ab'),
+    'T2', '  Tasty  ', null, true) $$, 'update_menu_item with a padded description works');
+select ok(exists(select 1 from public.menu_items
+                  where name = 'T2' and business_id = '00000000-0000-0000-0000-0000000006ab' and description = 'Tasty'),
+  'update_menu_item stores ''  Tasty  '' as ''Tasty''');
+select lives_ok($$ select public.create_menu_item('T3', '   ', null) $$, 'create_menu_item with a blank description works');
+select ok(exists(select 1 from public.menu_items
+                  where name = 'T3' and business_id = '00000000-0000-0000-0000-0000000006ab' and description is null),
+  'create_menu_item stores a blank description as null (and the row exists)');
+select lives_ok($$ select public.update_menu_item(
+    (select id from public.menu_items where name = 'T2' and business_id = '00000000-0000-0000-0000-0000000006ab'),
+    'T2', '   ', null, true) $$, 'update_menu_item with a blank description works');
+select ok(exists(select 1 from public.menu_items
+                  where name = 'T2' and business_id = '00000000-0000-0000-0000-0000000006ab' and description is null),
+  'update_menu_item stores a blank description as null (and the row exists)');
+
+select lives_ok($$ select public.set_menu_currency('CAD') $$, 'T: set the currency so prices can be tried');
+select throws_ok($$ select public.create_menu_item('', null, null) $$, '23514', null,
+  'create_menu_item with an empty name raises a check violation');
+select throws_ok($$ select public.create_menu_item(' padded ', null, null) $$, '23514', null,
+  'create_menu_item with an untrimmed name raises a check violation');
+select throws_ok($$ select public.create_menu_item('Free', null, 0) $$, '23514', null,
+  'create_menu_item with price 0 raises a check violation');
+select throws_ok($$ select public.create_menu_item('Negative', null, -1) $$, '23514', null,
+  'create_menu_item with price -1 raises a check violation');
+select throws_ok($$ select public.create_menu_item('Huge', null, 1000000000) $$, '23514', null,
+  'create_menu_item with price 1000000000 raises a check violation');
+select throws_ok($$ select public.update_menu_item(
+    (select id from public.menu_items where name = 'T2' and business_id = '00000000-0000-0000-0000-0000000006ab'),
+    '', null, null, true) $$, '23514', null,
+  'update_menu_item with an empty name raises a check violation');
+select throws_ok($$ select public.update_menu_item(
+    (select id from public.menu_items where name = 'T2' and business_id = '00000000-0000-0000-0000-0000000006ab'),
+    'T2', null, 0, true) $$, '23514', null,
+  'update_menu_item with price 0 raises a check violation');
+
+-- pending item photo cascade
+insert into res select 'pi', public.begin_photo_upload('item',
+  (select id from public.menu_items where name = 'T3' and business_id = '00000000-0000-0000-0000-0000000006ab'));
+select lives_ok($$ select public.delete_menu_item(
+    (select id from public.menu_items where name = 'T3' and business_id = '00000000-0000-0000-0000-0000000006ab')) $$,
+  'deleting an item that has a pending item photo works');
+reset role;
+select is((select count(*)::int from public.business_photos where id = pg_temp.rid('pi')), 0,
+  'deleting an item removes its pending item photo row');
+select is((select count(*)::int from public.storage_cleanup_queue where path = pg_temp.rp('pi')), 1,
+  'deleting an item queues the path of its pending item photo');
+
+-- ── finish_photo_upload size branches and bucket check (business 06ac / owner 0617) ──
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000617","role":"authenticated"}';
+insert into res select 'sz0', public.begin_photo_upload('gallery');
+insert into res select 'szm', public.begin_photo_upload('gallery');
+insert into res select 'sza', public.begin_photo_upload('gallery');
+insert into res select 'szl', public.begin_photo_upload('gallery');
+insert into res select 'szb', public.begin_photo_upload('gallery');
+reset role;
+insert into storage.objects (bucket_id, name, metadata) values
+  ('business-media', pg_temp.rp('sz0'), '{"mimetype":"image/jpeg","size":0}'::jsonb),
+  ('business-media', pg_temp.rp('szm'), '{"mimetype":"image/jpeg"}'::jsonb),
+  ('business-media', pg_temp.rp('sza'), '{"mimetype":"image/jpeg","size":"abc"}'::jsonb),
+  ('business-media', pg_temp.rp('szl'), '{"mimetype":"image/jpeg","size":2097153}'::jsonb);
+insert into storage.buckets (id, name) values ('other-media', 'other-media') on conflict do nothing;
+insert into storage.objects (bucket_id, name, metadata)
+values ('other-media', pg_temp.rp('szb'), '{"mimetype":"image/jpeg","size":1000}'::jsonb);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000617","role":"authenticated"}';
+select throws_ok($$ select public.finish_photo_upload(pg_temp.rid('sz0')) $$, 'P0001', 'upload_missing',
+  'finish_photo_upload with an object of size 0 raises upload_missing');
+select throws_ok($$ select public.finish_photo_upload(pg_temp.rid('szm')) $$, 'P0001', 'upload_missing',
+  'finish_photo_upload with no size in the metadata raises upload_missing');
+select throws_ok($$ select public.finish_photo_upload(pg_temp.rid('sza')) $$, 'P0001', 'upload_missing',
+  'finish_photo_upload with a non-numeric size raises upload_missing');
+select throws_ok($$ select public.finish_photo_upload(pg_temp.rid('szl')) $$, 'P0001', 'upload_missing',
+  'finish_photo_upload with a size of 2097153 raises upload_missing');
+select throws_ok($$ select public.finish_photo_upload(pg_temp.rid('szb')) $$, 'P0001', 'upload_missing',
+  'finish_photo_upload with an object of the same name in another bucket raises upload_missing');
+
+-- ── Pending menu reservation expiry (same business 06ac) ────────────────────
+reset role;
+insert into public.business_photos (id, business_id, kind, path, status)
+select ('00000000-0000-0000-0003-' || lpad(g::text, 12, '0'))::uuid,
+       '00000000-0000-0000-0000-0000000006ac', 'menu',
+       '00000000-0000-0000-0000-0000000006ac/00000000-0000-0000-0003-' || lpad(g::text, 12, '0') || '.jpg',
+       'pending'
+  from generate_series(1, 10) g;
+insert into res values
+  ('me1', jsonb_build_object('photo_id', '00000000-0000-0000-0003-000000000001',
+                             'path', '00000000-0000-0000-0000-0000000006ac/00000000-0000-0000-0003-000000000001.jpg'));
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000617","role":"authenticated"}';
+select throws_ok($$ select public.begin_photo_upload('menu') $$, 'P0001', 'photo_limit',
+  'ten fresh pending menu reservations fill the menu limit');
+reset role;
+update public.business_photos set created_at = now() - interval '61 minutes' where id = pg_temp.rid('me1');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000617","role":"authenticated"}';
+select lives_ok($$ insert into res select 'me11', public.begin_photo_upload('menu') $$,
+  'a pending menu reservation older than 1 hour stops counting toward the 10');
+reset role;
+select is((select count(*)::int from public.business_photos where id = pg_temp.rid('me1')), 0,
+  'begin_photo_upload deleted the expired pending menu reservation');
+select is((select count(*)::int from public.storage_cleanup_queue where path = pg_temp.rp('me1')), 1,
+  'the expired pending menu reservation''s path is queued');
+
+-- ── currencies guard, as the table owner (postgres) ─────────────────────────
+-- Each statement runs inside throws_ok's own subtransaction, so nothing leaks into the rest of the file.
+-- TRUNCATE uses CASCADE so the foreign key from businesses cannot raise first: only the guard may refuse it.
+select throws_ok($$ update public.currencies set code = 'ZZZ' where code = 'USD' $$, 'P0001', null,
+  'the currencies guard blocks a code change (P0001)');
+select throws_like($$ update public.currencies set code = 'ZZZ' where code = 'USD' $$, 'currency_code_permanent%',
+  'the code-change error starts with currency_code_permanent');
+select throws_ok($$ delete from public.currencies where code = 'USD' $$, 'P0001', null,
+  'the currencies guard blocks a delete (P0001)');
+select throws_like($$ delete from public.currencies where code = 'USD' $$, 'currency_code_permanent%',
+  'the delete error starts with currency_code_permanent');
+-- Run the deferred menu_items position checks now: TRUNCATE refuses (55006) a table with pending
+-- trigger events before any truncate trigger fires, which would hide the guard.
+set constraints all immediate;
+select throws_ok($$ truncate public.currencies cascade $$, 'P0001', null,
+  'the currencies guard blocks a truncate (P0001)');
+select throws_like($$ truncate public.currencies cascade $$, 'currency_code_permanent%',
+  'the truncate error starts with currency_code_permanent');
 
 select * from finish();
 rollback;

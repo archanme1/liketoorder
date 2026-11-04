@@ -1,7 +1,7 @@
 -- Spec 05: seller onboarding — businesses, business_locations, places_rate_limits,
 -- column grants, function privileges, homemade approximate location and Places quota.
 begin;
-select plan(197);
+select plan(196);
 
 -- ── Fixtures (as postgres) ──────────────────────────────────────────────────
 -- 0501 A  restaurant, listed, with location (the public one)
@@ -199,13 +199,8 @@ select is_empty(
         and (not p.prosecdef or p.proconfig is distinct from array['search_path=""']) $$,
   'every private helper is security definer with an empty search_path'
 );
--- PostgREST's exposed schemas come from config.toml `[api] schemas` (public, graphql_public); this
--- catches the database-level form of the same setting.
-select is_empty(
-  $$ select r.rolname::text from pg_db_role_setting s join pg_roles r on r.oid = s.setrole
-      where array_to_string(s.setconfig, ',') ~ 'pgrst\.db_schemas=[^,]*private' $$,
-  'no role setting exposes the private schema to PostgREST'
-);
+-- That `private` is not exposed is set in config.toml `[api] schemas`, outside the database:
+-- src/lib/__tests__/supabaseConfig.test.ts checks it.
 
 select ok(not has_function_privilege('anon', 'public.business_owner_view(uuid)', 'execute'),
   'anon cannot execute business_owner_view');

@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import { AuthProvider } from '@/features/auth/components/AuthProvider';
 import * as authApi from '@/features/auth/api';
 import { authErrorMessage, PASSWORD_UPDATED } from '@/features/auth/messages';
+import * as sellersApi from '@/features/sellers/api';
 import { supabase } from '@/lib/supabase';
 
 import * as api from '../api';
@@ -29,11 +30,19 @@ jest.mock('@/features/auth/api', () => ({
   ...jest.requireActual('@/features/auth/api'),
   signOut: jest.fn(),
 }));
+// SellerModeRow loads the business once the session arrives. Left unmocked it fails (the supabase
+// mock has no rpc) and adds a second role="alert" a few ticks after the profile error, so
+// findByRole('alert') passed or failed depending on timing.
+jest.mock('@/features/sellers/api', () => ({
+  ...jest.requireActual('@/features/sellers/api'),
+  getMyBusiness: jest.fn(),
+}));
 
 const realProfileApi = jest.requireActual<typeof import('../api')>('../api');
 const realAuthApi = jest.requireActual<typeof import('@/features/auth/api')>('@/features/auth/api');
 const mockedApi = jest.mocked(api);
 const mockedAuthApi = jest.mocked(authApi);
+const mockedSellersApi = jest.mocked(sellersApi);
 const auth = supabase.auth as unknown as Record<string, jest.Mock>;
 
 const profile: api.Profile = {
@@ -72,6 +81,7 @@ describe('ProfileScreen', () => {
     mockedApi.getMyProfile.mockReset();
     mockedApi.getMyProfile.mockResolvedValue(profile);
     mockedAuthApi.signOut.mockResolvedValue(undefined);
+    mockedSellersApi.getMyBusiness.mockResolvedValue(null);
     auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: jest.fn() } } });
     auth.getSession.mockResolvedValue({ data: { session } });
   });

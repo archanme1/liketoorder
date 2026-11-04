@@ -1,7 +1,7 @@
 -- Spec 05: seller onboarding — businesses, business_locations, places_rate_limits,
 -- column grants, function privileges, homemade approximate location and Places quota.
 begin;
-select plan(192);
+select plan(197);
 
 -- ── Fixtures (as postgres) ──────────────────────────────────────────────────
 -- 0501 A  restaurant, listed, with location (the public one)
@@ -123,6 +123,9 @@ select column_privs_are('public', 'businesses', 'owner_id', 'anon', array[]::tex
 select column_privs_are('public', 'businesses', 'is_listed', 'anon', array[]::text[], 'anon: no privileges on is_listed');
 select column_privs_are('public', 'businesses', 'created_at', 'anon', array[]::text[], 'anon: no privileges on created_at');
 select column_privs_are('public', 'businesses', 'updated_at', 'anon', array[]::text[], 'anon: no privileges on updated_at');
+-- Spec 06: the menu currency is public with the listing; written only by set_menu_currency().
+select column_privs_are('public', 'businesses', 'currency_code', 'anon', array['SELECT'],
+  'anon: currency_code is select-only');
 -- authenticated: same select grant, plus update on name, cuisine_code, accepts_table_requests.
 select column_privs_are('public', 'businesses', 'id', 'authenticated', array['SELECT'], 'authenticated: id is select-only');
 select column_privs_are('public', 'businesses', 'type', 'authenticated', array['SELECT'], 'authenticated: type is select-only');
@@ -144,6 +147,8 @@ select column_privs_are('public', 'businesses', 'created_at', 'authenticated', a
   'authenticated: no privileges on created_at');
 select column_privs_are('public', 'businesses', 'updated_at', 'authenticated', array[]::text[],
   'authenticated: no privileges on updated_at');
+select column_privs_are('public', 'businesses', 'currency_code', 'authenticated', array['SELECT'],
+  'authenticated: currency_code is select-only');
 
 -- ── No column privileges at all on the private tables ───────────────────────
 select ok(not has_any_column_privilege('anon', 'public.business_locations', 'SELECT, INSERT, UPDATE, REFERENCES'),
@@ -164,8 +169,10 @@ select is(
     where n.nspname = 'public'
       and has_function_privilege('authenticated', p.oid, 'execute')
       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')),
-  array['create_my_business', 'get_my_business', 'set_seller_mode'],
-  'only the three allowlisted public functions are executable by authenticated'
+  array['begin_photo_upload', 'claim_photo_cleanup', 'create_menu_item', 'create_my_business',
+        'delete_business_photo', 'delete_menu_item', 'finish_photo_upload', 'get_my_business',
+        'move_menu_item', 'set_menu_currency', 'set_seller_mode', 'update_menu_item'],
+  'only the allowlisted public functions (specs 05, 06) are executable by authenticated'
 );
 select is(
   (select coalesce(array_agg(distinct p.proname::text order by p.proname::text), array[]::text[])
@@ -177,6 +184,29 @@ select is(
   array[]::text[],
   'anon can execute no public function'
 );
+
+-- Spec 06: RLS helpers live in `private`, which PostgREST does not expose.
+select is(
+  (select coalesce(array_agg(p.proname::text order by p.proname::text), array[]::text[])
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'private'),
+  array['business_is_public', 'owns_business', 'photo_is_live', 'photo_is_public', 'photo_upload_allowed'],
+  'the private schema holds exactly the five RLS helpers'
+);
+select is_empty(
+  $$ select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'private'
+        and (not p.prosecdef or p.proconfig is distinct from array['search_path=""']) $$,
+  'every private helper is security definer with an empty search_path'
+);
+-- PostgREST's exposed schemas come from config.toml `[api] schemas` (public, graphql_public); this
+-- catches the database-level form of the same setting.
+select is_empty(
+  $$ select r.rolname::text from pg_db_role_setting s join pg_roles r on r.oid = s.setrole
+      where array_to_string(s.setconfig, ',') ~ 'pgrst\.db_schemas=[^,]*private' $$,
+  'no role setting exposes the private schema to PostgREST'
+);
+
 select ok(not has_function_privilege('anon', 'public.business_owner_view(uuid)', 'execute'),
   'anon cannot execute business_owner_view');
 select ok(not has_function_privilege('authenticated', 'public.business_owner_view(uuid)', 'execute'),
@@ -373,7 +403,7 @@ select is(((public.get_my_business()->'location'->>'lat'))::float8, 43.7::float8
   'get_my_business returns the owner''s exact latitude');
 select is(
   (select array_agg(k order by k collate "C") from jsonb_object_keys(public.get_my_business()) k),
-  array['accepts_table_requests', 'created_at', 'cuisine_code', 'id', 'is_listed', 'location',
+  array['accepts_table_requests', 'created_at', 'cuisine_code', 'currency_code', 'id', 'is_listed', 'location',
         'map_lat', 'map_lng', 'name', 'public_address', 'type', 'updated_at'],
   'get_my_business has exactly the documented keys and never owner_id'
 );

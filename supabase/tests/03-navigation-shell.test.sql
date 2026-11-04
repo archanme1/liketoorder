@@ -22,6 +22,12 @@ select is_empty(
        select 'cuisines'::name   -- spec 04: read-only catalog (04-cuisine-catalog.test.sql)
        union all
        select 'businesses'::name -- spec 05: public listing columns only (05-seller-onboarding.test.sql)
+       union all
+       select 'currencies'::name -- spec 06: read-only catalog (06-menu-management.test.sql)
+       union all
+       select 'menu_items'::name -- spec 06: select on listed businesses' items (06-menu-management.test.sql)
+       union all
+       select 'business_photos'::name -- spec 06: select on ready photos of listed businesses (06-menu-management.test.sql)
      )
      select c.relname::text
        from pg_class c

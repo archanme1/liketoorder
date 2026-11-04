@@ -1,7 +1,7 @@
 # Spec 06: Menu Management
 
 **Branch:** two PRs from this one spec (Decision 11)
-- PR 1 (Gate A: database, storage bucket and policies, pgTAP, types): `feature/menu-management` (this branch)
+- PR 1 (Gate A: database, storage bucket and policies, pgTAP, types): `feature/menu-management-backend` (this branch; renamed from `feature/menu-management` before its first push)
 - PR 2 (Gates B + C + D + manual run: the app): `feature/menu-management-app`, created from `main` after PR 1 is merged
 **Product spec:** `docs/product/v1.md` §5 Sellers & listings (Menus, "change … menu any time from Manage Business", Homemade specifics), §6 (the bottom sheet will show photos, menu, prices and availability; not built here), §3 (out of scope), §14 row 06
 **Plan mode:** required — adds tables, RLS, callable functions, a storage bucket and storage policies; adds dependencies (image picker, manipulator, image, file system, localization); adds routes under `app/seller/`; touches well over ~5 files.
@@ -281,6 +281,7 @@ Together these mean:
   - A signed URL issued before seller mode was switched off still works until it expires, at most 1 hour.
   - A photo already in a viewer's disk cache stays on that phone until the cache evicts it. The app stops showing it as soon as the rows are no longer readable, because no path, no tile.
   - The app doesn't log signed URLs.
+  - **Content type is declared, not verified:** Storage checks the content type the uploader declares (and `finish_photo_upload` checks the `mimetype` Storage recorded from it), not the actual bytes. A client that skips the app could store a non-image file under a reserved path, within the 2 MB limit and the photo-row caps. Not mitigated in v1; the server-side check in v1.md §16 (Decision 13) would cover it.
 
 **No orphaned files (Decision 6):** a database transaction and a Storage API call can't be one atomic step. So deletes use an **outbox**:
 1. Every path that loses its row (delete item, delete photo, replaced cover or item photo, expired pending reservation, business cascade) is written to `storage_cleanup_queue` by a trigger, **in the same transaction** as the delete. No file is ever forgotten.

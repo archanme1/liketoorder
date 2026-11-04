@@ -3,10 +3,12 @@ import { ImageManipulator, SaveFormat, type ImageRef } from 'expo-image-manipula
 
 import { JPEG_QUALITY, JPEG_RETRY_QUALITY, MAX_LONG_EDGE_PX, MAX_UPLOAD_BYTES } from './constants';
 import { MediaError } from './errors';
-import { assertNoHiddenMetadata } from './jpegMetadata';
+import { assertNoHiddenMetadata, stripJpegMetadata } from './jpegMetadata';
 
 export type PreparedImage = {
+  /** The encoder's local file, for on-phone preview only. It may still hold metadata: never upload it. */
   uri: string;
+  /** The stripped, checked bytes. The only thing that is ever uploaded. */
   bytes: Uint8Array;
   width: number;
   height: number;
@@ -32,16 +34,18 @@ export function resizeFor(
 
 async function encode(image: ImageRef, quality: number) {
   const saved = await image.saveAsync({ compress: quality, format: SaveFormat.JPEG });
-  const bytes = await new File(saved.uri).bytes();
-  // On the output bytes, every time: no code path uploads unchecked bytes.
+  // The phone's encoder can still write its own APP1 (Exif) and APP13 (Photoshop) blocks (seen on
+  // iOS), so the segments are stripped without re-encoding (Decision 29), then the strict check
+  // runs on the stripped bytes, every time: no code path uploads unchecked bytes.
+  const bytes = stripJpegMetadata(await new File(saved.uri).bytes());
   assertNoHiddenMetadata(bytes);
   return { saved, bytes };
 }
 
 /**
- * Resizes (never upscales) and re-encodes a photo as JPEG, which writes a new file without the
- * source's EXIF/XMP/IPTC, then proves it on the bytes. Uploads always send the returned bytes,
- * never the picker's original file.
+ * Resizes (never upscales), re-encodes as JPEG, strips any metadata segments the encoder wrote and
+ * proves it on the bytes. Uploads always send the returned bytes, never the picker's original
+ * file or the encoder's file. The 2 MB limit is measured on the stripped bytes.
  */
 export async function prepareImage(
   uri: string,

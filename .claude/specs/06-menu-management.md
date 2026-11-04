@@ -313,15 +313,22 @@ None. A server-side metadata check is not in v1 (Decision 13; tracked in v1.md �
 - `prepareImage.ts`: `prepareImage(uri, opts?)`:
   1. **Resize** with `expo-image-manipulator` to a long edge of at most 1600 px. Never upscale.
   2. **Re-encode** as JPEG at quality 0.8. Re-encoding writes a new file without the source's EXIF/XMP/IPTC.
-  3. Read the output bytes (`expo-file-system`) and run `assertNoHiddenMetadata(bytes)`.
-  4. If the output is over 2 MB, re-encode once at 0.6. Still over → `MediaError('too_large')`.
+  3. Read the output bytes (`expo-file-system`), run `stripJpegMetadata(bytes)`, then run `assertNoHiddenMetadata` on the **stripped** bytes (Decision 29).
+  4. If the stripped output is over 2 MB, re-encode once at 0.6 (and strip and check again). Still over → `MediaError('too_large')`.
 
-  It returns `{ uri, bytes, width, height, mimeType: 'image/jpeg' }`. The upload always sends **these bytes**, never the picker's original file.
-- `jpegMetadata.ts`: `assertNoHiddenMetadata(bytes)` is a pure function. It walks the JPEG markers from SOI to SOS:
-  - **Allowed:** APP0 (JFIF), APP2 (ICC colour profile), APP14 (Adobe), and the image segments.
-  - **Rejected:** APP1 (EXIF and XMP: where GPS lives), APP13 (IPTC/Photoshop), any other APPn, COM comments, and anything that isn't a valid JPEG.
+  It returns `{ uri, bytes, width, height, mimeType: 'image/jpeg' }`. `bytes` are the stripped, checked bytes, and the upload always sends **these bytes**, never the picker's original file and never the encoder's file at `uri` (local preview only).
+- `jpegMetadata.ts`, pure byte code with no re-encoding:
+  - `stripJpegMetadata(bytes)` (Decision 29):
+    - copies SOI;
+    - keeps only the image-structure segments: APP0 (JFIF), APP2 only when it is `ICC_PROFILE`, APP14 (Adobe), DQT, DHT, SOFn, DRI and the other non-APPn markers;
+    - drops every other APPn (APP1 EXIF/XMP, APP13 Photoshop/IPTC, MPF in APP2, anything else) and COM;
+    - copies everything from SOS through the first EOI byte for byte. Anything after that EOI (e.g. an MPF block's extra images) is dropped.
 
-  On a rejection it throws `MediaError('metadata_present')`, and the upload is cancelled.
+    Malformed or truncated input, including no EOI, → `MediaError('not_an_image')`. Stripping twice gives the same bytes.
+  - `assertNoHiddenMetadata(bytes)`, unchanged and strict, walks the JPEG markers from SOI to SOS:
+    - **Allowed:** APP0 (JFIF), APP2 (ICC colour profile), APP14 (Adobe), and the image segments.
+    - **Rejected:** APP1 (EXIF and XMP: where GPS lives), APP13 (IPTC/Photoshop), any other APPn (including MPF in APP2), COM comments → `MediaError('metadata_present')`. Anything that isn't a valid JPEG → `MediaError('not_an_image')`. Either way the upload is cancelled.
+  - `readExifOrientation(bytes)`: the EXIF Orientation (1–8) from the APP1 Exif segment, or null. It's used only by the dev probe and the device check, to show whether stripping could change how a photo is displayed.
 - `api.ts`: `uploadToBucket(bucket, path, bytes)` (upsert false), `removeFromBucket(bucket, paths)` and `signedUrls(bucket, paths, ttl)`. These are all of the Storage calls.
 - `MediaError` codes: `'cancelled' | 'too_large' | 'metadata_present' | 'not_an_image' | 'upload_failed' | 'network' | 'unknown'`, with `mediaErrorMessage(code)`.
 - `components/PhotoTile.tsx`:
@@ -424,7 +431,7 @@ Feature-specific rules:
 - **Every callable function** ends with `revoke execute … from public, anon, authenticated` and then its grant, and is added to the allowlist test. Private helpers live in `private`, never `public`.
 - **Owner identity comes from `auth.uid()`.** No function takes a business id from the client.
 - **Paths are server-made** (`<business_id>/<photo_id>.jpg`). Never a user id in a public path. Never a client-chosen name.
-- **Every photo goes through `prepareImage`**, and the upload sends its output bytes only. The picker's original file is never uploaded. No code path skips `assertNoHiddenMetadata`.
+- **Every photo goes through `prepareImage`**, and the upload sends its stripped output bytes only. The picker's original file and the encoder's file are never uploaded. No code path skips `stripJpegMetadata` or `assertNoHiddenMetadata`, and the strict check is never loosened (Decision 29).
 - **Do not log** photo bytes, URIs, paths or signed URLs.
 - **Row first, file later.** Never remove a file before its row is gone. Never write a row pointing at a file that doesn't exist (`finish_photo_upload` checks).
 - **Prices are integers** in minor units end to end. No `parseFloat` or float maths on money.
@@ -506,7 +513,15 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 
 **Shared media (jest) — PR 2**
 - [ ] `assertNoHiddenMetadata` rejects the EXIF-GPS fixture, the XMP-GPS fixture, an APP13 segment, a COM segment and non-JPEG bytes. It accepts the clean fixture and JFIF + ICC + Adobe segments.
-- [ ] `prepareImage` resizes to a long edge ≤ 1600 px without upscaling and outputs JPEG. It runs the metadata check on the output bytes. It retries once at 0.6 when over 2 MB, then fails with `too_large`.
+- [ ] `stripJpegMetadata` (Decision 29):
+  - Stripping the EXIF-GPS and XMP-GPS fixtures gives bytes that pass `assertNoHiddenMetadata`.
+  - The data from SOS through EOI is byte-identical to the input.
+  - The output starts with SOI, ends with EOI, and keeps SOF, DQT and DHT. JFIF and ICC are kept.
+  - APP1, APP13, other APPn, COM and MPF in APP2 are dropped.
+  - Non-JPEG and truncated input (including no EOI) give `not_an_image`.
+  - Stripping twice gives the same bytes.
+- [ ] exiftool on the stripped fixtures shows no GPS, EXIF, XMP or IPTC group, and the image still decodes with no warnings. This is checked once when the strip lands, not in CI.
+- [ ] `prepareImage` resizes to a long edge ≤ 1600 px without upscaling and outputs JPEG. It strips the output bytes and runs the strict check on the stripped bytes; EXIF/APP13 written by the encoder no longer blocks the upload, and the returned bytes have none. The 2 MB limit is measured on the stripped bytes. It retries once at 0.6 when over 2 MB, then fails with `too_large`.
 - [ ] The upload sends `prepareImage`'s bytes, never the picker URI (asserted in the orchestration test). A `metadata_present` result uploads nothing.
 - [ ] `pickImage` asks for a single image from the library only, with `exif: false`, and returns `null` on cancel.
 - [ ] `prepareImage` asks the manipulator for a long edge of exactly 1600 px for larger images (aspect ratio kept), leaves smaller images at their size, and encodes JPEG at 0.8. An output over 2 097 152 bytes is re-encoded at 0.6.
@@ -558,7 +573,16 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 
 **Unit and component tests (jest)**: supabase and native modules mocked. All RNTL v14 calls are awaited.
 - `media/__tests__/jpegMetadata.test.ts`: the committed fixtures plus hand-built byte arrays for each marker case.
-- `media/__tests__/prepareImage.test.ts`: manipulator options, no upscaling, the size retry, the check on output bytes.
+- `media/__tests__/stripJpegMetadata.test.ts` (Decision 29):
+  - the EXIF-GPS and XMP-GPS fixtures pass the strict check after stripping;
+  - SOS..EOI is byte-identical;
+  - SOI first, EOI last;
+  - SOF/DQT/DHT, JFIF and ICC kept;
+  - APP1/APP13/COM/MPF-in-APP2 dropped, and bytes after EOI dropped;
+  - non-JPEG and truncated input → `not_an_image`;
+  - idempotent;
+  - `readExifOrientation` reads 1–8 from little- and big-endian Exif, null when absent or malformed.
+- `media/__tests__/prepareImage.test.ts`: manipulator options, no upscaling, the size retry (measured on stripped bytes), the strip and the strict check on the output bytes (encoder output with APP1/APP13 succeeds, and the returned bytes have none).
 - `media/__tests__/pickImage.test.ts`, `media/__tests__/api.test.ts` (upsert false, batch signed URLs with TTL 3600).
 - `media/__tests__/useSignedUrls.test.tsx`: fake timers. No refetch at 49 minutes, a refetch at 51 minutes on remount/focus, the key is independent of path order, and `renew` invalidates once per path per mount.
 - `media/__tests__/PhotoTile.test.tsx`:
@@ -573,7 +597,7 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - `sellers/__tests__/ManageBusinessScreen.test.tsx`: the Menu and Photos rows and their summaries.
 
 **Manual check on device (iOS and Android)**:
-- **Metadata stripped:** with location on in the camera, take a photo, then upload it as a homemade gallery photo. In Studio, download the stored object and run `exiftool` on it: no GPS, no EXIF block. Do the same for an item photo.
+- **Metadata stripped:** with location on in the camera, take a photo, then upload it as a homemade gallery photo. In Studio, download the stored object and run `exiftool` on it: no GPS, no EXIF block. Do the same for an item photo. Check the photo displays the right way up (Decision 29: EXIF Orientation is removed with the rest).
 - Add items with prices in CAD; try JPY and KWD on a test business to check the decimals; check the currency lock.
 - Reorder with VoiceOver/TalkBack using the up/down buttons and hear the announcement.
 - Fill each photo section to its limit; replace the cover; delete an item with a photo, then check in Studio that the file is gone after the screen reopens.
@@ -631,6 +655,16 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 26. **10-minute wait in `claim_photo_cleanup`:** a queue row is dropped only when older than 10 minutes and its file is gone, so an upload still in flight can't leave a file that nothing tracks. Only paths whose file exists are returned.
 27. **Descriptions are stored trimmed** by `create_menu_item` / `update_menu_item`; blank → null.
 28. **The "private is not exposed" check is a jest test on `supabase/config.toml`**, replacing a pgTAP assertion that could not fail (the exposed schemas are configured there, not in the database).
+
+### Gate B device-probe decisions (approved 2026-11-04)
+29. **Strip, then verify with the strict check.**
+    - **What the probe found:** on iPhone (Expo Go), the manipulator's JPEG output still carries APP1 (Exif) and APP13 (Photoshop 3.0) on every photo tried (two camera photos, one screenshot). The strict `assertNoHiddenMetadata` correctly blocked every upload, so re-encoding alone isn't enough.
+    - **The check is not loosened.** `prepareImage` runs `stripJpegMetadata` on the encoder's bytes, in pure byte code with no re-encode:
+      - it keeps SOI and the image-structure segments (JFIF, ICC_PROFILE, Adobe, DQT, DHT, SOFn, DRI, other non-APPn);
+      - it drops every other APPn and COM;
+      - it copies SOS through the first EOI byte for byte.
+    - The strict check then runs on the stripped bytes. The stripped bytes are what's uploaded and what the 2 MB check measures.
+    - **Orientation:** EXIF Orientation goes with APP1. The probe reports the removed Orientation value, so we know whether stripping can change how a photo is displayed. A value other than 1 or absent is reported before going on.
 
 The repeated business-lock prologue and the UUID regex in the storage policies stay inline: a shared helper would be a sixth `private` function, and the spec allows exactly five.
 

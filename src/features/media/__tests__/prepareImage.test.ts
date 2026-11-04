@@ -2,6 +2,7 @@ import { File } from 'expo-file-system';
 import { ImageManipulator } from 'expo-image-manipulator';
 
 import { MediaError } from '../errors';
+import { assertNoHiddenMetadata, readJpegSegments } from '../jpegMetadata';
 import { prepareImage } from '../prepareImage';
 
 type Resize = { width?: number; height?: number };
@@ -14,26 +15,54 @@ function seg(marker: number, payload: number[]): number[] {
   return [0xff, marker, (length >> 8) & 0xff, length & 0xff, ...payload];
 }
 
-/** A valid clean JPEG header (SOI, DQT, SOS), padded after SOS to `size` bytes. */
+const EXIF_SEG = seg(0xe1, [0x45, 0x78, 0x69, 0x66, 0, 0, 1, 2, 3]);
+const PHOTOSHOP_SEG = seg(0xed, [...Array.from('Photoshop 3.0').map((c) => c.charCodeAt(0)), 0, 1]);
+
+/** A valid clean JPEG (SOI, DQT, SOS, zero data, EOI), padded to exactly `size` bytes. */
 function cleanJpeg(size = 64): Uint8Array {
   const head = [0xff, 0xd8, ...seg(0xdb, new Array(65).fill(1)), 0xff, 0xda, 0x00, 0x02];
-  const bytes = new Uint8Array(Math.max(size, head.length));
+  const bytes = new Uint8Array(Math.max(size, head.length + 2));
   bytes.set(head);
+  bytes.set([0xff, 0xd9], bytes.length - 2);
   return bytes;
 }
 
-function jpegWithExif(): Uint8Array {
-  const head = [
+/** A JPEG whose header carries the given metadata segments before DQT. Small image data + EOI. */
+function jpegWithSegments(...extra: number[][]): Uint8Array {
+  return new Uint8Array([
     0xff,
     0xd8,
-    ...seg(0xe1, [0x45, 0x78, 0x69, 0x66, 0, 0, 1, 2, 3]),
+    ...extra.flat(),
     ...seg(0xdb, new Array(65).fill(1)),
     0xff,
     0xda,
     0x00,
     0x02,
-  ];
-  return new Uint8Array(head);
+    1,
+    2,
+    3,
+    0xff,
+    0xd9,
+  ]);
+}
+
+function jpegWithExif(): Uint8Array {
+  return jpegWithSegments(EXIF_SEG, PHOTOSHOP_SEG);
+}
+
+/** A JPEG that is over the 2 MB limit only because of many large APP1 blocks. */
+function jpegBloatedByApp1(): Uint8Array {
+  const blocks: number[][] = [];
+  let total = 0;
+  while (total <= LIMIT) {
+    blocks.push(seg(0xe1, new Array(60_000).fill(7)));
+    total += 60_004;
+  }
+  return jpegWithSegments(...blocks);
+}
+
+function markersOf(bytes: Uint8Array): number[] {
+  return readJpegSegments(bytes).map((s) => s.marker);
 }
 
 type Harness = {
@@ -174,8 +203,36 @@ describe('prepareImage: encoding', () => {
     expect(readUris).toContain('file:///mock/out.jpg');
     expect(readUris).not.toContain('file:///picker/a.jpg');
     expect(result.uri).toBe('file:///mock/out.jpg');
-    expect(result.bytes).toBe(out);
+    // Nothing to strip in a clean JPEG, so the stripped bytes equal the file bytes.
+    expect(Array.from(result.bytes)).toEqual(Array.from(out));
     expect(result.mimeType).toBe('image/jpeg');
+  });
+
+  it('returns the stripped bytes, not the raw bytes of the encoder file', async () => {
+    mockManipulator(4000, 3000);
+    const raw = jpegWithExif();
+    bytesSpy.mockResolvedValue(raw);
+
+    const result = await prepareImage('file:///picker/a.jpg');
+
+    expect(result.bytes).not.toBe(raw);
+    expect(result.bytes.byteLength).toBeLessThan(raw.byteLength);
+    expect(markersOf(raw)).toEqual(expect.arrayContaining([0xe1, 0xed]));
+    expect(markersOf(result.bytes)).not.toContain(0xe1);
+    expect(markersOf(result.bytes)).not.toContain(0xed);
+  });
+
+  it('measures the 2 MB limit on the stripped bytes, so a bloated APP1 does not force a re-encode', async () => {
+    const h = mockManipulator(4000, 3000);
+    const raw = jpegBloatedByApp1();
+    expect(raw.byteLength).toBeGreaterThan(LIMIT);
+    bytesSpy.mockResolvedValue(raw);
+
+    const result = await prepareImage('file:///picker/a.jpg');
+
+    expect(h.saves.map((s) => s.compress)).toEqual([0.8]);
+    expect(result.bytes.byteLength).toBeLessThanOrEqual(LIMIT);
+    expect(markersOf(result.bytes)).not.toContain(0xe1);
   });
 
   it('does not re-encode when the output is within 2 097 152 bytes', async () => {
@@ -212,25 +269,28 @@ describe('prepareImage: encoding', () => {
 });
 
 describe('prepareImage: metadata check on the output bytes', () => {
-  it('throws metadata_present when the output still carries EXIF', async () => {
+  it('succeeds when the encoder output carries EXIF and APP13, and returns bytes without them', async () => {
     mockManipulator(4000, 3000);
     bytesSpy.mockResolvedValue(jpegWithExif());
 
-    const error = await prepareImage('file:///picker/a.jpg').catch((e) => e);
+    const result = await prepareImage('file:///picker/a.jpg');
 
-    expect(error).toBeInstanceOf(MediaError);
-    expect((error as MediaError).code).toBe('metadata_present');
+    expect(markersOf(result.bytes)).not.toContain(0xe1);
+    expect(markersOf(result.bytes)).not.toContain(0xed);
+    expect(() => assertNoHiddenMetadata(result.bytes)).not.toThrow();
   });
 
-  it('checks the retry output too', async () => {
+  it('strips the retry output too', async () => {
     const h = mockManipulator(4000, 3000);
     bytesSpy.mockImplementation(async () =>
       h.saves[h.saves.length - 1].compress === 0.8 ? cleanJpeg(LIMIT + 1) : jpegWithExif(),
     );
 
-    const error = await prepareImage('file:///picker/a.jpg').catch((e) => e);
+    const result = await prepareImage('file:///picker/a.jpg');
 
-    expect((error as MediaError).code).toBe('metadata_present');
+    expect(h.saves.map((s) => s.compress)).toEqual([0.8, 0.6]);
+    expect(markersOf(result.bytes)).not.toContain(0xe1);
+    expect(() => assertNoHiddenMetadata(result.bytes)).not.toThrow();
   });
 
   it('rejects output bytes that are not a JPEG', async () => {

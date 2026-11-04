@@ -65,7 +65,8 @@ jest.mock('expo-image-manipulator', () => {
 });
 
 // File#bytes() is a prototype method, so tests can jest.spyOn(File.prototype, 'bytes') and read
-// `this.uri`. Default: the smallest JPEG header the metadata check accepts (SOI, DQT, SOS).
+// `this.uri`. Default: the smallest JPEG the strip + metadata check accept (SOI, DQT, SOS, one
+// byte of image data, EOI).
 jest.mock('expo-file-system', () => {
   class File {
     uri: string;
@@ -73,7 +74,9 @@ jest.mock('expo-file-system', () => {
       this.uri = uri;
     }
     async bytes(): Promise<Uint8Array> {
-      return new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x02, 0xff, 0xda, 0x00, 0x02]);
+      return new Uint8Array([
+        0xff, 0xd8, 0xff, 0xdb, 0x00, 0x02, 0xff, 0xda, 0x00, 0x02, 0x00, 0xff, 0xd9,
+      ]);
     }
   }
   return { File };

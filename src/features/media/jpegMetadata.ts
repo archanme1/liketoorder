@@ -58,28 +58,28 @@ function appIdentifier(bytes: Uint8Array, start: number, end: number): string {
   return id;
 }
 
-/**
- * Every marker segment from SOI up to and including SOS. Throws `not_an_image` for anything that
- * isn't a well-formed JPEG header.
- */
-export function readJpegSegments(bytes: Uint8Array): JpegSegment[] {
+/** A segment plus where it sits: `start` is its 0xFF marker byte, `end` is one past its payload. */
+type LocatedSegment = JpegSegment & { start: number; end: number };
+
+function walkSegments(bytes: Uint8Array): LocatedSegment[] {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== SOI) {
     throw new MediaError('not_an_image');
   }
-  const segments: JpegSegment[] = [];
+  const segments: LocatedSegment[] = [];
   let i = 2;
   while (i < bytes.length) {
     if (bytes[i] !== 0xff) throw new MediaError('not_an_image');
     // Any number of 0xFF fill bytes may precede a marker.
     while (i < bytes.length && bytes[i] === 0xff) i += 1;
     if (i >= bytes.length) break;
+    const start = i - 1;
     const marker = bytes[i];
     i += 1;
 
     // Standalone markers (no length field).
     if (marker === SOI || marker === EOI || marker === 0x00) throw new MediaError('not_an_image');
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
-      segments.push({ marker, name: markerName(marker) });
+      segments.push({ marker, name: markerName(marker), start, end: i });
       continue;
     }
 
@@ -88,7 +88,7 @@ export function readJpegSegments(bytes: Uint8Array): JpegSegment[] {
     const end = i + length;
     if (length < 2 || end > bytes.length) throw new MediaError('not_an_image');
 
-    const segment: JpegSegment = { marker, name: markerName(marker) };
+    const segment: LocatedSegment = { marker, name: markerName(marker), start, end };
     if (marker >= 0xe0 && marker <= 0xef) segment.id = appIdentifier(bytes, i + 2, end);
     segments.push(segment);
 
@@ -97,6 +97,99 @@ export function readJpegSegments(bytes: Uint8Array): JpegSegment[] {
   }
   // Ran out of bytes before the image data started.
   throw new MediaError('not_an_image');
+}
+
+/**
+ * Every marker segment from SOI up to and including SOS. Throws `not_an_image` for anything that
+ * isn't a well-formed JPEG header.
+ */
+export function readJpegSegments(bytes: Uint8Array): JpegSegment[] {
+  return walkSegments(bytes).map(({ marker, name, id }) =>
+    id === undefined ? { marker, name } : { marker, name, id },
+  );
+}
+
+/**
+ * Index one past the first EOI after `from`. Entropy-coded data byte-stuffs 0xFF as FF 00, so the
+ * first FF D9 after SOS is the image's real end; anything after it (e.g. an iPhone MPF block's
+ * extra images, which can carry their own EXIF) isn't part of this image.
+ */
+function endOfImage(bytes: Uint8Array, from: number): number {
+  for (let i = from; i + 1 < bytes.length; i += 1) {
+    if (bytes[i] === 0xff && bytes[i + 1] === EOI) return i + 2;
+  }
+  throw new MediaError('not_an_image');
+}
+
+/**
+ * Removes hidden metadata from a JPEG without re-encoding (Decision 29): keeps SOI, the image
+ * structure segments (APP0 JFIF, APP2 ICC_PROFILE, APP14 Adobe, DQT, DHT, SOFn, DRI and the other
+ * non-APPn markers), drops every other APPn (EXIF/XMP in APP1, IPTC in APP13, MPF in APP2, …) and
+ * COM, then copies the image data from SOS through the first EOI byte for byte. Malformed or
+ * truncated input throws `not_an_image`. The result still goes through assertNoHiddenMetadata.
+ */
+export function stripJpegMetadata(bytes: Uint8Array): Uint8Array {
+  const segments = walkSegments(bytes);
+  const sos = segments[segments.length - 1];
+  const imageEnd = endOfImage(bytes, sos.end);
+
+  const kept = segments.slice(0, -1).filter(isAllowed);
+  const headerLength = kept.reduce((sum, s) => sum + (s.end - s.start), 2);
+  const out = new Uint8Array(headerLength + (imageEnd - sos.start));
+  out[0] = 0xff;
+  out[1] = SOI;
+  let offset = 2;
+  for (const segment of kept) {
+    out.set(bytes.subarray(segment.start, segment.end), offset);
+    offset += segment.end - segment.start;
+  }
+  out.set(bytes.subarray(sos.start, imageEnd), offset);
+  return out;
+}
+
+const EXIF_ORIENTATION_TAG = 0x0112;
+
+/**
+ * The EXIF Orientation (1–8) in the first APP1 Exif segment, or null when there is none or it
+ * can't be read. Used to know whether stripping EXIF could change how a photo is displayed.
+ */
+export function readExifOrientation(bytes: Uint8Array): number | null {
+  let segments: LocatedSegment[];
+  try {
+    segments = walkSegments(bytes);
+  } catch {
+    return null;
+  }
+  const exif = segments.find((s) => s.marker === 0xe1 && s.id === 'Exif');
+  if (!exif) return null;
+
+  // Payload: 2-byte length, "Exif\0\0", then a TIFF header.
+  const tiff = exif.start + 4 + 6;
+  const end = exif.end;
+  if (tiff + 8 > end) return null;
+  const little = bytes[tiff] === 0x49 && bytes[tiff + 1] === 0x49; // "II"
+  const big = bytes[tiff] === 0x4d && bytes[tiff + 1] === 0x4d; // "MM"
+  if (!little && !big) return null;
+  const u16 = (at: number) =>
+    little ? bytes[at] | (bytes[at + 1] << 8) : (bytes[at] << 8) | bytes[at + 1];
+  const u32 = (at: number) =>
+    little
+      ? (bytes[at] | (bytes[at + 1] << 8) | (bytes[at + 2] << 16)) + bytes[at + 3] * 0x1000000
+      : bytes[at] * 0x1000000 + ((bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3]);
+  if (u16(tiff + 2) !== 0x2a) return null;
+
+  const ifd0 = tiff + u32(tiff + 4);
+  if (ifd0 + 2 > end) return null;
+  const count = u16(ifd0);
+  for (let n = 0; n < count; n += 1) {
+    const entry = ifd0 + 2 + n * 12;
+    if (entry + 12 > end) return null;
+    if (u16(entry) === EXIF_ORIENTATION_TAG) {
+      const value = u16(entry + 8);
+      return value >= 1 && value <= 8 ? value : null;
+    }
+  }
+  return null;
 }
 
 function isAllowed(segment: JpegSegment): boolean {

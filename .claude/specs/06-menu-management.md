@@ -459,49 +459,49 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 ## Definition of done
 
 **Database and security (pgTAP) — PR 1**
-- [ ] RLS is on for `currencies`, `menu_items`, `business_photos` and `storage_cleanup_queue`. `00_rls_enabled` still passes.
-- [ ] Exact privileges:
+- [x] RLS is on for `currencies`, `menu_items`, `business_photos` and `storage_cleanup_queue`. `00_rls_enabled` still passes.
+- [x] Exact privileges:
   - `anon` and `authenticated` hold no table-level privileges on the four new tables.
   - Column `select` is exactly as listed for `menu_items` and `business_photos`, with no insert/update/delete.
   - Nothing at all on `storage_cleanup_queue`.
   - `businesses` column privileges now include `currency_code` for select only.
-- [ ] An outsider (anon or another signed-in user) sees no `menu_items` or `business_photos` of an unlisted or location-less business, and sees no `pending` photo of any business.
-- [ ] Anon and other users can read a listed business's unavailable items, with `is_available = false` (Decision 19).
-- [ ] An outsider cannot create, update, move or delete another business's items or photos: every function acts only on the caller's business, and another business's item/photo id gives `not_found`.
-- [ ] A direct `insert`/`update`/`delete` on `menu_items` or `business_photos` by authenticated fails (42501).
-- [ ] Switching seller mode off makes the business's items and photos (rows and storage objects) unreadable by anon and by other users. Switching it on restores them. The owner reads them in both states.
-- [ ] `create_menu_item` raises `item_limit` on the 101st item and `currency_required` for a price with no currency.
-- [ ] `set_menu_currency` raises `prices_exist` once any item has a price, and succeeds again after the prices are removed.
-- [ ] `move_menu_item` swaps neighbours, does nothing at the ends and keeps positions 1..n. Delete closes the gap.
-- [ ] `begin_photo_upload` raises `photo_limit` for the 7th gallery photo and the 11th menu photo, counting pending rows. Pending rows older than 1 hour don't count and are queued for cleanup.
-- [ ] A second `begin_photo_upload` for the cover, or for the same item, replaces the pending reservation: the old pending row is gone, its path is queued, the new reservation can be uploaded to and finished at once, and the old path can no longer be uploaded to.
-- [ ] Deleting a pending gallery or menu photo with `delete_business_photo` frees its slot at once and queues its path; once the queue row is older than 10 minutes, `claim_photo_cleanup` drops it if no file was uploaded.
-- [ ] `begin_photo_upload` raises `cleanup_required` while the business has 20 or more queued files still in storage (any kind, including cover and item retries), and succeeds again once enough of them are removed. Queued rows whose file is gone don't count.
-- [ ] `claim_photo_cleanup` keeps a queue row younger than 10 minutes even when its file is gone (an upload may be in flight), drops it after 10 minutes, and never returns a path whose file is gone.
-- [ ] `create_menu_item` and `update_menu_item` store the description trimmed (`'  Tasty  '` → `'Tasty'`); an empty or blank description is stored as null.
-- [ ] Table checks reached through the functions raise 23514: an empty or untrimmed name, and a price of 0, below 0 or above 999 999 999.
-- [ ] `finish_photo_upload` raises `upload_missing` for an object of size 0, with a missing or non-numeric size, or over 2 097 152 bytes, and for an object with the same name in another bucket.
-- [ ] Deleting an item also removes its pending item photo and queues its path.
-- [ ] A pending menu reservation older than 1 hour stops counting toward the menu limit and is queued, like gallery.
-- [ ] The `currencies` guard trigger blocks a code change, a delete and a truncate even for the table owner (an error whose message starts with `currency_code_permanent`), and an insert with 4 decimals fails (23514).
-- [ ] An owner's direct `update` of a live `storage.objects` row in `business-media` changes nothing (no update policy of any command type).
-- [ ] `begin_photo_upload` raises `invalid_input` for a missing or someone else's item id, and `set_menu_currency(null)` raises `invalid_input`.
-- [ ] `finish_photo_upload` raises `upload_missing` when no object exists at the path, or when its mimetype isn't allowed.
-- [ ] Replacing a cover or item photo leaves exactly one `ready` row and queues the old path in the same transaction.
-- [ ] Deleting an item, a photo, the whole business, or the owner's account (cascade) queues every affected path.
-- [ ] A reservation 59 minutes old can still be uploaded to and finished. `claim_photo_cleanup` drops queue rows whose object is gone and returns only the caller's still-present paths.
-- [ ] Storage, `business-media`:
+- [x] An outsider (anon or another signed-in user) sees no `menu_items` or `business_photos` of an unlisted or location-less business, and sees no `pending` photo of any business.
+- [x] Anon and other users can read a listed business's unavailable items, with `is_available = false` (Decision 19).
+- [x] An outsider cannot create, update, move or delete another business's items or photos: every function acts only on the caller's business, and another business's item/photo id gives `not_found`.
+- [x] A direct `insert`/`update`/`delete` on `menu_items` or `business_photos` by authenticated fails (42501).
+- [x] Switching seller mode off makes the business's items and photos (rows and storage objects) unreadable by anon and by other users. Switching it on restores them. The owner reads them in both states.
+- [x] `create_menu_item` raises `item_limit` on the 101st item and `currency_required` for a price with no currency.
+- [x] `set_menu_currency` raises `prices_exist` once any item has a price, and succeeds again after the prices are removed.
+- [x] `move_menu_item` swaps neighbours, does nothing at the ends and keeps positions 1..n. Delete closes the gap.
+- [x] `begin_photo_upload` raises `photo_limit` for the 7th gallery photo and the 11th menu photo, counting pending rows. Pending rows older than 1 hour don't count and are queued for cleanup.
+- [x] A second `begin_photo_upload` for the cover, or for the same item, replaces the pending reservation: the old pending row is gone, its path is queued, the new reservation can be uploaded to and finished at once, and the old path can no longer be uploaded to.
+- [x] Deleting a pending gallery or menu photo with `delete_business_photo` frees its slot at once and queues its path; once the queue row is older than 10 minutes, `claim_photo_cleanup` drops it if no file was uploaded.
+- [x] `begin_photo_upload` raises `cleanup_required` while the business has 20 or more queued files still in storage (any kind, including cover and item retries), and succeeds again once enough of them are removed. Queued rows whose file is gone don't count.
+- [x] `claim_photo_cleanup` keeps a queue row younger than 10 minutes even when its file is gone (an upload may be in flight), drops it after 10 minutes, and never returns a path whose file is gone.
+- [x] `create_menu_item` and `update_menu_item` store the description trimmed (`'  Tasty  '` → `'Tasty'`); an empty or blank description is stored as null.
+- [x] Table checks reached through the functions raise 23514: an empty or untrimmed name, and a price of 0, below 0 or above 999 999 999.
+- [x] `finish_photo_upload` raises `upload_missing` for an object of size 0, with a missing or non-numeric size, or over 2 097 152 bytes, and for an object with the same name in another bucket.
+- [x] Deleting an item also removes its pending item photo and queues its path.
+- [x] A pending menu reservation older than 1 hour stops counting toward the menu limit and is queued, like gallery.
+- [x] The `currencies` guard trigger blocks a code change, a delete and a truncate even for the table owner (an error whose message starts with `currency_code_permanent`), and an insert with 4 decimals fails (23514).
+- [x] An owner's direct `update` of a live `storage.objects` row in `business-media` changes nothing (no update policy of any command type).
+- [x] `begin_photo_upload` raises `invalid_input` for a missing or someone else's item id, and `set_menu_currency(null)` raises `invalid_input`.
+- [x] `finish_photo_upload` raises `upload_missing` when no object exists at the path, or when its mimetype isn't allowed.
+- [x] Replacing a cover or item photo leaves exactly one `ready` row and queues the old path in the same transaction.
+- [x] Deleting an item, a photo, the whole business, or the owner's account (cascade) queues every affected path.
+- [x] A reservation 59 minutes old can still be uploaded to and finished. `claim_photo_cleanup` drops queue rows whose object is gone and returns only the caller's still-present paths.
+- [x] Storage, `business-media`:
   - The bucket is private, with a 2 MB limit and exactly JPEG/PNG/WebP.
   - An owner can insert only at a path reserved by a fresh pending row of their own business.
   - Inserting into another business's folder, at another user's reserved path, at an unreserved path, at a path whose photo is already ready, at an expired reservation's path, or at a malformed path (folder not a UUID) fails. A malformed folder name fails closed: refused or no access, never an error that lets anything through.
   - Anon can read only ready objects of public businesses.
   - An owner cannot delete a live object; an outsider cannot delete any.
   - There is no update policy.
-- [ ] The function allowlist is exactly the 12 names listed for authenticated, none for anon. The `private` schema holds exactly the five helpers (pgTAP) and isn't exposed by the API (`supabaseConfig.test.ts`, jest).
-- [ ] `currencies` minor units: JPY, KRW, VND, CLP and ISK = 0; USD, CAD and EUR = 2; BHD, KWD, JOD, OMR, TND and IQD = 3. No code has 4 decimals. Clients can't write the table.
-- [ ] `get_my_business()` includes `currency_code`.
-- [ ] 03 ALLOWLIST updated; `02`–`05` tests still pass.
-- [ ] `src/types/database.ts` is regenerated. The supabase-patterns skill and CLAUDE.md storage wording are updated.
+- [x] The function allowlist is exactly the 12 names listed for authenticated, none for anon. The `private` schema holds exactly the five helpers (pgTAP) and isn't exposed by the API (`supabaseConfig.test.ts`, jest).
+- [x] `currencies` minor units: JPY, KRW, VND, CLP and ISK = 0; USD, CAD and EUR = 2; BHD, KWD, JOD, OMR, TND and IQD = 3. No code has 4 decimals. Clients can't write the table.
+- [x] `get_my_business()` includes `currency_code`.
+- [x] 03 ALLOWLIST updated; `02`–`05` tests still pass.
+- [x] `src/types/database.ts` is regenerated. The supabase-patterns skill and CLAUDE.md storage wording are updated.
 - [ ] `npx supabase test db` passes locally and in CI (with Storage started in CI if needed).
 
 **Shared media (jest) — PR 2**

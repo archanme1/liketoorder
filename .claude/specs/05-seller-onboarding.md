@@ -407,13 +407,13 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 Each group is tagged with the PR that ticks it (Decision 18). When PR 1 ships, only the PR 1 items are ticked, and the spec status and CLAUDE.md row 05 stay 🚧 In progress. Only PR 2 sets ✅ Shipped.
 
 **Onboarding and editing — PR 2**
-- [ ] A signed-in user with a complete profile and no business sees "Start selling" on Profile, completes both steps, and lands on Manage Business showing "Live". The Manage tab appears without a restart.
+- [x] A signed-in user with a complete profile and no business sees "Start selling" on Profile, completes both steps, and lands on Manage Business showing "Live". The Manage tab appears without a restart.
 - [ ] The table-requests toggle is shown only for Restaurant, defaults to off, and is saved as false for Homemade.
 - [ ] Address suggestions appear after 3+ characters (300 ms debounce). Picking one saves it, and Manage Business shows the resolved formatted address.
-- [ ] Leaving after step 1 leaves a business with no location. Manage Business shows "Add your address to go live", and the listing is not readable by anon.
+- [ ] Leaving after step 1 leaves a business with no location. Manage Business shows "Add your address to go live", and the listing is not readable by anon. *(Not manually checked: the third-account device flow; carried to v1.md §16.)*
 - [ ] Edit details changes name, cuisine and table setting, and Manage Business updates without a restart. Type is shown read-only.
 - [ ] Change address replaces the address. For homemade the public point is re-shifted; re-picking the same place leaves it unchanged.
-- [ ] Switching seller mode off hides the Manage tab and makes the listing unreadable by anon. Switching it on restores both with the same data.
+- [x] Switching seller mode off hides the Manage tab and makes the listing unreadable by anon. Switching it on restores both with the same data. *(Tab and data checked on device; anon read covered by PR 1 pgTAP.)*
 - [ ] A user who already has a business and opens `/seller/onboarding` is redirected. A user with no business opening `/seller/edit` is redirected to onboarding.
 - [ ] While the business query is loading, the root Stack stays mounted. The previous screen stays in the back stack, nothing remounts, and the seller screen shows its skeleton. The redirect happens only after the data loads (routing test, Decision 14).
 - [ ] Every new screen shows loading, error with retry, empty and success states.
@@ -458,11 +458,11 @@ Each group is tagged with the PR that ticks it (Decision 18). When PR 1 ships, o
 - [x] CLAUDE.md row 05 and this spec's status are 🚧 In progress, with only the PR 1 items ticked.
 
 **Quality — PR 2**
-- [ ] `CuisinePicker` and `CuisineLabel` follow the spec 04 display rule: the name is visible and the glyph is hidden from screen readers. The picker search finds "Côte d'Ivoire" when you type "cote".
-- [ ] Every touchable has `accessibilityLabel` + `accessibilityRole`, is ≥ 44pt, and selected states are shown without relying on color alone.
-- [ ] "Powered by Google" is shown with the suggestions.
+- [ ] `CuisinePicker` and `CuisineLabel` follow the spec 04 display rule: the name is visible and the glyph is hidden from screen readers. The picker search finds "Côte d'Ivoire" when you type "cote". *("cote" search passed on device. Not manually checked: flag and neutral-icon rendering, VoiceOver/TalkBack; carried to v1.md §16.)*
+- [ ] Every touchable has `accessibilityLabel` + `accessibilityRole`, is ≥ 44pt, and selected states are shown without relying on color alone. *(Not manually checked: VoiceOver/TalkBack; carried to v1.md §16.)*
+- [x] "Powered by Google" is shown with the suggestions.
 - [ ] No hardcoded colors or sizes outside tokens.
-- [ ] The manual device run is done (Test plan), with Archan's key.
+- [ ] The manual device run is done (Test plan), with Archan's key. *(Partly done 2026-11-03: restaurant and homemade onboarding, cuisine search, autocomplete, seller mode off/on, Studio look at the homemade point. Not manually checked: Google usage after fast typing, flag/icon rendering, VoiceOver/TalkBack, leave-after-step-1 flow; carried to v1.md §16.)*
 - [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:functions` and `npx supabase test db` all pass, in CI too.
 - [ ] CLAUDE.md row 05 and this spec's status are ✅ Shipped, and the v1.md changelog has a spec 05 shipped line.
 

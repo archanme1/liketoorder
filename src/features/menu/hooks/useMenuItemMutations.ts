@@ -20,7 +20,7 @@ import { menuKey } from './useMyMenu';
 export function useSetMenuCurrency() {
   const queryClient = useQueryClient();
   return useMutation<void, MenuAppError, string>({
-    mutationFn: setMenuCurrency,
+    mutationFn: (code) => setMenuCurrency(code),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: myBusinessKey }),
   });
 }
@@ -28,7 +28,7 @@ export function useSetMenuCurrency() {
 export function useCreateMenuItem(businessId: string) {
   const queryClient = useQueryClient();
   return useMutation<string, MenuAppError, MenuItemInput>({
-    mutationFn: createMenuItem,
+    mutationFn: (input) => createMenuItem(input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: menuKey(businessId) }),
   });
 }
@@ -106,7 +106,7 @@ export function useMoveMenuItem(businessId: string) {
 export function useDeleteMenuItem(businessId: string) {
   const queryClient = useQueryClient();
   return useMutation<void, MenuAppError, string>({
-    mutationFn: deleteMenuItem,
+    mutationFn: (itemId) => deleteMenuItem(itemId),
     onSuccess: () => {
       void runPhotoCleanup();
       return queryClient.invalidateQueries({ queryKey: menuKey(businessId) });

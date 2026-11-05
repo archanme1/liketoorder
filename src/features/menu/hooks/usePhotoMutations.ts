@@ -31,7 +31,7 @@ export function useUploadBusinessPhoto(businessId: string) {
 export function useDeleteBusinessPhoto(businessId: string) {
   const queryClient = useQueryClient();
   return useMutation<void, Error, string>({
-    mutationFn: deleteBusinessPhoto,
+    mutationFn: (photoId) => deleteBusinessPhoto(photoId),
     onSuccess: () => {
       void runPhotoCleanup();
     },

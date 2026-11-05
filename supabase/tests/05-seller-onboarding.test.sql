@@ -108,17 +108,19 @@ select table_privs_are('public', 'places_rate_limits', 'authenticated', array[]:
   'authenticated has no table-level privileges on places_rate_limits');
 
 -- ── Column privileges on businesses (exact, every column) ───────────────────
--- anon: select on the 8 public columns only.
+-- anon: select on the 6 listing columns only (the map point and Google address are read through the spec 07 functions).
 select column_privs_are('public', 'businesses', 'id', 'anon', array['SELECT'], 'anon: id is select-only');
 select column_privs_are('public', 'businesses', 'type', 'anon', array['SELECT'], 'anon: type is select-only');
 select column_privs_are('public', 'businesses', 'name', 'anon', array['SELECT'], 'anon: name is select-only');
 select column_privs_are('public', 'businesses', 'cuisine_code', 'anon', array['SELECT'], 'anon: cuisine_code is select-only');
 select column_privs_are('public', 'businesses', 'accepts_table_requests', 'anon', array['SELECT'],
   'anon: accepts_table_requests is select-only');
-select column_privs_are('public', 'businesses', 'map_lat', 'anon', array['SELECT'], 'anon: map_lat is select-only');
-select column_privs_are('public', 'businesses', 'map_lng', 'anon', array['SELECT'], 'anon: map_lng is select-only');
-select column_privs_are('public', 'businesses', 'public_address', 'anon', array['SELECT'],
-  'anon: public_address is select-only');
+select column_privs_are('public', 'businesses', 'map_lat', 'anon', array[]::text[],
+  'anon: no privileges on map_lat (read through the map functions, spec 07)');
+select column_privs_are('public', 'businesses', 'map_lng', 'anon', array[]::text[],
+  'anon: no privileges on map_lng (read through the map functions, spec 07)');
+select column_privs_are('public', 'businesses', 'public_address', 'anon', array[]::text[],
+  'anon: no privileges on public_address (read through the map functions, spec 07)');
 select column_privs_are('public', 'businesses', 'owner_id', 'anon', array[]::text[], 'anon: no privileges on owner_id');
 select column_privs_are('public', 'businesses', 'is_listed', 'anon', array[]::text[], 'anon: no privileges on is_listed');
 select column_privs_are('public', 'businesses', 'created_at', 'anon', array[]::text[], 'anon: no privileges on created_at');
@@ -135,10 +137,12 @@ select column_privs_are('public', 'businesses', 'cuisine_code', 'authenticated',
   'authenticated: cuisine_code is select + update');
 select column_privs_are('public', 'businesses', 'accepts_table_requests', 'authenticated', array['SELECT', 'UPDATE'],
   'authenticated: accepts_table_requests is select + update');
-select column_privs_are('public', 'businesses', 'map_lat', 'authenticated', array['SELECT'], 'authenticated: map_lat is select-only');
-select column_privs_are('public', 'businesses', 'map_lng', 'authenticated', array['SELECT'], 'authenticated: map_lng is select-only');
-select column_privs_are('public', 'businesses', 'public_address', 'authenticated', array['SELECT'],
-  'authenticated: public_address is select-only');
+select column_privs_are('public', 'businesses', 'map_lat', 'authenticated', array[]::text[],
+  'authenticated: no privileges on map_lat (read through the map functions, spec 07)');
+select column_privs_are('public', 'businesses', 'map_lng', 'authenticated', array[]::text[],
+  'authenticated: no privileges on map_lng (read through the map functions, spec 07)');
+select column_privs_are('public', 'businesses', 'public_address', 'authenticated', array[]::text[],
+  'authenticated: no privileges on public_address (read through the map functions, spec 07)');
 select column_privs_are('public', 'businesses', 'owner_id', 'authenticated', array[]::text[],
   'authenticated: no privileges on owner_id');
 select column_privs_are('public', 'businesses', 'is_listed', 'authenticated', array[]::text[],
@@ -190,10 +194,10 @@ select is(
   (select coalesce(array_agg(p.proname::text order by p.proname::text), array[]::text[])
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'private'),
-  array['business_is_public', 'cleanup_map_rate_limits', 'cleanup_places_refresh_quota', 'consume_map_quota',
+  array['business_is_public', 'caller_ip', 'cleanup_map_rate_limits', 'cleanup_places_refresh_quota', 'consume_map_quota',
         'invoke_places_refresh', 'owns_business', 'photo_is_live', 'photo_is_public', 'photo_upload_allowed',
         'restaurant_is_fresh'],
-  'the private schema holds exactly the five RLS helpers and the five spec 07 map helpers'
+  'the private schema holds exactly the five RLS helpers and the six spec 07 map helpers'
 );
 select is_empty(
   $$ select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace

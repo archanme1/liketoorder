@@ -1,7 +1,7 @@
 -- Spec 07 (PR 1): restaurant map backend — freshness guard, bounding-box pins, details,
 -- guest/user rate limit, refresh claim/apply, cleanup, map_status, extensions and cron.
 begin;
-select plan(185);
+select plan(215);
 
 -- Cron-job lookup that reports null (instead of aborting the file) when pg_cron is missing.
 create function pg_temp.cron_schedule(p_name text) returns text language plpgsql as $$
@@ -175,7 +175,7 @@ select is_empty(
   $$ select p.oid::regprocedure::text
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'private'
-        and p.proname in ('restaurant_is_fresh', 'consume_map_quota', 'cleanup_map_rate_limits',
+        and p.proname in ('restaurant_is_fresh', 'consume_map_quota', 'caller_ip', 'cleanup_map_rate_limits',
                           'cleanup_places_refresh_quota', 'invoke_places_refresh')
         and (has_function_privilege('anon', p.oid, 'execute')
              or has_function_privilege('authenticated', p.oid, 'execute')
@@ -184,10 +184,10 @@ select is_empty(
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'private'
-      and p.proname in ('restaurant_is_fresh', 'consume_map_quota', 'cleanup_map_rate_limits',
+      and p.proname in ('restaurant_is_fresh', 'consume_map_quota', 'caller_ip', 'cleanup_map_rate_limits',
                         'cleanup_places_refresh_quota', 'invoke_places_refresh')
       and p.prosecdef and p.proconfig = array['search_path=""']),
-  5, 'the five private map functions are security definer with an empty search_path');
+  6, 'the six private map functions are security definer with an empty search_path');
 select ok(
   (select p.prosecdef and p.proconfig @> array['search_path=""', 'statement_timeout=3s']
      from pg_proc p where p.oid =
@@ -219,10 +219,20 @@ select throws_ok($$ select resolved_at from public.business_locations $$, '42501
   'anon cannot read resolved_at');
 select throws_ok($$ select * from public.business_locations $$, '42501', null,
   'anon cannot read business_locations (exact address and coordinates)');
-select throws_ok($$ select map_status from public.businesses $$, '42703', null,
-  'there is no map_status column for anon to read on businesses');
+select throws_ok($$ select map_lat from public.businesses $$, '42501', null,
+  'anon cannot read businesses.map_lat (the map point comes only through the map functions)');
+select throws_ok($$ select map_lng from public.businesses $$, '42501', null,
+  'anon cannot read businesses.map_lng');
+select throws_ok($$ select public_address from public.businesses $$, '42501', null,
+  'anon cannot read businesses.public_address (the Google address comes only through get_restaurant_details)');
+select throws_ok($$ select map_lat, map_lng, public_address from public.businesses where id = '00000000-0000-0000-0017-000000000001' $$,
+  '42501', null, 'anon cannot read the Google columns of one known restaurant either');
+select lives_ok($$ select id, type, name, cuisine_code, accepts_table_requests, currency_code from public.businesses $$,
+  'anon can still read the listing columns that do not come from Google');
 select throws_ok($$ select private.restaurant_is_fresh('00000000-0000-0000-0017-000000000001') $$, '42501', null,
   'anon cannot call private.restaurant_is_fresh');
+select throws_ok($$ select private.caller_ip() $$, '42501', null,
+  'anon cannot call private.caller_ip');
 select throws_ok($$ select private.consume_map_quota('pins') $$, '42501', null,
   'anon cannot call private.consume_map_quota');
 select throws_ok($$ select private.cleanup_map_rate_limits() $$, '42501', null,
@@ -342,9 +352,7 @@ select is((public.map_restaurants_in_bounds(-51, -49, -101, -99) ->> 'capped')::
   '501 fresh restaurants in the box: capped is true');
 select is(
   (select max(p ->> 'id') from jsonb_array_elements(public.map_restaurants_in_bounds(-51, -49, -101, -99) -> 'pins') p),
-  (select max(id::text) from (select id from public.businesses
-                               where map_lat between -51 and -49 and map_lng between -101 and -99
-                               order by id limit 500) s),
+  '00000000-0000-0000-0017-000000001500',   -- fixtures 1001..1501: the 500 smallest ids end at 1500
   'the capped answer is the 500 smallest ids (stable)');
 reset role;
 delete from public.businesses where id = '00000000-0000-0000-0017-000000001501';
@@ -437,13 +445,28 @@ select is(
 select is(public.get_restaurant_details('00000000-0000-0000-0017-000000000003'), null,
   'a signed-in outsider gets null for a stale restaurant');
 select is(public.get_my_business(), null, 'an outsider has no business, so no map_status');
-select throws_ok($$ select map_status from public.businesses $$, '42703', null,
-  'there is no map_status column for an outsider to read on businesses');
+select throws_ok($$ select map_lat from public.businesses $$, '42501', null,
+  'a signed-in outsider cannot read businesses.map_lat');
+select throws_ok($$ select map_lng from public.businesses $$, '42501', null,
+  'a signed-in outsider cannot read businesses.map_lng');
+select throws_ok($$ select public_address from public.businesses $$, '42501', null,
+  'a signed-in outsider cannot read businesses.public_address');
+select throws_ok($$ select map_lat, map_lng, public_address from public.businesses where id = '00000000-0000-0000-0017-000000000001' $$,
+  '42501', null, 'a signed-in outsider cannot read the Google columns of one known restaurant either');
+select lives_ok($$ select id, type, name, cuisine_code, accepts_table_requests, currency_code from public.businesses $$,
+  'a signed-in outsider can still read the listing columns that do not come from Google');
 select throws_ok($$ select public.business_owner_view('00000000-0000-0000-0007-000000000001') $$, '42501', null,
   'an outsider cannot call business_owner_view to read another owner''s map_status');
 
 -- ── map_status for owners ───────────────────────────────────────────────────
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0007-000000000001","role":"authenticated"}';
+select results_eq(
+  $$ select (v ->> 'map_lat')::float8, (v ->> 'map_lng')::float8, v ->> 'public_address'
+       from (select public.get_my_business() as v) s $$,
+  $$ values (70.10::float8, 100.10::float8, '1 Fresh St, Tromso'::text) $$,
+  'the owner view still returns the map point and the address');
+select throws_ok($$ select map_lat from public.businesses where owner_id = '00000000-0000-0000-0007-000000000001' $$,
+  '42501', null, 'even the owner reads the map point through the owner view, not the table');
 select is(public.get_my_business() ->> 'map_status', 'visible', 'map_status is visible for a fresh restaurant');
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0007-000000000002","role":"authenticated"}';
 select is(public.get_my_business() ->> 'map_status', 'visible', 'map_status is visible at 29 days');
@@ -471,6 +494,39 @@ select is(public.get_my_business() ->> 'map_status', 'place_not_found',
 reset role;
 update public.business_locations set resolved_at = now() - interval '1 day'
  where business_id = '00000000-0000-0000-0017-000000000007';
+
+-- ── The exact 30-day boundary: hidden at 30 days, visible one second inside ─
+-- now() is frozen inside the test transaction, so resolved_at can sit exactly on the line.
+update public.business_locations set resolved_at = now() - interval '30 days'
+ where business_id = '00000000-0000-0000-0017-000000000002';
+set local role anon;
+set local request.jwt.claims = '{"role":"anon"}';
+set local request.headers = '{"x-forwarded-for":"198.51.100.20"}';
+select is(
+  (select count(*)::int from jsonb_array_elements(public.map_restaurants_in_bounds(70, 71, 100, 101) -> 'pins') p
+    where p ->> 'id' = '00000000-0000-0000-0017-000000000002'),
+  0, 'a restaurant resolved exactly 30 days ago is not returned');
+select is(public.get_restaurant_details('00000000-0000-0000-0017-000000000002'), null,
+  'details is null for a restaurant resolved exactly 30 days ago');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0007-000000000002","role":"authenticated"}';
+select is(public.get_my_business() ->> 'map_status', 'needs_refresh',
+  'map_status is needs_refresh at exactly 30 days (the same line that hides the pin)');
+reset role;
+update public.business_locations set resolved_at = now() - interval '30 days' + interval '1 second'
+ where business_id = '00000000-0000-0000-0017-000000000002';
+set local role anon;
+set local request.jwt.claims = '{"role":"anon"}';
+select is(
+  (select count(*)::int from jsonb_array_elements(public.map_restaurants_in_bounds(70, 71, 100, 101) -> 'pins') p
+    where p ->> 'id' = '00000000-0000-0000-0017-000000000002'),
+  1, 'a restaurant resolved one second inside the 30 days is returned');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0007-000000000002","role":"authenticated"}';
+select is(public.get_my_business() ->> 'map_status', 'visible', 'and its map_status is visible');
+reset role;
+update public.business_locations set resolved_at = now() - interval '29 days'
+ where business_id = '00000000-0000-0000-0017-000000000002';
 
 -- ── Rate limit: guests by IP ────────────────────────────────────────────────
 delete from public.map_rate_limits;
@@ -518,6 +574,34 @@ select is((select count(*)::int from public.map_rate_limits where caller_key lik
   'a guest with no readable IP creates no per-IP row');
 select is((select calls from public.map_rate_limits where caller_key = 'guest:all' and kind = 'pins'), 3,
   'a guest with no readable IP is counted against the guest ceiling only');
+
+-- ── The guest address is read in one place: private.caller_ip() ─────────────
+set local request.headers = '{"x-forwarded-for":"198.51.100.5, 10.0.0.1"}';
+select is(private.caller_ip(), '198.51.100.5'::inet, 'caller_ip is the first x-forwarded-for value');
+set local request.headers = '{"x-forwarded-for":" 2001:db8::1 "}';
+select is(private.caller_ip(), '2001:db8::1'::inet, 'caller_ip accepts an IPv6 address and trims spaces');
+set local request.headers = '{}';
+select is(private.caller_ip(), null, 'caller_ip is null without the header');
+set local request.headers = '{"x-forwarded-for":"not-an-address"}';
+select is(private.caller_ip(), null, 'caller_ip is null for a value that is not an address');
+set local request.headers = 'this is not json';
+select is(private.caller_ip(), null, 'caller_ip is null for a headers value that is not JSON');
+
+-- A new minute starts a new count: last minute's calls do not count now.
+insert into public.map_rate_limits (caller_key, kind, window_start, calls)
+values ('ip:198.51.100.80', 'pins', date_trunc('minute', now(), 'UTC') - interval '1 minute', 120);
+set local role anon;
+set local request.jwt.claims = '{"role":"anon"}';
+set local request.headers = '{"x-forwarded-for":"198.51.100.80"}';
+select lives_ok($$ select public.map_restaurants_in_bounds(70, 71, 100, 101) $$,
+  'an IP that used its 120 calls in the previous minute is served in the next one');
+reset role;
+select is((select calls from public.map_rate_limits
+            where caller_key = 'ip:198.51.100.80' and window_start = date_trunc('minute', now(), 'UTC')), 1,
+  'the new minute starts at 1');
+select is((select calls from public.map_rate_limits
+            where caller_key = 'ip:198.51.100.80' and window_start = date_trunc('minute', now(), 'UTC') - interval '1 minute'), 120,
+  'and the previous minute''s count is left as it was');
 
 -- ── Rate limit: global guest ceiling ────────────────────────────────────────
 insert into public.map_rate_limits (caller_key, kind, window_start, calls)
@@ -659,6 +743,9 @@ select is((select calls from public.places_refresh_quota where day = (now() at t
 update public.business_locations set refresh_attempted_at = now()
  where business_id in ('00000000-0000-0000-0017-000000000002', '00000000-0000-0000-0017-000000000003',
                        '00000000-0000-0000-0017-000000000009');
+create temp table resolved_before as
+select business_id, resolved_at from public.business_locations
+ where business_id in ('00000000-0000-0000-0017-000000000003', '00000000-0000-0000-0017-000000000009');
 set local role service_role;
 set local request.jwt.claims = '{"role":"service_role"}';
 select lives_ok(
@@ -674,16 +761,22 @@ select results_eq(
       where b.id = '00000000-0000-0000-0017-000000000003' $$,
   $$ values (70.1201::float8, 100.1201::float8, 70.1201::float8, 100.1201::float8, 'ok'::text) $$,
   'apply ok moves a restaurant''s location and its public map point');
-select ok((select resolved_at >= now() from public.business_locations where business_id = '00000000-0000-0000-0017-000000000003'),
-  'apply ok sets resolved_at to now');
+select ok((select l.resolved_at > r.resolved_at from public.business_locations l join resolved_before r using (business_id)
+            where l.business_id = '00000000-0000-0000-0017-000000000003'),
+  'apply ok moves resolved_at forward (a restaurant was 31 days old, now fresh)');
 select results_eq(
   $$ select b.map_lat, b.map_lng, l.lat, l.lng
        from public.businesses b join public.business_locations l on l.business_id = b.id
       where b.id = '00000000-0000-0000-0017-000000000009' $$,
   $$ values (62.0::float8, 10.0::float8, 62.0101::float8, 10.0101::float8) $$,
   'apply ok leaves a homemade public map point exactly as it was and updates only the exact location');
-select ok((select resolved_at >= now() from public.business_locations where business_id = '00000000-0000-0000-0017-000000000009'),
-  'apply ok updates a homemade resolved_at');
+select ok((select l.resolved_at > r.resolved_at from public.business_locations l join resolved_before r using (business_id)
+            where l.business_id = '00000000-0000-0000-0017-000000000009'),
+  'apply ok moves a homemade resolved_at forward');
+select is((select count(*)::int from public.business_locations
+            where business_id in ('00000000-0000-0000-0017-000000000003', '00000000-0000-0000-0017-000000000009')
+              and refresh_attempted_at is not null), 0,
+  'apply ok uses up the claim: refresh_attempted_at is cleared');
 set local role anon;
 set local request.jwt.claims = '{"role":"anon"}';
 set local request.headers = '{"x-forwarded-for":"198.51.100.70"}';
@@ -694,6 +787,19 @@ select is(
 select is(public.get_restaurant_details('00000000-0000-0000-0017-000000000003') ->> 'name', 'Day Thirty One',
   'its details are available again too');
 reset role;
+
+-- The same claim cannot be applied twice: the second result finds no claim and changes nothing.
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select public.apply_places_refresh('00000000-0000-0000-0017-000000000003', 'ok', 5, 5);
+select public.apply_places_refresh('00000000-0000-0000-0017-000000000003', 'not_found', null, null);
+reset role;
+select results_eq(
+  $$ select b.map_lat, b.map_lng, l.lat, l.lng, l.place_status
+       from public.businesses b join public.business_locations l on l.business_id = b.id
+      where b.id = '00000000-0000-0000-0017-000000000003' $$,
+  $$ values (70.1201::float8, 100.1201::float8, 70.1201::float8, 100.1201::float8, 'ok'::text) $$,
+  'a second apply for the same claim is a no-op: nothing moves and the place is not hidden');
 
 -- A result for a row with no claim outstanding (or a missing row) changes nothing.
 set local role service_role;
@@ -724,6 +830,17 @@ select throws_ok($$ select public.apply_places_refresh('00000000-0000-0000-0017-
 reset role;
 select is((select place_status from public.business_locations where business_id = '00000000-0000-0000-0017-000000000002'),
   'not_found', 'apply not_found sets place_status');
+select is((select refresh_attempted_at from public.business_locations where business_id = '00000000-0000-0000-0017-000000000002'),
+  null, 'apply not_found uses up the claim: refresh_attempted_at is cleared');
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select public.apply_places_refresh('00000000-0000-0000-0017-000000000002', 'ok', 1, 1);
+reset role;
+select results_eq(
+  $$ select l.place_status, l.lat, b.map_lat from public.business_locations l join public.businesses b on b.id = l.business_id
+      where l.business_id = '00000000-0000-0000-0017-000000000002' $$,
+  $$ values ('not_found'::text, 70.11::float8, 70.11::float8) $$,
+  'a second apply after not_found is a no-op: the place stays hidden and does not move');
 select is(
   (select (select count(*) from public.businesses where id = '00000000-0000-0000-0017-000000000002')
         + (select count(*) from public.business_locations where business_id = '00000000-0000-0000-0017-000000000002')
@@ -762,6 +879,19 @@ select is(
     where p ->> 'id' = '00000000-0000-0000-0017-000000000007'),
   1, 'the place is back on the map');
 reset role;
+-- The same reset for a homemade owner.
+update public.business_locations set place_status = 'not_found', refresh_attempted_at = now()
+ where business_id = '00000000-0000-0000-0017-000000000009';
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select lives_ok(
+  $$ select public.set_business_location('00000000-0000-0000-0007-000000000009', 'pHD2', '9 New Due St, Oslo', 62.5, 10.5) $$,
+  'a homemade owner saves a new address');
+reset role;
+select results_eq(
+  $$ select place_status, refresh_attempted_at is null from public.business_locations
+      where business_id = '00000000-0000-0000-0017-000000000009' $$,
+  $$ values ('ok'::text, true) $$, 'for homemade too, a new address resets place_status and clears the claim');
 -- A refresh claimed for the old address can no longer overwrite the new one.
 set local role service_role;
 set local request.jwt.claims = '{"role":"service_role"}';

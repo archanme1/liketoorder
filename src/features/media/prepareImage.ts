@@ -4,6 +4,7 @@ import { ImageManipulator, SaveFormat, type ImageRef } from 'expo-image-manipula
 import { JPEG_QUALITY, JPEG_RETRY_QUALITY, MAX_LONG_EDGE_PX, MAX_UPLOAD_BYTES } from './constants';
 import { MediaError } from './errors';
 import { assertNoHiddenMetadata, stripJpegMetadata } from './jpegMetadata';
+import { pickedSizeOf } from './pickedSize';
 
 export type PreparedImage = {
   /** The encoder's local file, for on-phone preview only. It may still hold metadata: never upload it. */
@@ -61,11 +62,27 @@ export async function prepareImage(
   let source: ImageRef | undefined;
   let image: ImageRef | undefined;
   try {
-    source = await ImageManipulator.manipulate(uri).renderAsync();
-    const context = ImageManipulator.manipulate(uri);
-    const resize = resizeFor(source.width, source.height, maxLongEdge);
-    if (resize) context.resize(resize);
-    image = await context.renderAsync();
+    // The picker's size spares a full decode of the original (Decision 33); without it, render once
+    // to read the size.
+    let size = pickedSizeOf(uri);
+    if (!size) {
+      source = await ImageManipulator.manipulate(uri).renderAsync();
+      size = { width: source.width, height: source.height };
+    }
+    const render = async (from: { width: number; height: number }) => {
+      const context = ImageManipulator.manipulate(uri);
+      const resize = resizeFor(from.width, from.height, maxLongEdge);
+      if (resize) context.resize(resize);
+      return context.renderAsync();
+    };
+    image = await render(size);
+    // A reported size can be wrong (e.g. an unrotated size for a rotated photo). The rendered size
+    // is the truth, and the long-edge limit must hold, so render again from it.
+    if (Math.max(image.width, image.height) > maxLongEdge) {
+      const rendered = { width: image.width, height: image.height };
+      image.release();
+      image = await render(rendered);
+    }
 
     let { saved, bytes } = await encode(image, quality);
     if (bytes.byteLength > maxBytes) {

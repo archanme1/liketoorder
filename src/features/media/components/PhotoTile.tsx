@@ -88,14 +88,15 @@ export function PhotoTile({
     </View>
   );
 
-  const spokenName = failed ? `${accessibilityLabel}. Photo unavailable` : accessibilityLabel;
+  const unavailable = failed ? '. Photo unavailable' : '';
+  const spokenName = `${accessibilityLabel}${unavailable}`;
 
   if (onPress) {
     return (
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={editLabel ?? spokenName}
+        accessibilityLabel={editLabel ? `${editLabel}${unavailable}` : spokenName}
         style={({ pressed }) => ({ opacity: pressed ? opacity.pressed : 1 })}
       >
         {body}

@@ -13,18 +13,27 @@ export const PRICE_ERROR_MESSAGE: Record<PriceError, (minorUnits: number) => str
   too_many_decimals: (minorUnits) =>
     minorUnits === 0
       ? 'This currency doesn’t use decimals'
-      : `Use at most ${minorUnits} decimal ${minorUnits === 1 ? 'place' : 'places'}`,
+      : `Use at most ${minorUnits} decimal ${minorUnits === 1 ? 'place' : 'places'}, and don’t type thousands separators`,
   out_of_range: () => 'Enter a price above zero and below 1,000,000,000 in the smallest unit',
 };
 
+/** Arabic-Indic (U+0660–0669) and Persian (U+06F0–06F9) digits read as the ASCII digit they show. */
+function toAsciiDigits(text: string): string {
+  return text.replace(/[\u0660-\u0669\u06f0-\u06f9]/g, (digit) =>
+    String(digit.charCodeAt(0) - (digit.charCodeAt(0) >= 0x06f0 ? 0x06f0 : 0x0660)),
+  );
+}
+
 /**
- * Parses a typed price ("12.50", "12,5", "1200") into minor units for a currency with
- * `minorUnits` decimals. Accepts `.` or `,` as the decimal separator; no grouping separators.
+ * Parses a typed price ("12.50", "12,5", ".5", "1200") into minor units for a currency with
+ * `minorUnits` decimals. Accepts `.` or `,` as the decimal separator, with or without a whole part,
+ * and digits from the Arabic-Indic and Persian keyboards; no grouping separators.
  */
 export function parsePrice(text: string, minorUnits: number): ParsePriceResult {
-  const match = /^(\d+)(?:[.,](\d*))?$/.exec(text.trim());
+  const match = /^(?:(\d+)(?:[.,](\d*))?|[.,](\d+))$/.exec(toAsciiDigits(text.trim()));
   if (!match) return { ok: false, error: 'invalid' };
-  const [, whole, fraction] = match;
+  const whole = match[1] ?? '0';
+  const fraction = match[1] === undefined ? match[3] : match[2];
   // "12." with a 0-decimal currency is refused too: the separator implies decimals.
   if (fraction !== undefined && (minorUnits === 0 || fraction.length > minorUnits)) {
     return { ok: false, error: 'too_many_decimals' };
@@ -66,7 +75,8 @@ export function formatPrice(
     minimumFractionDigits: minorUnits,
     maximumFractionDigits: minorUnits,
   });
-  // A decimal string, not minor / 10 ** n: Intl formats the exact decimal (and engines without
-  // string support convert it with the same digits), so no float maths touches the amount.
+  // A decimal string, not minor / 10 ** n, so the app does no float maths on the amount. Engines
+  // whose Intl takes decimal strings format the exact value; others convert the string to a number,
+  // which is still exact for the 9-digit maximum (checked on Hermes, v1.md §16).
   return format.format(minorToDecimalString(minor, minorUnits) as unknown as number);
 }

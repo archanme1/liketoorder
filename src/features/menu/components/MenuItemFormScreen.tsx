@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Alert, View } from 'react-native';
 
@@ -224,7 +224,12 @@ function ItemForm({ business, menu, currencies, item, onDone }: ItemFormProps) {
     ]);
   };
 
+  // One picker or upload at a time. The button is disabled while an upload runs; the ref also stops
+  // a second start in the gap before that state renders (a double tap, a screen reader's activate).
+  const photoBusy = useRef(false);
   const addOrReplacePhoto = async () => {
+    if (photoBusy.current) return;
+    photoBusy.current = true;
     setBanner(null);
     if (!item) {
       try {
@@ -232,12 +237,19 @@ function ItemForm({ business, menu, currencies, item, onDone }: ItemFormProps) {
         if (uri) setPendingPhotoUri(uri);
       } catch (error) {
         setBanner(photoErrorMessage(error));
+      } finally {
+        photoBusy.current = false;
       }
       return;
     }
     upload.mutate(
       { kind: 'item', menuItemId: item.id },
-      { onError: (error) => setBanner(photoErrorMessage(error)) },
+      {
+        onError: (error) => setBanner(photoErrorMessage(error)),
+        onSettled: () => {
+          photoBusy.current = false;
+        },
+      },
     );
   };
 

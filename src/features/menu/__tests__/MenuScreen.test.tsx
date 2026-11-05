@@ -568,6 +568,27 @@ describe('MenuScreen: move controls', () => {
     expect(announce).not.toHaveBeenCalled();
   });
 
+  it('ignores an assistive-technology activation of a disabled end button', async () => {
+    await renderScreen();
+    await screen.findByRole('switch', { name: 'Pizza available' });
+    // RNTL never presses a disabled control, so fire the host's own onClick (what a screen reader's
+    // double tap calls), the same path the Pressable's onPress is reached by.
+    const activate = async (label: string) => {
+      const control = screen.getByRole('button', { name: label });
+      await act(async () => {
+        control.props.onClick({ stopPropagation: () => {}, nativeEvent: {} });
+      });
+    };
+    await activate('Move Pizza up');
+    await activate('Move Salad down');
+    expect(mockedMove).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
+
+    // The same path works on an enabled button, so the check above can fail.
+    await activate('Move Pasta up');
+    expect(mockedMove).toHaveBeenCalledWith('i2', 'up');
+  });
+
   it('calls moveMenuItem with "up" and swaps the list at once (optimistic)', async () => {
     const pending = deferred<void>();
     mockedMove.mockReturnValue(pending.promise);
@@ -731,6 +752,12 @@ describe('MenuScreen: accessibility', () => {
     const buttons = screen.getAllByRole('button');
     for (const button of buttons) {
       expect(String(button.props.accessibilityLabel ?? '').length).toBeGreaterThan(0);
+    }
+    const switches = screen.getAllByRole('switch');
+    expect(switches).toHaveLength(3);
+    for (const control of switches) {
+      expect(String(control.props.accessibilityLabel ?? '')).toMatch(/ available$/);
+      expect(control.props.accessibilityRole).toBe('switch');
     }
     expect(
       within(screen.getByRole('button', { name: /^Edit Salad/ })).getByText('Unavailable'),

@@ -86,12 +86,21 @@ function MenuEditor({ business, menu }: { business: MyBusiness; menu: Menu }) {
       const from = items.findIndex((row) => row.id === item.id);
       const to = direction === 'up' ? from - 1 : from + 1;
       if (from < 0 || to < 0 || to >= items.length) return;
+      // The position is announced only once the server accepts the move; a rejected move rolls the
+      // order back, so the seller hears the failure instead.
       move.mutate(
         { itemId: item.id, direction },
-        { onError: (error) => setBanner(menuErrorMessage(error.code)) },
-      );
-      AccessibilityInfo.announceForAccessibility(
-        `${item.name} moved to position ${to + 1} of ${items.length}`,
+        {
+          onSuccess: () =>
+            AccessibilityInfo.announceForAccessibility(
+              `${item.name} moved to position ${to + 1} of ${items.length}`,
+            ),
+          onError: (error) => {
+            const message = menuErrorMessage(error.code);
+            setBanner(message);
+            AccessibilityInfo.announceForAccessibility(`Couldn’t move ${item.name}. ${message}`);
+          },
+        },
       );
     },
     [items, move],

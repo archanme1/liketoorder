@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { memo, useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Alert, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 
 import { Banner, ErrorState, Text } from '@/components/ui';
@@ -78,39 +78,68 @@ function PhotosEditor({ business, menu, scrollRef }: PhotosBodyProps & { menu: M
     () => [...sections.cover, ...sections.gallery, ...sections.menu].map((p) => p.path),
     [sections],
   );
-  const urls = useSignedUrls(MEDIA_BUCKET, paths);
-  const cover = slotPhoto(sections.cover, urls.urlFor);
-  const onExpired = (path: string) => void urls.renew(path);
+  const { renew, urlFor } = useSignedUrls(MEDIA_BUCKET, paths);
+  const cover = slotPhoto(sections.cover, urlFor);
+  const onExpired = useCallback((path: string) => void renew(path), [renew]);
   const uploadingKind = upload.isPending ? upload.variables?.kind : undefined;
 
-  const add = (kind: PhotoKind) => {
-    setBanner(null);
-    upload.mutate({ kind }, { onError: (error) => setBanner(photoErrorMessage(error)) });
-  };
-
-  const confirmRemove = (photo: BusinessPhoto, name: string) => {
-    Alert.alert(`Remove ${name.toLowerCase()}?`, undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => {
-          setBanner(null);
-          remove.mutate(photo.id, { onError: (error) => setBanner(photoErrorMessage(error)) });
+  // One upload at a time: the buttons are disabled while one runs, and this ref also stops a second
+  // start from a path that isn't a button (the cover tile's Replace option) or a double tap that
+  // lands before the pending state has rendered.
+  const uploadRunning = useRef(false);
+  const { mutate: startUpload } = upload;
+  const add = useCallback(
+    (kind: PhotoKind) => {
+      if (uploadRunning.current) return;
+      uploadRunning.current = true;
+      setBanner(null);
+      startUpload(
+        { kind },
+        {
+          onError: (error) => setBanner(photoErrorMessage(error)),
+          onSettled: () => {
+            uploadRunning.current = false;
+          },
         },
-      },
-    ]);
-  };
+      );
+    },
+    [startUpload],
+  );
+
+  const { mutate: removePhoto } = remove;
+  const confirmRemove = useCallback(
+    (photo: BusinessPhoto, name: string) => {
+      Alert.alert(`Remove ${name.toLowerCase()}?`, undefined, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            setBanner(null);
+            removePhoto(photo.id, { onError: (error) => setBanner(photoErrorMessage(error)) });
+          },
+        },
+      ]);
+    },
+    [removePhoto],
+  );
 
   // Photo options: the cover can be replaced; gallery and menu photos are removed and re-added.
-  const openOptions = (photo: BusinessPhoto, name: string) => {
-    const buttons = [
-      ...(photo.kind === 'cover' ? [{ text: 'Replace', onPress: () => add('cover') }] : []),
-      { text: 'Remove', style: 'destructive' as const, onPress: () => confirmRemove(photo, name) },
-      { text: 'Cancel', style: 'cancel' as const },
-    ];
-    Alert.alert(name, undefined, buttons);
-  };
+  const openOptions = useCallback(
+    (photo: BusinessPhoto, name: string) => {
+      const buttons = [
+        ...(photo.kind === 'cover' ? [{ text: 'Replace', onPress: () => add('cover') }] : []),
+        {
+          text: 'Remove',
+          style: 'destructive' as const,
+          onPress: () => confirmRemove(photo, name),
+        },
+        { text: 'Cancel', style: 'cancel' as const },
+      ];
+      Alert.alert(name, undefined, buttons);
+    },
+    [add, confirmRemove],
+  );
 
   const empty =
     sections.cover.length === 0 && sections.gallery.length === 0 && sections.menu.length === 0;
@@ -129,7 +158,7 @@ function PhotosEditor({ business, menu, scrollRef }: PhotosBodyProps & { menu: M
         {cover ? (
           <PhotoTile
             path={cover.path}
-            uri={urls.urlFor(cover.path)}
+            uri={urlFor(cover.path)}
             accessibilityLabel={photoNames.cover(business.name)}
             editLabel={photoEditLabels.cover()}
             onPress={() => openOptions(cover, 'Cover photo')}
@@ -151,11 +180,11 @@ function PhotosEditor({ business, menu, scrollRef }: PhotosBodyProps & { menu: M
       <Section title="Gallery" count={sections.gallery.length} limit={PHOTO_LIMITS.gallery}>
         <PhotoGrid
           photos={sections.gallery}
-          urlFor={urls.urlFor}
+          kind="gallery"
+          businessName={business.name}
+          urlFor={urlFor}
           onExpired={onExpired}
-          nameFor={(index, count) => photoNames.gallery(index, count, business.name)}
-          editLabelFor={photoEditLabels.gallery}
-          onOpen={(photo, index, count) => openOptions(photo, `Gallery photo ${index} of ${count}`)}
+          onOpen={openOptions}
         />
         <AddPhotoButton
           label="Add gallery photo"
@@ -184,11 +213,11 @@ function PhotosEditor({ business, menu, scrollRef }: PhotosBodyProps & { menu: M
           </Text>
           <PhotoGrid
             photos={sections.menu}
-            urlFor={urls.urlFor}
+            kind="menu"
+            businessName={business.name}
+            urlFor={urlFor}
             onExpired={onExpired}
-            nameFor={(index, count) => photoNames.menu(index, count, business.name)}
-            editLabelFor={photoEditLabels.menu}
-            onOpen={(photo, index, count) => openOptions(photo, `Menu photo ${index} of ${count}`)}
+            onOpen={openOptions}
           />
           <AddPhotoButton
             label="Add menu photo"
@@ -248,17 +277,32 @@ function Section({
 
 type PhotoGridProps = {
   photos: BusinessPhoto[];
+  kind: 'gallery' | 'menu';
+  businessName: string;
   urlFor: (path: string) => string | null | undefined;
   onExpired: (path: string) => void;
-  nameFor: (index: number, count: number) => string;
-  editLabelFor: (index: number, count: number) => string;
-  onOpen: (photo: BusinessPhoto, index: number, count: number) => void;
+  /** `name` is the spoken option title, e.g. "Gallery photo 2 of 6". */
+  onOpen: (photo: BusinessPhoto, name: string) => void;
 };
 
-// Photos stay in upload order (reordering photos is out of scope).
-function PhotoGrid({ photos, urlFor, onExpired, nameFor, editLabelFor, onOpen }: PhotoGridProps) {
+const GRID_NAMES = {
+  gallery: { tile: photoNames.gallery, edit: photoEditLabels.gallery, option: 'Gallery photo' },
+  menu: { tile: photoNames.menu, edit: photoEditLabels.menu, option: 'Menu photo' },
+};
+
+// Photos stay in upload order (reordering photos is out of scope). Props are stable, so the grid
+// only re-renders when its photos or URLs change.
+const PhotoGrid = memo(function PhotoGrid({
+  photos,
+  kind,
+  businessName,
+  urlFor,
+  onExpired,
+  onOpen,
+}: PhotoGridProps) {
   const { space } = useTheme();
   if (photos.length === 0) return null;
+  const names = GRID_NAMES[kind];
   return (
     <View style={[styles.grid, { gap: space.sm }]}>
       {photos.map((photo, i) => (
@@ -266,15 +310,15 @@ function PhotoGrid({ photos, urlFor, onExpired, nameFor, editLabelFor, onOpen }:
           key={photo.id}
           path={photo.path}
           uri={urlFor(photo.path)}
-          accessibilityLabel={nameFor(i + 1, photos.length)}
-          editLabel={editLabelFor(i + 1, photos.length)}
-          onPress={() => onOpen(photo, i + 1, photos.length)}
+          accessibilityLabel={names.tile(i + 1, photos.length, businessName)}
+          editLabel={names.edit(i + 1, photos.length)}
+          onPress={() => onOpen(photo, `${names.option} ${i + 1} of ${photos.length}`)}
           onExpired={onExpired}
         />
       ))}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },

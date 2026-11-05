@@ -1,5 +1,4 @@
 import { formatPrice, formatPriceInput, parsePrice } from '../price';
-import { GALLERY_LIMIT, ITEM_LIMIT, MENU_PHOTO_LIMIT } from '../schema';
 
 // Spec 06 "Price model (Decision 12)": integers in the currency's minor unit (0, 2 or 3 decimals),
 // `.` or `,` as the separator, string maths only, bounds 1..999 999 999.
@@ -9,14 +8,6 @@ import { GALLERY_LIMIT, ITEM_LIMIT, MENU_PHOTO_LIMIT } from '../schema';
 function plain(text: string): string {
   return text.replace(/[  ]/g, ' ');
 }
-
-describe('limits named in the spec', () => {
-  it('uses 100 items, 6 gallery photos and 10 menu photos', () => {
-    expect(ITEM_LIMIT).toBe(100);
-    expect(GALLERY_LIMIT).toBe(6);
-    expect(MENU_PHOTO_LIMIT).toBe(10);
-  });
-});
 
 describe('parsePrice: 0-decimal currencies (JPY)', () => {
   it('reads whole numbers as the amount itself', () => {

@@ -113,6 +113,8 @@ export const MenuItemRow = memo(function MenuItemRow({
           onPress={() => onMove(item, 'down')}
         />
         <Switch
+          // The native switch is about 31pt tall; the slop brings its touch area to 44pt or more.
+          hitSlop={{ top: space.sm, bottom: space.sm, left: space.sm, right: space.sm }}
           value={item.is_available}
           onValueChange={(value) => onToggleAvailable(item, value)}
           accessibilityRole="switch"

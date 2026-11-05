@@ -171,8 +171,8 @@ select is(
       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')),
   array['begin_photo_upload', 'claim_photo_cleanup', 'create_menu_item', 'create_my_business',
         'delete_business_photo', 'delete_menu_item', 'finish_photo_upload', 'get_my_business',
-        'move_menu_item', 'set_menu_currency', 'set_seller_mode', 'update_menu_item'],
-  'only the allowlisted public functions (specs 05, 06) are executable by authenticated'
+        'get_restaurant_details', 'map_restaurants_in_bounds', 'move_menu_item', 'set_menu_currency', 'set_seller_mode', 'update_menu_item'],
+  'only the allowlisted public functions (specs 05, 06, 07) are executable by authenticated'
 );
 select is(
   (select coalesce(array_agg(distinct p.proname::text order by p.proname::text), array[]::text[])
@@ -181,8 +181,8 @@ select is(
     where n.nspname = 'public'
       and has_function_privilege('anon', p.oid, 'execute')
       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')),
-  array[]::text[],
-  'anon can execute no public function'
+  array['get_restaurant_details', 'map_restaurants_in_bounds'],
+  'anon can execute only the two public map reads (spec 07)'
 );
 
 -- Spec 06: RLS helpers live in `private`, which PostgREST does not expose.
@@ -190,8 +190,10 @@ select is(
   (select coalesce(array_agg(p.proname::text order by p.proname::text), array[]::text[])
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'private'),
-  array['business_is_public', 'owns_business', 'photo_is_live', 'photo_is_public', 'photo_upload_allowed'],
-  'the private schema holds exactly the five RLS helpers'
+  array['business_is_public', 'cleanup_map_rate_limits', 'cleanup_places_refresh_quota', 'consume_map_quota',
+        'invoke_places_refresh', 'owns_business', 'photo_is_live', 'photo_is_public', 'photo_upload_allowed',
+        'restaurant_is_fresh'],
+  'the private schema holds exactly the five RLS helpers and the five spec 07 map helpers'
 );
 select is_empty(
   $$ select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -399,7 +401,7 @@ select is(((public.get_my_business()->'location'->>'lat'))::float8, 43.7::float8
 select is(
   (select array_agg(k order by k collate "C") from jsonb_object_keys(public.get_my_business()) k),
   array['accepts_table_requests', 'created_at', 'cuisine_code', 'currency_code', 'id', 'is_listed', 'location',
-        'map_lat', 'map_lng', 'name', 'public_address', 'type', 'updated_at'],
+        'map_lat', 'map_lng', 'map_status', 'name', 'public_address', 'type', 'updated_at'],
   'get_my_business has exactly the documented keys and never owner_id'
 );
 

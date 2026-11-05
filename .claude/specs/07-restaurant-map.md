@@ -5,7 +5,7 @@
 - PR 2 (the app: libraries, map, markers, clustering, location flow, sheet, Directions, jest tests): `feature/restaurant-map-app`, created from `main` after PR 1 is merged. **Blocked on Archan's development-build decision (see "Development build").**
 **Product spec:** `docs/product/v1.md` §6 Map, §5 (Sellers & listings, Homemade specifics), §4 (guests can browse), §3 (out of scope), §14 row 07, §16 (Google map provider, Places coordinate refresh, Photo viewer, Google terms review)
 **Plan mode:** required — adds a migration (functions, index, tables, a cron job), RLS and grants; adds an Edge Function; adds several dependencies and native config; adds a route and navigation changes; touches well over ~5 files.
-**Status:** 📝 Spec written (PR 1 sets 🚧 In progress; only PR 2 sets ✅ Shipped)
+**Status:** 🚧 In progress (PR 1 started; only PR 2 sets ✅ Shipped)
 
 ## Overview
 After this ships, anyone, signed in or not, can open the **Restaurants** tab and see a full-screen **Google map** of restaurants, each as its country flag (or a neutral cuisine icon). Pins group into clusters when zoomed out. The map loads only the restaurants in the visible area. Tapping a pin opens a draggable bottom sheet (collapsed / half / full) with the restaurant's name, flag, cover photo and gallery, menu (items, prices, availability, menu photos), address and a **Directions** link that opens Google Maps.

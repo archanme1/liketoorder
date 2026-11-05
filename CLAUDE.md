@@ -177,7 +177,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 04 | cuisine-catalog | ✅ Shipped | .claude/specs/04-cuisine-catalog.md |
 | 05 | seller-onboarding | ✅ Shipped | .claude/specs/05-seller-onboarding.md |
 | 06 | menu-management | ✅ Shipped | .claude/specs/06-menu-management.md |
-| 07 | restaurant-map | 📝 Spec written | .claude/specs/07-restaurant-map.md |
+| 07 | restaurant-map | 🚧 In progress | .claude/specs/07-restaurant-map.md |
 | 08 | homemade-map | ⬜ Not started | — |
 | 09 | pickup-requests | ⬜ Not started | — |
 | 10 | seller-request-inbox | ⬜ Not started | — |

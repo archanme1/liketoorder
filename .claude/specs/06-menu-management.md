@@ -542,7 +542,24 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - [ ] Photos have the accessible names listed. Every touchable has `accessibilityLabel` + `accessibilityRole` and is ≥ 44pt. "Unavailable" is shown as text, not color alone.
 - [ ] The homemade photo note shows only for homemade sellers.
 - [ ] No hardcoded colors or sizes outside tokens.
-- [ ] Manual device run done (Test plan).
+- [ ] Manual device run done (Test plan). **Partial:** iPhone with Expo Go, 2026-11-04 (Archan). Each item not manually checked is tracked before launch in `docs/product/v1.md` §16.
+  - [x] Currency confirmation before the first price; prices display in the list.
+  - [x] "Unavailable" is shown as text.
+  - [x] The currency is locked once an item has a price.
+  - [x] Reordering with Move up / Move down.
+  - [x] Item photo add, replace and remove.
+  - [x] Cover photo, gallery and menu photos, including the limits.
+  - [x] Deleting an item that has a photo.
+  - [x] **Metadata proof:**
+    - A photo uploaded from the phone was downloaded from Studio.
+    - exiftool shows no EXIF, GPS, XMP, IPTC or Photoshop group, only File, JFIF, ICC and Composite.
+    - The file is 1200 × 1600 and 605 kB.
+  - [ ] Homemade photo note: not manually checked (covered by jest).
+  - [ ] JPY and KWD price formatting on a phone (Hermes `Intl`): not manually checked (covered by jest on Node's ICU only).
+  - [ ] VoiceOver / TalkBack on the Menu, item and Photos screens: not manually checked.
+  - [ ] Android: not manually checked.
+  - [ ] Signed-URL cache-by-path TTL test: not manually checked.
+  - [ ] Menu photos link scroll: not manually checked.
 - [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:functions` and `npx supabase test db` all pass, in CI too.
 - [ ] CLAUDE.md row 06 and this spec's status are ✅ Shipped. v1.md §5 lists the item fields with the optional description, and the changelog has a spec 06 shipped line that notes the §5 change (Decision 20).
 
@@ -601,7 +618,7 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - Add items with prices in CAD; try JPY and KWD on a test business to check the decimals; check the currency lock.
 - Reorder with VoiceOver/TalkBack using the up/down buttons and hear the announcement.
 - Fill each photo section to its limit; replace the cover; delete an item with a photo, then check in Studio that the file is gone after the screen reopens.
-- Seller mode off: a signed URL request for a new URL fails for another account.
+- ~~Seller mode off: a signed URL request for a new URL fails for another account.~~ Dropped from the device run by Archan on 2026-11-04. pgTAP covers it: storage objects are unreadable to other users once seller mode is off.
 - **Menu photos link:** on the Menu screen, tap "Menu photos (n/10)": the Photos screen opens scrolled to the Menu photos section (the `section=menu` param; the scroll isn't observable under jest).
 - **Cache by path:** open the Photos screen, wait more than 50 minutes (or lower the TTL in a local build), then reopen it. New URLs are fetched (visible in the network log) and the photos show at once, with no reload or flash.
 

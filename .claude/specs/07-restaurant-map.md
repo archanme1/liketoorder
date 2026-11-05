@@ -321,28 +321,28 @@ Feature-specific:
 
 ## Definition of done
 **Database (PR 1)**
-- [ ] RLS is on for `map_rate_limits` and `places_refresh_quota`; `anon` and `authenticated` hold no table or column privileges on them or on the new `business_locations` columns.
-- [ ] `anon` and `authenticated` can execute exactly `map_restaurants_in_bounds` and `get_restaurant_details` among the new functions; everything else new is `service_role`/owner only (allowlist test updated).
-- [ ] 30-day guard: a restaurant with `resolved_at` 29 days old appears; 31 days old does not; the same row appears again after `apply_places_refresh('ok', …)`.
-- [ ] Hidden place: `place_status = 'not_found'` removes the restaurant from pins and details, and its `businesses`, `business_locations`, menu and photo rows still exist.
-- [ ] An unlisted, homemade, location-less or stale business never appears in `map_restaurants_in_bounds`, and `get_restaurant_details` returns `null` for each (same value for all causes, and for a random uuid).
-- [ ] Outsider (anon and another signed-in user) cannot read the exact address, exact coordinates, `resolved_at` or `place_status` from either function or from any table; the details JSON has no `lat`/`lng` of the exact point, no `resolved_at`, no `place_status`; the pins JSON has no `place_id` and no address.
-- [ ] Bounds: inverted box, null and NaN raise `invalid_bounds`; lat beyond ±90 is clamped; a box crossing the 180° line returns pins on both sides; a span over 90° returns `too_large` with no pins; a whole-world box returns `too_large`.
-- [ ] Cap: with 501+ fresh restaurants in the box, 500 pins and `capped = true` are returned; with exactly 500, `capped = false`.
-- [ ] Global ceiling: once all guests together exceed 2,000 `pins` calls in a minute, any guest gets `rate_limited` even from a fresh IP or with no readable IP; a signed-in user is unaffected at the same moment.
-- [ ] Rate limit: a guest (anon, no uid) is limited by IP key; the 121st `pins` call in a minute raises `rate_limited` (31st for `details`); a different key is unaffected; the public functions delete no rows (no cleanup on a pin query).
-- [ ] Cleanup: `private.cleanup_map_rate_limits()` (hourly, `0 * * * *` UTC) deletes `map_rate_limits` rows older than 1 hour; `private.cleanup_places_refresh_quota()` (daily, `30 3 * * *` UTC) deletes `places_refresh_quota` rows older than 30 days. pgTAP inserts old and new rows, runs each function, sees only the old ones removed, and that each leaves the other table alone; `anon`/`authenticated` cannot execute either.
-- [ ] `claim_places_refresh_batch` returns at most 25 rows, oldest first, skips rows tried within a day, stops at the 100-calls/day quota, and the quota table is separate from `places_rate_limits`.
-- [ ] `apply_places_refresh` for a restaurant moves `map_lat/map_lng`; for a homemade business `map_lat/map_lng` stay exactly the same while `business_locations.lat/lng` and `resolved_at` update. Saving a new address through `set_business_location` resets `place_status` to `ok` and clears `refresh_attempted_at`. Apply guard: a result for a row with no outstanding claim (or a missing row) changes nothing, and a result claimed for the old address cannot overwrite a newly saved one. Every applied outcome (`ok` and `not_found`) clears `refresh_attempted_at`, so a second apply for the same claim does nothing.
-- [ ] `anon`, another signed-in user and the owner cannot `select` `businesses.map_lat`, `map_lng` or `public_address` (42501); the owner still gets them from `get_my_business`.
-- [ ] Neither `anon` nor `authenticated` can execute `claim_places_refresh_batch`, `apply_places_refresh` or any `private.*` function (42501).
-- [ ] `pg_cron`, `pg_net` and `supabase_vault` are installed by the migration (pgTAP fails clearly if any is missing); all three cron jobs exist; `private.invoke_places_refresh()` does nothing (no error) when the vault secrets are absent.
-- [ ] `src/types/database.ts` regenerated; existing migrations untouched.
+- [x] RLS is on for `map_rate_limits` and `places_refresh_quota`; `anon` and `authenticated` hold no table or column privileges on them or on the new `business_locations` columns.
+- [x] `anon` and `authenticated` can execute exactly `map_restaurants_in_bounds` and `get_restaurant_details` among the new functions; everything else new is `service_role`/owner only (allowlist test updated).
+- [x] 30-day guard: a restaurant with `resolved_at` 29 days old appears; 31 days old does not; the same row appears again after `apply_places_refresh('ok', …)`.
+- [x] Hidden place: `place_status = 'not_found'` removes the restaurant from pins and details, and its `businesses`, `business_locations`, menu and photo rows still exist.
+- [x] An unlisted, homemade, location-less or stale business never appears in `map_restaurants_in_bounds`, and `get_restaurant_details` returns `null` for each (same value for all causes, and for a random uuid).
+- [x] Outsider (anon and another signed-in user) cannot read the exact address, exact coordinates, `resolved_at` or `place_status` from either function or from any table; the details JSON has no `lat`/`lng` of the exact point, no `resolved_at`, no `place_status`; the pins JSON has no `place_id` and no address.
+- [x] Bounds: inverted box, null and NaN raise `invalid_bounds`; lat beyond ±90 is clamped; a box crossing the 180° line returns pins on both sides; a span over 90° returns `too_large` with no pins; a whole-world box returns `too_large`.
+- [x] Cap: with 501+ fresh restaurants in the box, 500 pins and `capped = true` are returned; with exactly 500, `capped = false`.
+- [x] Global ceiling: once all guests together exceed 2,000 `pins` calls in a minute, any guest gets `rate_limited` even from a fresh IP or with no readable IP; a signed-in user is unaffected at the same moment.
+- [x] Rate limit: a guest (anon, no uid) is limited by IP key; the 121st `pins` call in a minute raises `rate_limited` (31st for `details`); a different key is unaffected; the public functions delete no rows (no cleanup on a pin query).
+- [x] Cleanup: `private.cleanup_map_rate_limits()` (hourly, `0 * * * *` UTC) deletes `map_rate_limits` rows older than 1 hour; `private.cleanup_places_refresh_quota()` (daily, `30 3 * * *` UTC) deletes `places_refresh_quota` rows older than 30 days. pgTAP inserts old and new rows, runs each function, sees only the old ones removed, and that each leaves the other table alone; `anon`/`authenticated` cannot execute either.
+- [x] `claim_places_refresh_batch` returns at most 25 rows, oldest first, skips rows tried within a day, stops at the 100-calls/day quota, and the quota table is separate from `places_rate_limits`.
+- [x] `apply_places_refresh` for a restaurant moves `map_lat/map_lng`; for a homemade business `map_lat/map_lng` stay exactly the same while `business_locations.lat/lng` and `resolved_at` update. Saving a new address through `set_business_location` resets `place_status` to `ok` and clears `refresh_attempted_at`. Apply guard: a result for a row with no outstanding claim (or a missing row) changes nothing, and a result claimed for the old address cannot overwrite a newly saved one. Every applied outcome (`ok` and `not_found`) clears `refresh_attempted_at`, so a second apply for the same claim does nothing.
+- [x] `anon`, another signed-in user and the owner cannot `select` `businesses.map_lat`, `map_lng` or `public_address` (42501); the owner still gets them from `get_my_business`.
+- [x] Neither `anon` nor `authenticated` can execute `claim_places_refresh_batch`, `apply_places_refresh` or any `private.*` function (42501).
+- [x] `pg_cron`, `pg_net` and `supabase_vault` are installed by the migration (pgTAP fails clearly if any is missing); all three cron jobs exist; `private.invoke_places_refresh()` does nothing (no error) when the vault secrets are absent.
+- [x] `src/types/database.ts` regenerated; existing migrations untouched.
 
 **Edge Function (PR 1)**
-- [ ] Missing or wrong `x-cron-secret` → 401, no database or Google call; no `REFRESH_CRON_SECRET` configured → 500 `not_configured`.
-- [ ] With a fake Google: a normal place updates coordinates; `NOT_FOUND` → `not_found`; a response with no location, a 500 and a timeout → no change and counted as `failed`; the record is never deleted.
-- [ ] The response and logs contain no Google body, key or secret.
+- [x] Missing or wrong `x-cron-secret` → 401, no database or Google call; no `REFRESH_CRON_SECRET` configured → 500 `not_configured`.
+- [x] With a fake Google: a normal place updates coordinates; `NOT_FOUND` → `not_found`; a response with no location, a 500 and a timeout → no change and counted as `failed`; the record is never deleted.
+- [x] The response and logs contain no Google body, key or secret.
 
 **App (PR 2)**
 - [ ] The Restaurants tab shows a Google map with `PROVIDER_GOOGLE` on iOS and Android; guests see it without signing in.

@@ -96,7 +96,7 @@ This is one SQL helper, `private.restaurant_is_fresh(p_business_id uuid)`, used 
 ### RLS and grants
 - `map_rate_limits` and `places_refresh_quota`: `enable row level security`, `revoke all … from anon, authenticated`, no policies. Only security-definer functions touch them.
 - `business_locations` stays closed (no grants, no policies). The new columns are not readable by anyone but functions.
-- `businesses` keeps its spec 05 column grants and policies. No change. (Direct reads of `businesses` by anon still work as in spec 05; the app does **not** use them for the map. See Decision 14.)
+- `businesses`: a second migration (`restaurant_map_hardening`) **revokes `select` on `map_lat`, `map_lng` and `public_address` from `anon` and `authenticated`**. These come from Google Places (a restaurant's exact point and formatted address; a homemade point is derived from one), and a direct read skipped both the 30-day guard and the rate limit (Decision 2, Decision 20). They are read only through `map_restaurants_in_bounds` and `get_restaurant_details` (security definer) and, for the owner, through `get_my_business`. The other readable columns (`id`, `type`, `name`, `cuisine_code`, `accepts_table_requests`, `currency_code`) are chosen by the owner or by us and stay as in spec 05/06. **For spec 08:** homemade needs its own read function; it can no longer read homemade map points straight from `businesses`.
 
 ### Functions
 | Function | Who may execute | What it does |
@@ -239,7 +239,10 @@ When the Restaurants tab first opens:
 - `supabase/migrations/<timestamp>_restaurant_map.sql`
 - `supabase/tests/07-restaurant-map.test.sql`
 - `supabase/functions/places-refresh/{index,handler}.ts`
+- `supabase/functions/places-refresh/rpc.ts` (the two database calls, so tests can check function and argument names)
 - `supabase/functions/tests/places-refresh.test.ts`
+- `supabase/functions/tests/places-refresh-rpc.test.ts`
+- `supabase/migrations/<timestamp>_restaurant_map_hardening.sql` (code-review fixes: column revoke, `private.caller_ip()`, apply clears its claim)
 
 **PR 2**
 - `src/features/map/{api,schema,clustering,directions,lastRegion,countryViews}.ts` (`countryViews.ts` is the bundled table: ISO region code → centre + `latDelta`/`lngDelta`, each at most 40°)
@@ -330,7 +333,8 @@ Feature-specific:
 - [ ] Rate limit: a guest (anon, no uid) is limited by IP key; the 121st `pins` call in a minute raises `rate_limited` (31st for `details`); a different key is unaffected; the public functions delete no rows (no cleanup on a pin query).
 - [ ] Cleanup: `private.cleanup_map_rate_limits()` (hourly, `0 * * * *` UTC) deletes `map_rate_limits` rows older than 1 hour; `private.cleanup_places_refresh_quota()` (daily, `30 3 * * *` UTC) deletes `places_refresh_quota` rows older than 30 days. pgTAP inserts old and new rows, runs each function, sees only the old ones removed, and that each leaves the other table alone; `anon`/`authenticated` cannot execute either.
 - [ ] `claim_places_refresh_batch` returns at most 25 rows, oldest first, skips rows tried within a day, stops at the 100-calls/day quota, and the quota table is separate from `places_rate_limits`.
-- [ ] `apply_places_refresh` for a restaurant moves `map_lat/map_lng`; for a homemade business `map_lat/map_lng` stay exactly the same while `business_locations.lat/lng` and `resolved_at` update. Saving a new address through `set_business_location` resets `place_status` to `ok` and clears `refresh_attempted_at`. Apply guard: a result for a row with no outstanding claim (or a missing row) changes nothing, and a result claimed for the old address cannot overwrite a newly saved one.
+- [ ] `apply_places_refresh` for a restaurant moves `map_lat/map_lng`; for a homemade business `map_lat/map_lng` stay exactly the same while `business_locations.lat/lng` and `resolved_at` update. Saving a new address through `set_business_location` resets `place_status` to `ok` and clears `refresh_attempted_at`. Apply guard: a result for a row with no outstanding claim (or a missing row) changes nothing, and a result claimed for the old address cannot overwrite a newly saved one. Every applied outcome (`ok` and `not_found`) clears `refresh_attempted_at`, so a second apply for the same claim does nothing.
+- [ ] `anon`, another signed-in user and the owner cannot `select` `businesses.map_lat`, `map_lng` or `public_address` (42501); the owner still gets them from `get_my_business`.
 - [ ] Neither `anon` nor `authenticated` can execute `claim_places_refresh_batch`, `apply_places_refresh` or any `private.*` function (42501).
 - [ ] `pg_cron`, `pg_net` and `supabase_vault` are installed by the migration (pgTAP fails clearly if any is missing); all three cron jobs exist; `private.invoke_places_refresh()` does nothing (no error) when the vault secrets are absent.
 - [ ] `src/types/database.ts` regenerated; existing migrations untouched.
@@ -390,7 +394,7 @@ Feature-specific:
 
 ## Decisions
 1. **Two PRs** as above; PR 1 keeps the status 🚧, only PR 2 marks ✅ Shipped. (Archan, 2026-11-04)
-2. **Option A for the 30-day rule:** this spec builds the refresh job and the 30-day hide guard. The guard is the real protection; the job is the normal path. (Archan, 2026-11-04)
+2. **Option A for the 30-day rule:** this spec builds the refresh job and the 30-day hide guard. The guard is the real protection; the job is the normal path. For the guard to hold, nothing else may hand out the coordinates, so direct reads of `businesses.map_lat`, `map_lng` and `public_address` are revoked from `anon` and `authenticated` (Decision 20). (Archan, 2026-11-04; extended 2026-11-05)
 3. **Opening view and location** as specced: optional while-using-the-app permission after a plain note; fallbacks last region → phone country → plain world map; location stays on the phone and is never sent. (Archan, 2026-11-04)
 4. **Guest abuse guard:** a per-minute rate limit in the database, keyed by `u:<uid>` for signed-in callers and by the client IP for guests (read from the request headers PostgREST exposes inside the function). Limits per key: `pins` **120/minute**, `details` **30/minute**. **Global ceiling for guests as the backstop:** all guest calls together share one extra key `guest:all`, at 2,000 `pins` and 600 `details` per minute (tunable numbers; signed-in users are not counted, so a guest flood can't lock them out). Guests whose IP can't be read are still counted against the ceiling. Alongside it, cost bounds that don't depend on any key: bounding-box size limit, 500 cap, a partial index, `statement_timeout = 3s`, and small public-only payloads. Old `map_rate_limits` rows are removed by an hourly cron job (rows older than 1 hour), never by a pin query. Because a forged IP header can create a new per-IP row on each call, up to the guest ceiling, hourly cleanup keeps the table small (accepted for v1; Archan, 2026-11-05). In the app, `rate_limited` keeps the old pins, shows a calm "Try again in a moment" note and is never retried automatically (Decision 12). The IP header is verified before launch (§16).
 5. **Refresh numbers:** every 6 hours, 25 rows per run, 100 Google calls per UTC day, start at 25 days, oldest first, own quota table, retry a failed row after a day.
@@ -416,6 +420,9 @@ Feature-specific:
 17. **Hourly rate-limit cleanup:** `map_rate_limits` rows are deleted hourly (older than 1 hour); `places_refresh_quota` stays on the daily job. (Archan, 2026-11-05)
 18. **Refresh run:** rows are refreshed one at a time, 5 seconds per Google call, each result saved as it finishes; `pg_net` waits up to 60 seconds. (Archan, 2026-11-05)
 19. **Apply guard and `map_status`:** a refresh result is applied only to a row with an outstanding claim; `map_status` follows the rule in the functions table, including null when there is no saved address. A claim charges the quota for the rows actually returned; a place is `not_found` only on a 404 with status `NOT_FOUND`; a forged-header row-growth risk is accepted for v1. (Archan, 2026-11-05)
+20. **No direct reads of the Google columns:** `select` on `businesses.map_lat`, `map_lng` and `public_address` is revoked from `anon` and `authenticated` in a new migration, so the 30-day guard and the rate limit cannot be skipped. Spec 08 adds its own homemade read function. (Archan, 2026-11-05)
+21. **Guest address in one function:** the `x-forwarded-for` reading lives in `private.caller_ip()` only. The key logic is unchanged; once the trustworthy header is chosen at launch (§16, before-launch blocker), the fix is a one-function migration. Until then guests are protected only by the guest ceiling, which a forger can fill to block other guests. (Archan, 2026-11-05)
+22. **What bounds the call time:** `statement_timeout = '3s'` on the two public functions applies to the statements inside them; the timer for the call itself starts before the function runs. The role-level timeouts (Supabase defaults: anon 3 s, authenticated 8 s) bound the call today. Role settings are not changed. `apply_places_refresh` clears the claim after any applied outcome, so a result applies once. (Archan, 2026-11-05)
 
 ## Open questions
 1. **Google Maps terms text** could not be loaded in full here. Please have the §16 "Google terms review" item cover: Places content only on a Google map, the 30-day lat/lng cache limit, and linking out by place ID.

@@ -57,7 +57,7 @@ All new routes are under `app/seller/`, which is already behind the profile guar
 - `app/seller/menu/index.tsx` (new) — `MenuScreen`:
   - A **Currency** row showing "Canadian dollar (CAD)" or "Not set". It opens `CurrencyPicker` and is read-only, with a reason, once any item has a price (Decision 12).
   - The item list in order. Each row shows the name, the formatted price (or nothing), an "Unavailable" text tag (text, not color only), a thumbnail if there is one, **Move up** and **Move down** buttons, and an **Available** switch.
-  - "Add item" (disabled with a reason at 100 items), and a "Menu photos (n/10)" row → `/seller/photos#menu`.
+  - "Add item" (disabled with a reason at 100 items), and a "Menu photos (n/10)" row → `/seller/photos` with the `section=menu` param (expo-router has no `#` anchors on mobile); the Photos screen scrolls to the Menu photos section once. The scroll can't be observed under jest and is checked in the device run.
 - `app/seller/menu/new.tsx` (new) and `app/seller/menu/[itemId].tsx` (new) — `MenuItemFormScreen`:
   - Fields: name, description, price, available, photo (add / replace / remove).
   - The price field shows the currency code and accepts the currency's number of decimals. If the business has no currency yet and the seller types a price, a currency field appears, pre-filled with the suggestion. Saving sets the currency first, then saves the item.
@@ -602,6 +602,7 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - Reorder with VoiceOver/TalkBack using the up/down buttons and hear the announcement.
 - Fill each photo section to its limit; replace the cover; delete an item with a photo, then check in Studio that the file is gone after the screen reopens.
 - Seller mode off: a signed URL request for a new URL fails for another account.
+- **Menu photos link:** on the Menu screen, tap "Menu photos (n/10)": the Photos screen opens scrolled to the Menu photos section (the `section=menu` param; the scroll isn't observable under jest).
 - **Cache by path:** open the Photos screen, wait more than 50 minutes (or lower the TTL in a local build), then reopen it. New URLs are fetched (visible in the network log) and the photos show at once, with no reload or flash.
 
 ## Decisions (from Archan, 2026-11-03)

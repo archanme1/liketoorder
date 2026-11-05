@@ -1,5 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react-native';
 import { getLocales } from 'expo-localization';
 import { AccessibilityInfo } from 'react-native';
 
@@ -674,11 +682,13 @@ describe('MenuScreen: menu photos row', () => {
     await screen.findByRole('switch', { name: 'Pizza available' });
     await fireEvent.press(screen.getByRole('button', { name: /Menu photos \(2\/10\)/ }));
 
+    // The spec's target: /seller/photos with the section=menu param. The scroll to that section
+    // can't be observed under jest; the device run covers it.
     expect(mockRouter.push).toHaveBeenCalledTimes(1);
-    const target: unknown = mockRouter.push.mock.calls[0][0];
-    const text = typeof target === 'string' ? target : JSON.stringify(target);
-    expect(text).toContain('/seller/photos');
-    expect(text).toContain('menu');
+    expect(mockRouter.push).toHaveBeenCalledWith({
+      pathname: '/seller/photos',
+      params: { section: 'menu' },
+    });
   });
 
   it('shows 0/10 with no menu photos', async () => {

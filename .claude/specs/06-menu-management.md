@@ -575,7 +575,7 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
   - [ ] Signed-URL cache-by-path TTL test: not manually checked.
   - [ ] Menu photos link scroll: not manually checked.
   - [ ] iPhone HEIC photo (converts, right way up): not manually checked. The camera format of the photos used is unknown.
-- [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:functions` and `npx supabase test db` all pass, in CI too.
+- [x] `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:functions` and `npx supabase test db` all pass, in CI too.
 - [x] CLAUDE.md row 06 and this spec's status are ✅ Shipped. v1.md §5 lists the item fields with the optional description, and the changelog has a spec 06 shipped line that notes the §5 change (Decision 20).
 
 ## Test plan

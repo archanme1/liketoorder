@@ -9,6 +9,7 @@ export type ErrorCode =
   | 'no_business'
   | 'profile_incomplete'
   | 'method_not_allowed'
+  | 'not_configured'
   | 'internal_error';
 
 export type Handler = (req: Request) => Promise<Response>;

@@ -4,9 +4,10 @@
 import assert from 'node:assert/strict';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createGetUser, requireUser } from '../_shared/auth.ts';
+import { createGoogleClient, MissingApiKeyError, NotFoundError, UpstreamError } from '../_shared/google.ts';
 import { readJsonBody, withLogging } from '../_shared/http.ts';
 import { createConsumeQuota } from '../_shared/rateLimit.ts';
-import { blockNetwork, fakeGetUser, USER_ID, USER_JWT } from './helpers.ts';
+import { blockNetwork, fakeGetUser, fakeGoogleFetch, hangUntilAborted, TEST_API_KEY, USER_ID, USER_JWT } from './helpers.ts';
 
 const network = blockNetwork();
 
@@ -208,6 +209,84 @@ Deno.test('readJsonBody: a stream that passes 4096 bytes is rejected even with a
 Deno.test('readJsonBody: an empty body or non-JSON is rejected', async () => {
   assert.equal(await readJsonBody(postBody('')), undefined);
   assert.equal(await readJsonBody(postBody('{not json')), undefined);
+});
+
+// ── Google client: getPlaceLocation (spec 07 refresh job) ────────────────────
+function locationClient(respond: Parameters<typeof fakeGoogleFetch>[0], options: { apiKey?: string; timeoutMs?: number } = {}) {
+  const google = fakeGoogleFetch(respond);
+  const client = createGoogleClient({ apiKey: 'apiKey' in options ? options.apiKey : TEST_API_KEY, fetch: google.fn, timeoutMs: options.timeoutMs });
+  return { client, google };
+}
+
+Deno.test('getPlaceLocation: asks for id,location with the key and returns the point', async () => {
+  const { client, google } = locationClient(() => Response.json({ id: 'p1', location: { latitude: 1.5, longitude: -2.5 } }));
+  assert.deepEqual(await client.getPlaceLocation('p1'), { latitude: 1.5, longitude: -2.5 });
+  assert.equal(google.requests.length, 1);
+  assert.equal(google.requests[0].method, 'GET');
+  assert.equal(google.requests[0].url.pathname, '/v1/places/p1');
+  assert.equal(google.requests[0].headers.get('X-Goog-FieldMask'), 'id,location');
+  assert.equal(google.requests[0].headers.get('X-Goog-Api-Key'), TEST_API_KEY);
+});
+
+Deno.test('getPlaceLocation: the place ID is URL-encoded in the path', async () => {
+  const { client, google } = locationClient(() => Response.json({ location: { latitude: 0, longitude: 0 } }));
+  await client.getPlaceLocation('a/b?c');
+  assert.equal(google.requests[0].url.pathname, '/v1/places/a%2Fb%3Fc');
+});
+
+Deno.test('getPlaceLocation: a 404 whose body says NOT_FOUND throws NotFoundError', async () => {
+  const { client } = locationClient(() => Response.json({ error: { status: 'NOT_FOUND' } }, { status: 404 }));
+  await assert.rejects(client.getPlaceLocation('p1'), NotFoundError);
+});
+
+for (const [name, response] of [
+  ['a bare 404', () => new Response(null, { status: 404 })],
+  ['a 404 with another status', () => Response.json({ error: { status: 'INVALID_ARGUMENT' } }, { status: 404 })],
+  ['a 400 INVALID_ARGUMENT', () => Response.json({ error: { status: 'INVALID_ARGUMENT' } }, { status: 400 })],
+  ['a 500', () => new Response('{}', { status: 500 })],
+  ['an answer without a location', () => Response.json({ id: 'p1' })],
+  ['a longitude out of range', () => Response.json({ location: { latitude: 0, longitude: 181 } })],
+] as const) {
+  Deno.test(`getPlaceLocation: ${name} is an UpstreamError, not NotFoundError`, async () => {
+    const { client } = locationClient(response);
+    await assert.rejects(client.getPlaceLocation('p1'), (e: unknown) => e instanceof UpstreamError && !(e instanceof NotFoundError));
+  });
+}
+
+Deno.test('getPlaceLocation: without a key it throws MissingApiKeyError and calls nothing', async () => {
+  const { client, google } = locationClient(() => Response.json({}), { apiKey: undefined });
+  await assert.rejects(client.getPlaceLocation('p1'), MissingApiKeyError);
+  assert.equal(google.requests.length, 0);
+});
+
+Deno.test('getPlaceLocation: a call that never answers is cut off after the timeout', async () => {
+  const { client } = locationClient((_, signal) => hangUntilAborted(signal), { timeoutMs: 20 });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stuck = new Promise<string>((resolve) => {
+    timer = setTimeout(() => resolve('stuck'), 2000);
+  });
+  try {
+    const result = await Promise.race([client.getPlaceLocation('p1').then(() => 'resolved', (e: unknown) => (e instanceof UpstreamError ? 'upstream' : 'other')), stuck]);
+    assert.equal(result, 'upstream');
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+Deno.test('getPlaceLocation: the default timeout is 5 seconds per call', async () => {
+  const delays: number[] = [];
+  const original = globalThis.setTimeout;
+  globalThis.setTimeout = ((handler: () => void, ms?: number) => {
+    delays.push(Number(ms));
+    return original(handler, ms);
+  }) as typeof setTimeout;
+  try {
+    const { client } = locationClient(() => Response.json({ location: { latitude: 0, longitude: 0 } }));
+    await client.getPlaceLocation('p1');
+  } finally {
+    globalThis.setTimeout = original;
+  }
+  assert.ok(delays.includes(5000), `no 5000 ms timer was set (saw ${delays.join(', ')})`);
 });
 
 // ── No network ───────────────────────────────────────────────────────────────

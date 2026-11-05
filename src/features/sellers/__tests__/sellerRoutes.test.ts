@@ -39,6 +39,28 @@ describe('getSellerRoute: has a business, seller mode on', () => {
   });
 });
 
+// Spec 06 "Access rules": menu, menu-item and photos follow the same rule as 'edit'.
+describe.each(['menu', 'menu-item', 'photos'] as const)(
+  'getSellerRoute: the %s screen (spec 06)',
+  (screen) => {
+    it('sends a user with no business to /seller/onboarding', () => {
+      expect(getSellerRoute(null, false, screen)).toBe('/seller/onboarding');
+    });
+
+    it('sends a stale seller flag with no business to /seller/onboarding too', () => {
+      expect(getSellerRoute(null, true, screen)).toBe('/seller/onboarding');
+    });
+
+    it('stays on the screen for an owner with seller mode on', () => {
+      expect(getSellerRoute(business, true, screen)).toBeNull();
+    });
+
+    it('stays on the screen for an owner with seller mode off', () => {
+      expect(getSellerRoute(business, false, screen)).toBeNull();
+    });
+  },
+);
+
 describe('getSellerRoute: has a business, seller mode off', () => {
   it('sends /seller/onboarding to /profile', () => {
     expect(getSellerRoute(business, false, 'onboarding')).toBe('/profile');

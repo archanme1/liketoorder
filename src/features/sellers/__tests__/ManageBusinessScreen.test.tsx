@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 
 import { AuthProvider } from '@/features/auth/components/AuthProvider';
 import { listCuisines } from '@/features/cuisines/api';
+import { getMenu } from '@/features/menu/api';
 import * as profileApi from '@/features/profile/api';
 import { supabase } from '@/lib/supabase';
 
@@ -121,6 +122,8 @@ beforeEach(() => {
   mockedGetBusiness.mockResolvedValue(restaurant);
   mockedProfile.mockReset();
   mockedProfile.mockResolvedValue(profile);
+  (getMenu as unknown as jest.Mock).mockReset();
+  (getMenu as unknown as jest.Mock).mockResolvedValue({ items: [], photos: [] });
   mockedCuisines.mockReset();
   mockedCuisines.mockResolvedValue([
     { code: 'IT', kind: 'country', name: 'Italy', flag: '🇮🇹', icon: null, sort_order: 100 },
@@ -253,6 +256,106 @@ describe('ManageBusinessScreen listing status', () => {
     await renderScreen();
     await screen.findByText("Joe's Pizza");
     expect(screen.queryByRole('button', { name: 'Add address' })).toBeNull();
+  });
+});
+
+// Spec 06: the Menu and Photos rows after "Change address".
+describe('ManageBusinessScreen menu and photos rows', () => {
+  const mockedGetMenu = getMenu as unknown as jest.Mock;
+  const menuItems = Array.from({ length: 12 }, (_, i) => ({
+    id: `i${i}`,
+    business_id: 'b1',
+    name: `Dish ${i + 1}`,
+    description: null,
+    price_minor: null,
+    is_available: true,
+    position: i + 1,
+  }));
+  const photoRow = (id: string, kind: 'cover' | 'gallery' | 'menu', position: number | null) => ({
+    id,
+    business_id: 'b1',
+    kind,
+    menu_item_id: null,
+    path: `b1/${id}.jpg`,
+    position,
+  });
+  const summary = (text: string) => screen.getByText(text, { includeHiddenElements: true });
+
+  it('shows "12 items · 2 menu photos" and "Cover set · 3 gallery photos"', async () => {
+    mockedGetMenu.mockResolvedValue({
+      items: menuItems,
+      photos: [
+        photoRow('c1', 'cover', null),
+        photoRow('g1', 'gallery', 1),
+        photoRow('g2', 'gallery', 2),
+        photoRow('g3', 'gallery', 3),
+        photoRow('m1', 'menu', 1),
+        photoRow('m2', 'menu', 2),
+      ],
+    });
+    await renderScreen();
+    await screen.findByText("Joe's Pizza");
+    expect(
+      await screen.findByText('12 items · 2 menu photos', { includeHiddenElements: true }),
+    ).toBeTruthy();
+    expect(summary('Cover set · 3 gallery photos')).toBeTruthy();
+  });
+
+  it('shows "No menu yet" and "No photos yet" when there is nothing', async () => {
+    mockedGetMenu.mockResolvedValue({ items: [], photos: [] });
+    await renderScreen();
+    expect(await screen.findByText('No menu yet', { includeHiddenElements: true })).toBeTruthy();
+    expect(summary('No photos yet')).toBeTruthy();
+  });
+
+  it('counts only menu photos in the Menu row and only cover and gallery in the Photos row', async () => {
+    mockedGetMenu.mockResolvedValue({
+      items: [],
+      photos: [
+        photoRow('m1', 'menu', 1),
+        photoRow('m2', 'menu', 2),
+        photoRow('g1', 'gallery', 1),
+        photoRow('g2', 'gallery', 2),
+      ],
+    });
+    await renderScreen();
+    expect(await screen.findByText('2 menu photos', { includeHiddenElements: true })).toBeTruthy();
+    expect(summary('2 gallery photos')).toBeTruthy();
+  });
+
+  it('opens the menu screen from the Menu row', async () => {
+    await renderScreen();
+    await fireEvent.press(await screen.findByRole('button', { name: /^Menu/ }));
+    expectPushedOnly('/seller/menu');
+  });
+
+  it('opens the photos screen from the Photos row', async () => {
+    await renderScreen();
+    await fireEvent.press(await screen.findByRole('button', { name: /^Photos/ }));
+    expectPushedOnly('/seller/photos');
+  });
+
+  it('places the rows after Change address', async () => {
+    await renderScreen();
+    const change = await screen.findByRole('button', { name: 'Change address' });
+    const menuRow = await screen.findByRole('button', { name: /^Menu/ });
+    const buttons = screen.getAllByRole('button');
+    expect(buttons.indexOf(menuRow)).toBeGreaterThan(buttons.indexOf(change));
+  });
+
+  it('shows the rows to a homemade seller too', async () => {
+    mockedGetBusiness.mockResolvedValue(homemade);
+    await renderScreen();
+    expect(await screen.findByRole('button', { name: /^Menu/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Photos/ })).toBeTruthy();
+  });
+
+  it('keeps the business details and the rows usable when the menu fails to load', async () => {
+    mockedGetMenu.mockRejectedValue(new Error('boom'));
+    await renderScreen();
+    expect(await screen.findByText("Joe's Pizza")).toBeTruthy();
+    await fireEvent.press(await screen.findByRole('button', { name: /^Menu/ }));
+    expectPushedOnly('/seller/menu');
   });
 });
 

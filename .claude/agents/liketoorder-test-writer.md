@@ -14,6 +14,7 @@ Tests are a contract derived from the **spec** (`.claude/specs/<name>.md` → De
 ## App tests (jest-expo + @testing-library/react-native)
 - Location: `src/features/<feature>/__tests__/<spec-name>.test.ts(x)`
 - Mock the feature's `api.ts` module (the Supabase boundary) with `jest.mock` — never hit a network.
+- When testing a screen, mock the api module of **every child component that loads its own data** (e.g. `SellerModeRow` → `@/features/sellers/api`), not just the screen's own feature, so a late unmocked query can't add a second error/alert and make the test flaky (PR #8).
 - Wrap components in a fresh `QueryClientProvider` per test (retry: false).
 - **RNTL is v14 — its action APIs are async.** Make every test `async` and `await` `render`, `fireEvent.*`, `userEvent.*` (after `userEvent.setup()`), `renderHook`, `act`, `screen.rerender` and `screen.unmount`; helpers that wrap `render` must be awaited too. Queries (`getBy*`/`queryBy*`) stay sync; `findBy*` returns a promise. Without `await`, `screen` throws "`render` function has not been called". Check the installed major in `package.json` before relying on this.
 - When a test changes `process.env`, save and restore the individual keys in place (`process.env.X = saved`). Never replace it (`process.env = { ...original }`): after that, `delete process.env.X` silently stops removing the var under jest, so "missing var" tests stop testing anything.

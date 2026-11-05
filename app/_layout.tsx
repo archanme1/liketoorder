@@ -18,12 +18,14 @@ import {
 } from '@/features/auth/routeAccess';
 import { useMyProfile } from '@/features/profile/hooks/useMyProfile';
 import { profileErrorMessage } from '@/features/profile/messages';
+import { useAppFocus } from '@/lib/appFocus';
 import { queryClient } from '@/lib/queryClient';
 // Loaded at startup so missing EXPO_PUBLIC_SUPABASE_* vars fail loudly at launch.
 import '@/lib/supabase';
 import { useTheme } from '@/theme/useTheme';
 
 export default function RootLayout() {
+  useAppFocus();
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>

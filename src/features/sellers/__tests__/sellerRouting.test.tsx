@@ -44,6 +44,15 @@ jest.mock('@/lib/supabase', () => ({
   },
 }));
 
+// Manage Business's Menu and Photos rows load their own summary (spec 06). Mocked so that query
+// can't fail late against the supabase mock and change the screen mid-test (the PR #8 lesson).
+jest.mock('@/features/menu/api', () => ({
+  ...jest.requireActual('@/features/menu/api'),
+  getMenu: jest.fn(async () => ({ items: [], photos: [] })),
+  // The item form and the menu screen read the currency list.
+  getCurrencies: jest.fn(async () => []),
+}));
+
 const mocked = supabase as unknown as {
   auth: { getSession: jest.Mock };
   from: jest.Mock;
@@ -73,6 +82,7 @@ const businessView = {
   map_lng: -79.38,
   public_address: '1 Main St, Toronto, ON',
   is_listed: true,
+  currency_code: null,
   created_at: '2026-11-01T00:00:00Z',
   updated_at: '2026-11-01T00:00:00Z',
   location: { formatted_address: '1 Main St, Toronto, ON', lat: 43.65, lng: -79.38 },
@@ -223,6 +233,131 @@ describe('seller route guards (Decision 14)', () => {
       expect(mockProfileUnmounts).not.toHaveBeenCalled();
     });
 
+    // Spec 06: the Menu, item and Photos screens follow the same rule as edit.
+    it('keeps the Stack mounted while /seller/menu loads, then redirects to onboarding; Back returns to Profile', async () => {
+      const pending = deferred<RpcResult>();
+      pendingBusiness = pending.promise;
+
+      await renderRouter('./app', { initialUrl: '/profile' });
+      expect(await screen.findByText('@archan')).toBeTruthy();
+      expect(mockProfileMounts).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        router.push('/seller/menu');
+      });
+
+      // Loading: the skeleton shows on top of the untouched Profile screen.
+      expect((await screen.findAllByTestId('seller-skeleton')).length).toBeGreaterThan(0);
+      expect(screen).toHavePathname('/seller/menu');
+      expect(router.canGoBack()).toBe(true);
+      expect(mockProfileMounts).toHaveBeenCalledTimes(1);
+      expect(mockProfileUnmounts).not.toHaveBeenCalled();
+      // No redirect before the data arrives.
+      expect(screen).not.toHavePathname('/seller/onboarding');
+
+      // The data arrives: no business, so the menu sends the user to onboarding.
+      pendingBusiness = null;
+      await act(async () => {
+        pending.resolve({ data: null, error: null });
+      });
+      await waitFor(() => expect(screen).toHavePathname('/seller/onboarding'));
+      expect(await screen.findByRole('header', { name: 'Start selling' })).toBeTruthy();
+      expect(mockProfileMounts).toHaveBeenCalledTimes(1);
+      expect(mockProfileUnmounts).not.toHaveBeenCalled();
+
+      // Back still returns to Profile, without remounting it.
+      expect(router.canGoBack()).toBe(true);
+      await act(async () => {
+        router.back();
+      });
+      await waitFor(() => expect(screen).toHavePathname('/profile'));
+      expect(await screen.findByText('@archan')).toBeTruthy();
+      expect(mockProfileMounts).toHaveBeenCalledTimes(1);
+      expect(mockProfileUnmounts).not.toHaveBeenCalled();
+    });
+
+    it('lets Back return to the previous screen while /seller/menu is still loading', async () => {
+      const pending = deferred<RpcResult>();
+      pendingBusiness = pending.promise;
+
+      await renderRouter('./app', { initialUrl: '/profile' });
+      expect(await screen.findByText('@archan')).toBeTruthy();
+      await act(async () => {
+        router.push('/seller/menu');
+      });
+      expect((await screen.findAllByTestId('seller-skeleton')).length).toBeGreaterThan(0);
+
+      await act(async () => {
+        router.back();
+      });
+      await waitFor(() => expect(screen).toHavePathname('/profile'));
+      expect(await screen.findByText('@archan')).toBeTruthy();
+      expect(mockProfileMounts).toHaveBeenCalledTimes(1);
+      expect(mockProfileUnmounts).not.toHaveBeenCalled();
+    });
+
+    it('keeps the Stack mounted while /seller/photos loads, then redirects to onboarding', async () => {
+      const pending = deferred<RpcResult>();
+      pendingBusiness = pending.promise;
+
+      await renderRouter('./app', { initialUrl: '/profile' });
+      expect(await screen.findByText('@archan')).toBeTruthy();
+      await act(async () => {
+        router.push('/seller/photos');
+      });
+
+      expect((await screen.findAllByTestId('seller-skeleton')).length).toBeGreaterThan(0);
+      expect(screen).toHavePathname('/seller/photos');
+      expect(mockProfileMounts).toHaveBeenCalledTimes(1);
+      expect(mockProfileUnmounts).not.toHaveBeenCalled();
+
+      pendingBusiness = null;
+      await act(async () => {
+        pending.resolve({ data: null, error: null });
+      });
+      await waitFor(() => expect(screen).toHavePathname('/seller/onboarding'));
+      expect(mockProfileUnmounts).not.toHaveBeenCalled();
+    });
+
+    it('keeps the Stack mounted while /seller/menu/new loads, then redirects to onboarding', async () => {
+      const pending = deferred<RpcResult>();
+      pendingBusiness = pending.promise;
+
+      await renderRouter('./app', { initialUrl: '/profile' });
+      expect(await screen.findByText('@archan')).toBeTruthy();
+      await act(async () => {
+        router.push('/seller/menu/new');
+      });
+
+      expect((await screen.findAllByTestId('seller-skeleton')).length).toBeGreaterThan(0);
+      expect(screen).toHavePathname('/seller/menu/new');
+      expect(mockProfileMounts).toHaveBeenCalledTimes(1);
+      expect(mockProfileUnmounts).not.toHaveBeenCalled();
+
+      pendingBusiness = null;
+      await act(async () => {
+        pending.resolve({ data: null, error: null });
+      });
+      await waitFor(() => expect(screen).toHavePathname('/seller/onboarding'));
+      expect(mockProfileUnmounts).not.toHaveBeenCalled();
+    });
+
+    it('opening /seller/menu directly redirects to onboarding once the business has loaded', async () => {
+      await renderRouter('./app', { initialUrl: '/seller/menu' });
+      await waitFor(() => expect(screen).toHavePathname('/seller/onboarding'));
+      expect(await screen.findByRole('header', { name: 'Start selling' })).toBeTruthy();
+    });
+
+    it('opening /seller/menu/some-id directly redirects to onboarding once the business has loaded', async () => {
+      await renderRouter('./app', { initialUrl: '/seller/menu/some-id' });
+      await waitFor(() => expect(screen).toHavePathname('/seller/onboarding'));
+    });
+
+    it('opening /seller/photos directly redirects to onboarding once the business has loaded', async () => {
+      await renderRouter('./app', { initialUrl: '/seller/photos' });
+      await waitFor(() => expect(screen).toHavePathname('/seller/onboarding'));
+    });
+
     it('opening /seller/edit directly redirects to onboarding once the business has loaded', async () => {
       await renderRouter('./app', { initialUrl: '/seller/edit' });
       await waitFor(() => expect(screen).toHavePathname('/seller/onboarding'));
@@ -274,6 +409,31 @@ describe('seller route guards (Decision 14)', () => {
       expect(screen).toHavePathname('/seller/edit');
     });
 
+    it('lets a seller with a business open /seller/menu', async () => {
+      await renderRouter('./app', { initialUrl: '/seller/menu' });
+      expect(await screen.findByRole('button', { name: 'Add item' })).toBeTruthy();
+      expect(screen).toHavePathname('/seller/menu');
+    });
+
+    it('lets a seller with a business open /seller/menu/new', async () => {
+      await renderRouter('./app', { initialUrl: '/seller/menu/new' });
+      expect(await screen.findByLabelText('Name')).toBeTruthy();
+      expect(screen).toHavePathname('/seller/menu/new');
+    });
+
+    it('shows "This item no longer exists" for an unknown item, without redirecting', async () => {
+      await renderRouter('./app', { initialUrl: '/seller/menu/does-not-exist' });
+      expect(await screen.findByText('This item no longer exists')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
+      expect(screen).toHavePathname('/seller/menu/does-not-exist');
+    });
+
+    it('lets a seller with a business open /seller/photos', async () => {
+      await renderRouter('./app', { initialUrl: '/seller/photos' });
+      expect(await screen.findByRole('header', { name: 'Cover' })).toBeTruthy();
+      expect(screen).toHavePathname('/seller/photos');
+    });
+
     it('lets a seller with a business open /seller/address', async () => {
       await renderRouter('./app', { initialUrl: '/seller/address' });
       expect(await screen.findByLabelText('Address')).toBeTruthy();
@@ -310,6 +470,17 @@ describe('seller route guards (Decision 14)', () => {
       await renderRouter('./app', { initialUrl: '/seller/onboarding' });
       expect(await screen.findByText('@archan')).toBeTruthy();
       expect(screen).toHavePathname('/profile');
+    });
+
+    it('lets the owner open /seller/menu and /seller/photos even with seller mode off', async () => {
+      await renderRouter('./app', { initialUrl: '/seller/menu' });
+      expect(await screen.findByRole('button', { name: 'Add item' })).toBeTruthy();
+      expect(screen).toHavePathname('/seller/menu');
+      await act(async () => {
+        router.push('/seller/photos');
+      });
+      expect(await screen.findByRole('header', { name: 'Cover' })).toBeTruthy();
+      expect(screen).toHavePathname('/seller/photos');
     });
 
     it('lets the owner open /seller/edit even with seller mode off', async () => {

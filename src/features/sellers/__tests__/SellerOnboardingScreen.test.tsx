@@ -83,6 +83,7 @@ const noLocation: MyBusiness = {
   map_lng: null,
   public_address: null,
   is_listed: true,
+  currency_code: null,
   created_at: '2026-11-01T00:00:00Z',
   updated_at: '2026-11-01T00:00:00Z',
   location: null,

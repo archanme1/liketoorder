@@ -2,8 +2,19 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { Button, Card, EmptyState, ErrorState, Screen, Text } from '@/components/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  NavRow,
+  Screen,
+  Skeleton,
+  Text,
+} from '@/components/ui';
 import { CuisineLabel } from '@/features/cuisines/components/CuisineLabel';
+import { useMyMenu } from '@/features/menu/hooks/useMyMenu';
+import { menuSummary, photosSummary } from '@/features/menu/photos';
 import { useTheme } from '@/theme/useTheme';
 
 import { useMyBusiness } from '../hooks/useMyBusiness';
@@ -99,6 +110,35 @@ function BusinessSummary({ business }: { business: MyBusiness }) {
         title="Change address"
         variant="secondary"
         onPress={() => router.push('/seller/address')}
+      />
+      <MenuRows businessId={business.id} />
+    </View>
+  );
+}
+
+// Spec 06: the Menu and Photos rows. Their summaries load on their own, so the business card
+// never waits for the menu; on error the rows still open their screens.
+function MenuRows({ businessId }: { businessId: string }) {
+  const { space } = useTheme();
+  const router = useRouter();
+  const menu = useMyMenu(businessId);
+
+  const loading = menu.isPending ? <Skeleton height={space.lg} width="60%" /> : undefined;
+  const failed = menu.isError && menu.data === undefined ? 'Couldn’t load the summary' : undefined;
+
+  return (
+    <View style={{ gap: space.md }}>
+      <NavRow
+        label="Menu"
+        value={menu.data ? menuSummary(menu.data) : failed}
+        valueSlot={loading}
+        onPress={() => router.push('/seller/menu')}
+      />
+      <NavRow
+        label="Photos"
+        value={menu.data ? photosSummary(menu.data) : failed}
+        valueSlot={loading}
+        onPress={() => router.push('/seller/photos')}
       />
     </View>
   );

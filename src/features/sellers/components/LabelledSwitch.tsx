@@ -33,6 +33,8 @@ export function LabelledSwitch({
         {value ? 'On' : 'Off'}
       </Text>
       <Switch
+        // The native switch is about 31pt tall; the slop brings its touch area to 44pt or more.
+        hitSlop={{ top: space.sm, bottom: space.sm, left: space.sm, right: space.sm }}
         value={value}
         onValueChange={onValueChange}
         disabled={disabled}

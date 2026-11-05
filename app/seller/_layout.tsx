@@ -19,6 +19,10 @@ export default function SellerLayout() {
       <Stack.Screen name="onboarding" options={{ title: 'Start selling' }} />
       <Stack.Screen name="edit" options={{ title: 'Edit details' }} />
       <Stack.Screen name="address" options={{ title: 'Change address' }} />
+      <Stack.Screen name="menu/index" options={{ title: 'Menu' }} />
+      <Stack.Screen name="menu/new" options={{ title: 'Add item' }} />
+      <Stack.Screen name="menu/[itemId]" options={{ title: 'Edit item' }} />
+      <Stack.Screen name="photos" options={{ title: 'Photos' }} />
     </Stack>
   );
 }

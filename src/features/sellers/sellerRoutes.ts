@@ -2,7 +2,7 @@
 // UX only: the database enforces every rule. Guests, mid-recovery and incomplete profiles never
 // reach these screens; the root layout's `app` guard handles them.
 
-export type SellerScreen = 'onboarding' | 'edit' | 'address';
+export type SellerScreen = 'onboarding' | 'edit' | 'address' | 'menu' | 'menu-item' | 'photos';
 
 export type SellerRedirect = '/manage' | '/profile' | '/seller/onboarding';
 

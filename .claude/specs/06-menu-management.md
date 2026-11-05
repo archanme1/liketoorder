@@ -5,7 +5,7 @@
 - PR 2 (Gates B + C + D + manual run: the app): `feature/menu-management-app`, created from `main` after PR 1 is merged
 **Product spec:** `docs/product/v1.md` §5 Sellers & listings (Menus, "change … menu any time from Manage Business", Homemade specifics), §6 (the bottom sheet will show photos, menu, prices and availability; not built here), §3 (out of scope), §14 row 06
 **Plan mode:** required — adds tables, RLS, callable functions, a storage bucket and storage policies; adds dependencies (image picker, manipulator, image, file system, localization); adds routes under `app/seller/`; touches well over ~5 files.
-**Status:** 🚧 In progress (PR 1 database and storage on `feature/menu-management-backend`)
+**Status:** ✅ Shipped (PR 1 database and storage; PR 2 app)
 
 ## Overview
 After this ships, a seller can build their menu from **Manage Business**. A menu is one ordered list of items, with no sections. Each item has a name and can also have a description, a price, one photo and an available/unavailable setting. The seller moves items up and down with buttons, so reordering never depends on dragging. A seller can also upload **menu photos** (up to 10) instead of items, or as well as items, plus one **cover photo** and up to 6 **gallery photos**. Prices are optional. When used, they are in **one currency per business**, which the seller chooses.
@@ -57,7 +57,7 @@ All new routes are under `app/seller/`, which is already behind the profile guar
 - `app/seller/menu/index.tsx` (new) — `MenuScreen`:
   - A **Currency** row showing "Canadian dollar (CAD)" or "Not set". It opens `CurrencyPicker` and is read-only, with a reason, once any item has a price (Decision 12).
   - The item list in order. Each row shows the name, the formatted price (or nothing), an "Unavailable" text tag (text, not color only), a thumbnail if there is one, **Move up** and **Move down** buttons, and an **Available** switch.
-  - "Add item" (disabled with a reason at 100 items), and a "Menu photos (n/10)" row → `/seller/photos#menu`.
+  - "Add item" (disabled with a reason at 100 items), and a "Menu photos (n/10)" row → `/seller/photos` with the `section=menu` param (expo-router has no `#` anchors on mobile); the Photos screen scrolls to the Menu photos section once. The scroll can't be observed under jest and is checked in the device run.
 - `app/seller/menu/new.tsx` (new) and `app/seller/menu/[itemId].tsx` (new) — `MenuItemFormScreen`:
   - Fields: name, description, price, available, photo (add / replace / remove).
   - The price field shows the currency code and accepts the currency's number of decimals. If the business has no currency yet and the seller types a price, a currency field appears, pre-filled with the suggestion. Saving sets the currency first, then saves the item.
@@ -313,15 +313,24 @@ None. A server-side metadata check is not in v1 (Decision 13; tracked in v1.md �
 - `prepareImage.ts`: `prepareImage(uri, opts?)`:
   1. **Resize** with `expo-image-manipulator` to a long edge of at most 1600 px. Never upscale.
   2. **Re-encode** as JPEG at quality 0.8. Re-encoding writes a new file without the source's EXIF/XMP/IPTC.
-  3. Read the output bytes (`expo-file-system`) and run `assertNoHiddenMetadata(bytes)`.
-  4. If the output is over 2 MB, re-encode once at 0.6. Still over → `MediaError('too_large')`.
+  3. Read the output bytes (`expo-file-system`), run `stripJpegMetadata(bytes)`, then run `assertNoHiddenMetadata` on the **stripped** bytes (Decision 29).
+  4. If the stripped output is over 2 MB, re-encode once at 0.6 (and strip and check again). Still over → `MediaError('too_large')`.
 
-  It returns `{ uri, bytes, width, height, mimeType: 'image/jpeg' }`. The upload always sends **these bytes**, never the picker's original file.
-- `jpegMetadata.ts`: `assertNoHiddenMetadata(bytes)` is a pure function. It walks the JPEG markers from SOI to SOS:
-  - **Allowed:** APP0 (JFIF), APP2 (ICC colour profile), APP14 (Adobe), and the image segments.
-  - **Rejected:** APP1 (EXIF and XMP: where GPS lives), APP13 (IPTC/Photoshop), any other APPn, COM comments, and anything that isn't a valid JPEG.
+  It returns `{ uri, bytes, width, height, mimeType: 'image/jpeg' }`. `bytes` are the stripped, checked bytes, and the upload always sends **these bytes**, never the picker's original file and never the encoder's file at `uri` (local preview only).
+- `jpegMetadata.ts`, pure byte code with no re-encoding:
+  - `stripJpegMetadata(bytes)` (Decisions 29, 30):
+    - copies SOI;
+    - keeps only the allowlisted image-structure segments: APP0 (JFIF), APP2 only when it is `ICC_PROFILE`, APP14 (Adobe), DQT, DHT, DAC, SOFn (except 0xC8), DRI, DNL, SOS and the restart markers RSTn;
+    - drops every other APPn (APP1 EXIF/XMP, APP13 Photoshop/IPTC, MPF in APP2, anything else) and COM, **wherever they sit**, including between the scans of a progressive or multi-scan JPEG;
+    - copies the image data through the first EOI byte for byte (apart from dropped between-scan segments). Anything after that EOI (e.g. an MPF block's extra images) is dropped;
+    - **refuses** any other marker (reserved 0x02–0xBF, JPG 0xC8, JPGn 0xF0–0xFD, TEM 0x01, a stray SOI) with `MediaError('not_an_image')`.
 
-  On a rejection it throws `MediaError('metadata_present')`, and the upload is cancelled.
+    Malformed or truncated input, including no EOI, → `MediaError('not_an_image')`. Stripping twice gives the same bytes.
+  - `assertNoHiddenMetadata(bytes)`, strict, walks the JPEG markers from SOI to the first EOI, **across every scan**, with the same allowlist (Decision 30):
+    - **Allowed:** APP0 (JFIF), APP2 (ICC colour profile), APP14 (Adobe), and the image-structure segments above.
+    - **Rejected:** APP1 (EXIF and XMP: where GPS lives), APP13 (IPTC/Photoshop), any other APPn (including MPF in APP2), COM comments, in the header or between scans → `MediaError('metadata_present')`. Any other marker outside the allowlist, or anything that isn't a valid JPEG → `MediaError('not_an_image')`. Either way the upload is cancelled.
+    - Bytes that end before any EOI are checked as far as they go; the strip, which requires an EOI, always runs first in `prepareImage`.
+  - `readExifOrientation(bytes)`: the EXIF Orientation (1–8) from the APP1 Exif segment, or null. It's used only by the dev probe and the device check, to show whether stripping could change how a photo is displayed.
 - `api.ts`: `uploadToBucket(bucket, path, bytes)` (upsert false), `removeFromBucket(bucket, paths)` and `signedUrls(bucket, paths, ttl)`. These are all of the Storage calls.
 - `MediaError` codes: `'cancelled' | 'too_large' | 'metadata_present' | 'not_an_image' | 'upload_failed' | 'network' | 'unknown'`, with `mediaErrorMessage(code)`.
 - `components/PhotoTile.tsx`:
@@ -424,7 +433,7 @@ Feature-specific rules:
 - **Every callable function** ends with `revoke execute … from public, anon, authenticated` and then its grant, and is added to the allowlist test. Private helpers live in `private`, never `public`.
 - **Owner identity comes from `auth.uid()`.** No function takes a business id from the client.
 - **Paths are server-made** (`<business_id>/<photo_id>.jpg`). Never a user id in a public path. Never a client-chosen name.
-- **Every photo goes through `prepareImage`**, and the upload sends its output bytes only. The picker's original file is never uploaded. No code path skips `assertNoHiddenMetadata`.
+- **Every photo goes through `prepareImage`**, and the upload sends its stripped output bytes only. The picker's original file and the encoder's file are never uploaded. No code path skips `stripJpegMetadata` or `assertNoHiddenMetadata`, and the strict check is never loosened (Decision 29).
 - **Do not log** photo bytes, URIs, paths or signed URLs.
 - **Row first, file later.** Never remove a file before its row is gone. Never write a row pointing at a file that doesn't exist (`finish_photo_upload` checks).
 - **Prices are integers** in minor units end to end. No `parseFloat` or float maths on money.
@@ -505,31 +514,69 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - [x] `npx supabase test db` passes locally and in CI (with Storage started in CI if needed).
 
 **Shared media (jest) — PR 2**
-- [ ] `assertNoHiddenMetadata` rejects the EXIF-GPS fixture, the XMP-GPS fixture, an APP13 segment, a COM segment and non-JPEG bytes. It accepts the clean fixture and JFIF + ICC + Adobe segments.
-- [ ] `prepareImage` resizes to a long edge ≤ 1600 px without upscaling and outputs JPEG. It runs the metadata check on the output bytes. It retries once at 0.6 when over 2 MB, then fails with `too_large`.
-- [ ] The upload sends `prepareImage`'s bytes, never the picker URI (asserted in the orchestration test). A `metadata_present` result uploads nothing.
-- [ ] `pickImage` asks for a single image from the library only, with `exif: false`, and returns `null` on cancel.
-- [ ] `prepareImage` asks the manipulator for a long edge of exactly 1600 px for larger images (aspect ratio kept), leaves smaller images at their size, and encodes JPEG at 0.8. An output over 2 097 152 bytes is re-encoded at 0.6.
-- [ ] `PhotoTile` passes `cacheKey` = the stored path and `cachePolicy="memory-disk"` to `expo-image`. When the signed URL for the same path changes, the `cacheKey` stays the same and the tile doesn't go back to its loading state.
-- [ ] `useSignedUrls` asks for 3600 s URLs. It doesn't refetch before 50 minutes and fetches new URLs after 50 minutes on the next mount or focus (fake timers). `renew(path)` invalidates once per path per mount. A second error on the same path shows "Photo unavailable", with no loop.
-- [ ] Nothing in `src/features/media/` imports seller or menu code.
+- [x] `assertNoHiddenMetadata` rejects the EXIF-GPS fixture, the XMP-GPS fixture, an APP13 segment, a COM segment and non-JPEG bytes. It accepts the clean fixture and JFIF + ICC + Adobe segments.
+- [x] `stripJpegMetadata` (Decision 29):
+  - Stripping the EXIF-GPS and XMP-GPS fixtures gives bytes that pass `assertNoHiddenMetadata`.
+  - The data from SOS through EOI is byte-identical to the input.
+  - The output starts with SOI, ends with EOI, and keeps SOF, DQT and DHT. JFIF and ICC are kept.
+  - APP1, APP13, other APPn, COM and MPF in APP2 are dropped.
+  - Non-JPEG and truncated input (including no EOI) give `not_an_image`.
+  - Stripping twice gives the same bytes.
+- [x] Allowlist and multi-scan (Decision 30), for both `stripJpegMetadata` and `assertNoHiddenMetadata`:
+  - A baseline JPEG, a progressive (multi-scan) JPEG, a JPEG with DRI and RSTn restart markers, and a JPEG with an ICC profile are all accepted, and the strip leaves them decodable (the data from SOS to EOI is kept).
+  - APP1 (Exif) or COM placed **between scans** is dropped by the strip, and `assertNoHiddenMetadata` rejects it as `metadata_present`.
+  - A reserved marker (e.g. 0x02, 0xC8 or 0xF0) in the header or between scans is refused with `not_an_image` by both.
+- [x] exiftool on the stripped fixtures shows no GPS, EXIF, XMP or IPTC group, and the image still decodes with no warnings. This is checked once when the strip lands, not in CI.
+- [x] `prepareImage` resizes to a long edge ≤ 1600 px without upscaling and outputs JPEG. It strips the output bytes and runs the strict check on the stripped bytes; EXIF/APP13 written by the encoder no longer blocks the upload, and the returned bytes have none. The 2 MB limit is measured on the stripped bytes. It retries once at 0.6 when over 2 MB, then fails with `too_large`.
+- [x] The upload sends `prepareImage`'s bytes, never the picker URI (asserted in the orchestration test). A `metadata_present` result uploads nothing.
+- [x] `pickImage` asks for a single image from the library only, with `exif: false`, and returns `null` on cancel.
+- [x] `prepareImage` asks the manipulator for a long edge of exactly 1600 px for larger images (aspect ratio kept), leaves smaller images at their size, and encodes JPEG at 0.8. An output over 2 097 152 bytes is re-encoded at 0.6.
+- [x] `PhotoTile` passes `cacheKey` = the stored path and `cachePolicy="memory-disk"` to `expo-image`. When the signed URL for the same path changes, the `cacheKey` stays the same and the tile doesn't go back to its loading state.
+- [x] `useSignedUrls` asks for 3600 s URLs. It doesn't refetch before 50 minutes and fetches new URLs after 50 minutes on the next mount or focus (fake timers). `renew(path)` invalidates once per path per mount. A second error on the same path shows "Photo unavailable", with no loop.
+- [x] Nothing in `src/features/media/` imports seller or menu code.
 
 **Menu app — PR 2**
-- [ ] `parsePrice` and `formatPrice` handle 0, 2 and 3 decimal currencies; `.` and `,` input; too many decimals (error); and bounds. Examples: JPY "1200" → 1200 → "¥1,200" (en-US); EUR "12,50" → 1250 → "12,50 €" (de-DE); KWD "1.250" → 1250 → "KWD 1.250" (en-US). No float maths.
-- [ ] The currency picker is pre-filled with the device currency when it's in the list, and has no pre-selection otherwise. It is read-only, with a reason, once a price exists.
-- [ ] A seller adds, edits and deletes an item; toggles availability from the list; and moves items with up/down buttons. The list updates without a restart. Ends are disabled, and a move is announced.
-- [ ] Item limit: "Add item" is disabled at 100 with a reason, and the server error `item_limit` shows a message.
-- [ ] A seller adds, replaces and removes the cover and item photos, and adds and removes gallery and menu photos. Counts show "n of N", and Add is disabled when full.
-- [ ] After a delete or replace, the cleanup runs and removes the returned paths. A failed removal is retried on the next screen open.
-- [ ] On `cleanup_required` from `beginPhotoUpload`, the upload runs the cleanup and retries once; a second `cleanup_required` shows an error with retry.
-- [ ] The Menu, item and Photos screens redirect to onboarding for a user with no business only after the business loads. The Stack stays mounted while loading (routing test).
-- [ ] Every new screen shows loading, error with retry, empty and success states.
-- [ ] Photos have the accessible names listed. Every touchable has `accessibilityLabel` + `accessibilityRole` and is ≥ 44pt. "Unavailable" is shown as text, not color alone.
-- [ ] The homemade photo note shows only for homemade sellers.
-- [ ] No hardcoded colors or sizes outside tokens.
-- [ ] Manual device run done (Test plan).
-- [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:functions` and `npx supabase test db` all pass, in CI too.
-- [ ] CLAUDE.md row 06 and this spec's status are ✅ Shipped. v1.md §5 lists the item fields with the optional description, and the changelog has a spec 06 shipped line that notes the §5 change (Decision 20).
+- [x] `parsePrice` and `formatPrice` handle 0, 2 and 3 decimal currencies; `.` and `,` input; too many decimals (error); and bounds. Examples: JPY "1200" → 1200 → "¥1,200" (en-US); EUR "12,50" → 1250 → "12,50 €" (de-DE); KWD "1.250" → 1250 → "KWD 1.250" (en-US). No float maths.
+- [x] The currency picker is pre-filled with the device currency when it's in the list, and has no pre-selection otherwise. It is read-only, with a reason, once a price exists.
+- [x] A seller adds, edits and deletes an item; toggles availability from the list; and moves items with up/down buttons. The list updates without a restart. Ends are disabled, and a move is announced.
+- [x] Review fixes (Decisions 31–33):
+  - **Delete closes the form.** After a confirmed delete on the edit form, the screen closes (Back) even though the refreshed menu no longer has the item. "This item no longer exists" never shows because of the seller's own delete.
+  - **Move announcement.** "<name> moved to position k of n" is announced only after the server accepts the move. A rejected move rolls the order back, shows the error banner and announces the failure, never the move.
+  - **Failed photo is spoken in edit mode.** An edit-mode `PhotoTile` whose photo has failed has an accessibility label ending in "Photo unavailable", after the edit action.
+  - **Price input.** `.5` and `,5` are accepted (0.5). Arabic-Indic (٠–٩) and Persian (۰–۹) digits are read as the same digits. A fraction with too many digits in a 1- or 2-decimal currency says "Use at most N decimal place(s)" and also tells the seller not to type thousands separators.
+  - **One upload at a time.** While a photo upload is running on the Photos screen or the item form, every control that would start another one (Add buttons, the tile menu's Replace) does nothing and the buttons are disabled.
+  - [ ] **Switches** (Available) have a ≥ 44pt touch target (a `hitSlop`; the size is not observable under jest, so it is part of the device VoiceOver/TalkBack check in v1.md §16). Not manually checked: the 44pt hit area was not confirmed on a device.
+  - **One decode.** `prepareImage` reads the source size from the picker asset (via `pickImage`) and decodes the source once. If the reported size turns out wrong (the rendered long edge is over 1600 px), it renders again with the real size, so the 1600 px limit still holds.
+- [x] Item limit: "Add item" is disabled at 100 with a reason, and the server error `item_limit` shows a message.
+- [x] A seller adds, replaces and removes the cover and item photos, and adds and removes gallery and menu photos. Counts show "n of N", and Add is disabled when full.
+- [x] After a delete or replace, the cleanup runs and removes the returned paths. A failed removal is retried on the next screen open.
+- [x] On `cleanup_required` from `beginPhotoUpload`, the upload runs the cleanup and retries once; a second `cleanup_required` shows an error with retry.
+- [x] The Menu, item and Photos screens redirect to onboarding for a user with no business only after the business loads. The Stack stays mounted while loading (routing test).
+- [x] Every new screen shows loading, error with retry, empty and success states.
+- [x] Photos have the accessible names listed. Every touchable has `accessibilityLabel` + `accessibilityRole` and is ≥ 44pt. "Unavailable" is shown as text, not color alone.
+- [x] The homemade photo note shows only for homemade sellers.
+- [x] No hardcoded colors or sizes outside tokens.
+- [x] Manual device run done (Test plan). **Partial:** iPhone with Expo Go, 2026-11-04 (Archan). Each item not manually checked is tracked before launch in `docs/product/v1.md` §16.
+  - [x] Currency confirmation before the first price; prices display in the list.
+  - [x] "Unavailable" is shown as text.
+  - [x] The currency is locked once an item has a price.
+  - [x] Reordering with Move up / Move down.
+  - [x] Item photo add, replace and remove.
+  - [x] Cover photo, gallery and menu photos, including the limits.
+  - [x] Deleting an item that has a photo.
+  - [x] **Metadata proof:**
+    - A photo uploaded from the phone was downloaded from Studio.
+    - exiftool shows no EXIF, GPS, XMP, IPTC or Photoshop group, only File, JFIF, ICC and Composite.
+    - The file is 1200 × 1600 and 605 kB.
+  - [ ] Homemade photo note: not manually checked (covered by jest).
+  - [ ] JPY, KWD and EUR (German-language phone) price formatting on a phone (Hermes `Intl`): not manually checked (covered by jest on Node's ICU only).
+  - [ ] VoiceOver / TalkBack on the Menu, item and Photos screens: not manually checked.
+  - [ ] Android: not manually checked.
+  - [ ] Signed-URL cache-by-path TTL test: not manually checked.
+  - [ ] Menu photos link scroll: not manually checked.
+  - [ ] iPhone HEIC photo (converts, right way up): not manually checked. The camera format of the photos used is unknown.
+- [x] `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:functions` and `npx supabase test db` all pass, in CI too.
+- [x] CLAUDE.md row 06 and this spec's status are ✅ Shipped. v1.md §5 lists the item fields with the optional description, and the changelog has a spec 06 shipped line that notes the §5 change (Decision 20).
 
 ## Test plan
 **Database tests (pgTAP)**: `supabase/tests/06-menu-management.test.sql`, using the spec 05 impersonation pattern (fixed UUIDs `…0601`–`…06xx`: listed restaurant owner, listed homemade owner, unlisted owner, owner with no location, outsider, user with no business, anon).
@@ -558,7 +605,17 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 
 **Unit and component tests (jest)**: supabase and native modules mocked. All RNTL v14 calls are awaited.
 - `media/__tests__/jpegMetadata.test.ts`: the committed fixtures plus hand-built byte arrays for each marker case.
-- `media/__tests__/prepareImage.test.ts`: manipulator options, no upscaling, the size retry, the check on output bytes.
+- `media/__tests__/stripJpegMetadata.test.ts` (Decision 29):
+  - the EXIF-GPS and XMP-GPS fixtures pass the strict check after stripping;
+  - SOS..EOI is byte-identical;
+  - SOI first, EOI last;
+  - SOF/DQT/DHT, JFIF and ICC kept;
+  - APP1/APP13/COM/MPF-in-APP2 dropped, and bytes after EOI dropped;
+  - non-JPEG and truncated input → `not_an_image`;
+  - Decision 30: progressive, restart-marker and ICC inputs pass; APP1/COM between scans is dropped by the strip and rejected by the check; reserved markers → `not_an_image`; fixtures `progressive.jpg`, `restart.jpg`, `progressive-app1-between-scans.jpg`;
+  - idempotent;
+  - `readExifOrientation` reads 1–8 from little- and big-endian Exif, null when absent or malformed.
+- `media/__tests__/prepareImage.test.ts`: manipulator options, no upscaling, the size retry (measured on stripped bytes), the strip and the strict check on the output bytes (encoder output with APP1/APP13 succeeds, and the returned bytes have none).
 - `media/__tests__/pickImage.test.ts`, `media/__tests__/api.test.ts` (upsert false, batch signed URLs with TTL 3600).
 - `media/__tests__/useSignedUrls.test.tsx`: fake timers. No refetch at 49 minutes, a refetch at 51 minutes on remount/focus, the key is independent of path order, and `renew` invalidates once per path per mount.
 - `media/__tests__/PhotoTile.test.tsx`:
@@ -569,15 +626,23 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 - `menu/__tests__/api.test.ts`: RPC names and arguments, error mapping for every `MenuAppError` code.
 - `menu/__tests__/uploadBusinessPhoto.test.ts`: the step order; on failure it deletes the pending row and runs cleanup; it never uploads the original URI; on `cleanup_required` it runs the cleanup and retries `beginPhotoUpload` once.
 - `menu/__tests__/MenuScreen.test.tsx`, `MenuItemFormScreen.test.tsx`, `BusinessPhotosScreen.test.tsx`, `CurrencyPicker.test.tsx`: the 4 states, limits, move controls and announcements, the currency lock, accessible names, the homemade note.
+  - Delete: `getMenu` returns the menu without the item after `deleteMenuItem` resolves; Back is called and "This item no longer exists" never shows.
+  - Move: the announcement comes after the move succeeds; on a rejected move there is no "moved" announcement, the banner shows and the failure is announced. Disabled end buttons: calling the control's `onPress` directly does not call the handler (move mutation not called).
+  - Accessible names: every button and every switch has a name (and role).
+  - Photos screen and item form: while an upload is pending, a second Add or Replace starts nothing (picker not opened again).
+  - `PhotoTile` in edit mode after a failed photo: the label ends with "Photo unavailable".
+  - `price.test.ts`: `.5`/`,5`, Arabic-Indic and Persian digits, and the thousands-separator hint.
+  - `prepareImage` with a picked asset size: the source is decoded once; a wrong reported size triggers one extra render and the result still has a long edge ≤ 1600.
 - `sellers/__tests__/sellerRoutes.test.ts` (new rows), `sellerRouting.test.tsx`: push `/seller/menu` while `getMyBusiness` is pending. The mount counter doesn't increase and the skeleton is visible. Then resolve `null` → `/seller/onboarding`, and Back still returns to the previous screen.
 - `sellers/__tests__/ManageBusinessScreen.test.tsx`: the Menu and Photos rows and their summaries.
 
 **Manual check on device (iOS and Android)**:
-- **Metadata stripped:** with location on in the camera, take a photo, then upload it as a homemade gallery photo. In Studio, download the stored object and run `exiftool` on it: no GPS, no EXIF block. Do the same for an item photo.
+- **Metadata stripped:** with location on in the camera, take a photo, then upload it as a homemade gallery photo. In Studio, download the stored object and run `exiftool` on it: no GPS, no EXIF block. Do the same for an item photo. Check the photo displays the right way up (Decision 29: EXIF Orientation is removed with the rest).
 - Add items with prices in CAD; try JPY and KWD on a test business to check the decimals; check the currency lock.
 - Reorder with VoiceOver/TalkBack using the up/down buttons and hear the announcement.
 - Fill each photo section to its limit; replace the cover; delete an item with a photo, then check in Studio that the file is gone after the screen reopens.
-- Seller mode off: a signed URL request for a new URL fails for another account.
+- ~~Seller mode off: a signed URL request for a new URL fails for another account.~~ Dropped from the device run by Archan on 2026-11-04. pgTAP covers it: storage objects are unreadable to other users once seller mode is off.
+- **Menu photos link:** on the Menu screen, tap "Menu photos (n/10)": the Photos screen opens scrolled to the Menu photos section (the `section=menu` param; the scroll isn't observable under jest).
 - **Cache by path:** open the Photos screen, wait more than 50 minutes (or lower the TTL in a local build), then reopen it. New URLs are fetched (visible in the network log) and the photos show at once, with no reload or flash.
 
 ## Decisions (from Archan, 2026-11-03)
@@ -631,6 +696,26 @@ Stop at each gate. Run the gate's checks, report, and commit (conventional commi
 26. **10-minute wait in `claim_photo_cleanup`:** a queue row is dropped only when older than 10 minutes and its file is gone, so an upload still in flight can't leave a file that nothing tracks. Only paths whose file exists are returned.
 27. **Descriptions are stored trimmed** by `create_menu_item` / `update_menu_item`; blank → null.
 28. **The "private is not exposed" check is a jest test on `supabase/config.toml`**, replacing a pgTAP assertion that could not fail (the exposed schemas are configured there, not in the database).
+
+### Gate B device-probe decisions (approved 2026-11-04)
+29. **Strip, then verify with the strict check.**
+    - **What the probe found:** on iPhone (Expo Go), the manipulator's JPEG output still carries APP1 (Exif) and APP13 (Photoshop 3.0) on every photo tried (two camera photos, one screenshot). The strict `assertNoHiddenMetadata` correctly blocked every upload, so re-encoding alone isn't enough.
+    - **The check is not loosened.** `prepareImage` runs `stripJpegMetadata` on the encoder's bytes, in pure byte code with no re-encode:
+      - it keeps SOI and the image-structure segments (JFIF, ICC_PROFILE, Adobe, DQT, DHT, SOFn, DRI, other non-APPn);
+      - it drops every other APPn and COM;
+      - it copies SOS through the first EOI byte for byte.
+    - The strict check then runs on the stripped bytes. The stripped bytes are what's uploaded and what the 2 MB check measures.
+    - **Orientation:** EXIF Orientation goes with APP1. The probe reports the removed Orientation value, so we know whether stripping can change how a photo is displayed. A value other than 1 or absent is reported before going on.
+
+### Code review decisions (approved 2026-11-04)
+30. **The metadata check is an allowlist over the whole image.** The review found that the strip and the strict check stopped at the first SOS, and that `isAllowed` let through every marker that wasn't APPn or COM.
+    - Both now walk to the first EOI across every scan. Entropy-coded data is skipped (`FF 00` stuffing and `FF D0`–`D7` restarts); any other marker is a segment and goes through the allowlist.
+    - Only these pass: SOFn (not 0xC8), DHT, DAC, DQT, DRI, DNL, SOS, RSTn, and APP0/APP2/APP14 with their identifiers (`JFIF`, `ICC_PROFILE`, `Adobe`).
+    - APPn with another number or identifier, and COM, are dropped by the strip and rejected by the check as `metadata_present`. Any other marker (reserved, JPGn, TEM) is refused with `not_an_image`.
+    - Today's phone encoders write baseline single-scan JPEGs, so real photos are unaffected; this closes the gap should an encoder change.
+31. **Delete and move behave on the server's answer.** The delete mutation no longer waits for the menu refetch (it didn't help: the refetch dropped the item while the form was open and unmounted the observer). The form closes on success, and the not-found screen is skipped while it is closing. The move announcement waits for success.
+32. **Price input is forgiving about form, strict about value.** A leading bare separator and non-Latin digits are accepted (normalised by string maths, still no floats); thousands separators are still refused, with a hint.
+33. **Picker size is trusted, then checked.** `pickImage` remembers the asset's width and height; `prepareImage` uses them to skip the first full decode. A wrong size (some Android rotations) is caught by the rendered size and fixed with one more render.
 
 The repeated business-lock prologue and the UUID regex in the storage policies stay inline: a shared helper would be a sixth `private` function, and the spec allows exactly five.
 

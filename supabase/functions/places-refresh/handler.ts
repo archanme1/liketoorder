@@ -44,6 +44,9 @@ async function secretMatches(provided: string | null, expected: string): Promise
 // Rows are refreshed one after another, and each result is saved the moment it is known, so a
 // run that stops partway loses nothing: finished rows are saved, unfinished ones were stamped by
 // the claim and come back after a day.
+// 25 rows at up to 5 s each can take about 2 minutes, longer than the 60 s pg_net waits for the
+// reply. pg_net then only stops waiting (net._http_response records a timeout); this function keeps
+// running and saves every row, so nothing is lost.
 export function createHandler(deps: Deps): Handler {
   return async (req) => {
     if (req.method !== 'POST') return errorResponse(405, 'method_not_allowed');

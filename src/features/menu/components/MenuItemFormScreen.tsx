@@ -64,6 +64,13 @@ function ItemFormBody({ business, mode }: { business: MyBusiness; mode: 'new' | 
   const currencies = useCurrencies();
   // Opened from a deep link there is nothing to go back to, so fall back to the menu.
   const close = () => (router.canGoBack() ? router.back() : router.replace('/seller/menu'));
+  // Set once the form is closing (saved or deleted), so the refreshed menu, which no longer has a
+  // deleted item, doesn't flash "This item no longer exists" while the screen leaves.
+  const [closing, setClosing] = useState(false);
+  const closeForm = () => {
+    setClosing(true);
+    close();
+  };
 
   if (menu.isPending || currencies.isPending) return <SellerLoading label="Loading your menu" />;
   if (menu.isError && menu.data === undefined) {
@@ -87,6 +94,7 @@ function ItemFormBody({ business, mode }: { business: MyBusiness; mode: 'new' | 
 
   const item = mode === 'edit' ? menu.data.items.find((row) => row.id === itemId) : undefined;
   if (mode === 'edit' && !item) {
+    if (closing) return null;
     return <EmptyState message="This item no longer exists" actionLabel="Back" onAction={close} />;
   }
   return (
@@ -97,7 +105,7 @@ function ItemFormBody({ business, mode }: { business: MyBusiness; mode: 'new' | 
       menu={menu.data}
       currencies={currencies.data}
       item={item}
-      onDone={close}
+      onDone={closeForm}
     />
   );
 }

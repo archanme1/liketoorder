@@ -109,7 +109,9 @@ export function useDeleteMenuItem(businessId: string) {
     mutationFn: (itemId) => deleteMenuItem(itemId),
     onSuccess: () => {
       void runPhotoCleanup();
-      return queryClient.invalidateQueries({ queryKey: menuKey(businessId) });
+      // Not returned: the mutation must not wait for the refetch. That refetch drops the item while
+      // the edit form is still open, which would unmount the form before its onSuccess closes it.
+      void queryClient.invalidateQueries({ queryKey: menuKey(businessId) });
     },
   });
 }

@@ -319,10 +319,9 @@ describe('BusinessPhotosScreen: limits', () => {
 
   it('disables Add menu photo at 10 and keeps it enabled at 9', async () => {
     mockedMenu.mockResolvedValue(withPhotos(menuPages(9)));
-    const client = await renderScreen();
+    await renderScreen();
     expect(await screen.findByText('9 of 10')).toBeTruthy();
     expect(addMenu()).toBeEnabled();
-    client.clear();
   });
 
   it('disables Add menu photo at 10', async () => {

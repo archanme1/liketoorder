@@ -25,14 +25,14 @@ export type Database = {
           Tables: {
             "business_locations": {
                   Row: {
-                    "business_id": string,"formatted_address": string,"lat": number,"lng": number,"place_id": string,"resolved_at": string
+                    "business_id": string,"formatted_address": string,"lat": number,"lng": number,"place_id": string,"place_status": string,"refresh_attempted_at": string | null,"resolved_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "business_id": string,"formatted_address": string,"lat": number,"lng": number,"place_id": string,"resolved_at"?: string
+                    "business_id": string,"formatted_address": string,"lat": number,"lng": number,"place_id": string,"place_status"?: string,"refresh_attempted_at"?: string | null,"resolved_at"?: string
                   }
                   Update: {
-                    "business_id"?: string,"formatted_address"?: string,"lat"?: number,"lng"?: number,"place_id"?: string,"resolved_at"?: string
+                    "business_id"?: string,"formatted_address"?: string,"lat"?: number,"lng"?: number,"place_id"?: string,"place_status"?: string,"refresh_attempted_at"?: string | null,"resolved_at"?: string
                   }
                   Relationships: [
                     {
@@ -129,6 +129,20 @@ isOneToOne: true
                   Relationships: [
                     
                   ]
+                },"map_rate_limits": {
+                  Row: {
+                    "caller_key": string,"calls": number,"kind": string,"window_start": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "caller_key": string,"calls"?: number,"kind": string,"window_start": string
+                  }
+                  Update: {
+                    "caller_key"?: string,"calls"?: number,"kind"?: string,"window_start"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"menu_items": {
                   Row: {
                     "business_id": string,"created_at": string,"description": string | null,"id": string,"is_available": boolean,"name": string,"position": number,"price_minor": number | null,"updated_at": string
@@ -159,6 +173,20 @@ isOneToOne: false
                   }
                   Update: {
                     "count"?: number,"kind"?: string,"user_id"?: string,"window_kind"?: string,"window_start"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"places_refresh_quota": {
+                  Row: {
+                    "calls": number,"day": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "calls"?: number,"day": string
+                  }
+                  Update: {
+                    "calls"?: number,"day"?: string
                   }
                   Relationships: [
                     
@@ -197,7 +225,10 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "begin_photo_upload":
+            "apply_places_refresh":
+{ Args: { "p_business_id": string,"p_lat": number,"p_lng": number,"p_outcome": string }; Returns: undefined
+                           },
+"begin_photo_upload":
 { Args: { "p_kind": string,"p_menu_item_id"?: string }; Returns: Json
                            },
 "business_owner_view":
@@ -205,6 +236,11 @@ isOneToOne: false
                            },
 "claim_photo_cleanup":
 { Args: Record<PropertyKey, never>; Returns: string[]
+                           },
+"claim_places_refresh_batch":
+{ Args: { "p_batch": number }; Returns: {
+              "business_id": string,"place_id": string,"type": string
+            }[]
                            },
 "consume_places_quota":
 { Args: { "p_kind": string,"p_user_id": string }; Returns: boolean
@@ -226,6 +262,12 @@ isOneToOne: false
                            },
 "get_my_business":
 { Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"get_restaurant_details":
+{ Args: { "p_business_id": string }; Returns: Json
+                           },
+"map_restaurants_in_bounds":
+{ Args: { "p_max_lat": number,"p_max_lng": number,"p_min_lat": number,"p_min_lng": number }; Returns: Json
                            },
 "move_menu_item":
 { Args: { "p_direction": string,"p_item_id": string }; Returns: undefined

@@ -410,6 +410,13 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/deno.json"
 
+# Spec 07: called by pg_cron through pg_net, which has no user JWT. The handler itself rejects any
+# request without the matching x-cron-secret header (401, no body).
+[functions.places-refresh]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deno.json"
+
 [analytics]
 enabled = true
 port = 54327

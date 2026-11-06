@@ -111,3 +111,47 @@ jest.mock('expo-image', () => {
   const Image = (props: object) => createElement(View, { testID: 'expo-image', ...props });
   return { Image };
 });
+
+// ── Spec 07 map modules: native under jest, so each gets a small controllable fake. ──
+
+// MapView renders a plain View (testID "map-view") that keeps every prop, so tests can read
+// provider / initialRegion and call onRegionChangeComplete. The ref exposes animateToRegion, which
+// is the shared jest.fn `__animateToRegion` so tests can assert the camera moved (or didn't).
+jest.mock('react-native-maps', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const React = require('react');
+  const { View } = require('react-native');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const animateToRegion = jest.fn();
+  const MapView = React.forwardRef(function MockMapView(props: object, ref: unknown) {
+    React.useImperativeHandle(ref, () => ({ animateToRegion }));
+    return React.createElement(View, { testID: 'map-view', ...props });
+  });
+  return {
+    __esModule: true,
+    default: MapView,
+    PROVIDER_GOOGLE: 'google',
+    __animateToRegion: animateToRegion,
+  };
+});
+
+// Foreground location only. Default: services on, never asked, and a fix near Paris. Tests
+// override with jest.mocked(Location.x).mockResolvedValue(...).
+jest.mock('expo-location', () => ({
+  PermissionStatus: { GRANTED: 'granted', DENIED: 'denied', UNDETERMINED: 'undetermined' },
+  Accuracy: { Balanced: 3 },
+  hasServicesEnabledAsync: jest.fn(async () => true),
+  getForegroundPermissionsAsync: jest.fn(async () => ({
+    status: 'undetermined',
+    canAskAgain: true,
+    granted: false,
+  })),
+  requestForegroundPermissionsAsync: jest.fn(async () => ({
+    status: 'granted',
+    canAskAgain: true,
+    granted: true,
+  })),
+  getCurrentPositionAsync: jest.fn(async () => ({
+    coords: { latitude: 48.8566, longitude: 2.3522 },
+  })),
+}));

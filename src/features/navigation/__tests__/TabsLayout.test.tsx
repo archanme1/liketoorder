@@ -8,6 +8,17 @@ import { supabase } from '@/lib/supabase';
 
 // Renders the real app/ routes (root layout + tab bar) with supabase mocked.
 
+// These tests cover routing and the tab bar, not the map (spec 07 has its own tests). Keep the
+// Restaurants tab on a stand-in screen so they don't depend on native map modules or keys.
+jest.mock('@/features/map/components/RestaurantMapScreen', () => ({
+  RestaurantMapScreen: () => {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const { ComingSoon } = require('@/features/navigation/components/ComingSoon');
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    return <ComingSoon title="Restaurants" message="The restaurant map is coming soon." />;
+  },
+}));
+
 jest.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {

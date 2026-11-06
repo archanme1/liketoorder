@@ -117,8 +117,10 @@ npx supabase start            # local Supabase (needs Docker)
 cp .env.example .env          # fill in local keys printed by supabase start
 
 # Run
-npx expo start                # dev server; press i / a for simulators
-# Note: react-native-maps needs a dev build or Expo Go on device; web is not supported for the map.
+npx expo start --dev-client   # dev server for the development build; press i for the iOS simulator
+npx expo run:ios              # build + install the development build (first time, and whenever a native package or native app.config.ts setting changes). Run by Archan, not by Claude.
+# Note: the map uses Google Maps on iOS and Android, so Expo Go can no longer run the Restaurants tab.
+# Use the development build (iOS Simulator first). Web is not supported for the map.
 
 # Quality
 npm run lint

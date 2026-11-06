@@ -280,7 +280,8 @@ All with `npx expo install` (PR 2). None in PR 1.
 | Package | Why |
 |---|---|
 | `react-native-maps` | The map (Google provider on iOS and Android). |
-| `supercluster` (+ `@types/supercluster`) | Clustering. |
+| `supercluster` 7.1.5 (+ `@types/supercluster`) | Clustering. Pinned to 7.1.x: 8.x and 9.x are ES-module-only and need a jest `transformIgnorePatterns` change; 7.1.5 works under jest with no special config (checked at Gate C). |
+| `expo-dev-client` | The development-build launcher; `npx expo start --dev-client` needs it (added at Gate C, Decision 23). |
 | `@gorhom/bottom-sheet` | The sheet. |
 | `react-native-reanimated` (+ `react-native-worklets` if the installed Expo SDK requires it) | Required by the bottom sheet; also used for spec 16 later. |
 | `react-native-gesture-handler` | Required by the bottom sheet. |
@@ -390,7 +391,7 @@ Feature-specific:
 
 **What you'd do differently:** install Xcode (option 1/2) or Android Studio (option 3); run one build command the first time (about 10–20 minutes); then start the app with `npx expo start --dev-client` instead of scanning the Expo Go QR code; rebuild whenever Claude tells you a native package was added. The two Google Maps SDK keys (below) are needed on whichever build shows real map tiles.
 
-**Decision needed:** which option for PR 2? Recorded in "Decisions" below once answered.
+**Decided (Decision 23): option 1, the iOS Simulator on Archan's Mac first; a real iPhone later.** Archan runs every build command himself; Claude only changes project files.
 
 ## Decisions
 1. **Two PRs** as above; PR 1 keeps the status 🚧, only PR 2 marks ✅ Shipped. (Archan, 2026-11-04)
@@ -414,7 +415,7 @@ Feature-specific:
    - Flag emoji may render differently per Android device: covered by the existing §16 device check, no change.
    - Refresh cap stays at 100 calls/day for launch; raise with a one-line migration as listings approach 2,500 businesses (restaurants and homemade together).
    - Pre-permission note wording and the shown-once "Not now" behaviour are accepted as written in "Opening view and location".
-15. **"Places in this area" list for screen readers:** kept in this spec. (Recommended default; Archan's explicit answer to this one is not recorded in the conversation, so confirm in review.)
+15. **"Places in this area" list for screen readers:** kept in this spec. (Confirmed by Archan, 2026-11-05.)
 16. **Extensions:** `pg_cron`, `pg_net` and `supabase_vault` are enabled in the migration; availability on the local stack is checked at Gate A (see "Refresh job").
 
 17. **Hourly rate-limit cleanup:** `map_rate_limits` rows are deleted hourly (older than 1 hour); `places_refresh_quota` stays on the daily job. (Archan, 2026-11-05)
@@ -423,6 +424,9 @@ Feature-specific:
 20. **No direct reads of the Google columns:** `select` on `businesses.map_lat`, `map_lng` and `public_address` is revoked from `anon` and `authenticated` in a new migration, so the 30-day guard and the rate limit cannot be skipped. Spec 08 adds its own homemade read function. (Archan, 2026-11-05)
 21. **Guest address in one function:** the `x-forwarded-for` reading lives in `private.caller_ip()` only. The key logic is unchanged; once the trustworthy header is chosen at launch (§16, before-launch blocker), the fix is a one-function migration. Until then guests are protected only by the guest ceiling, which a forger can fill to block other guests. (Archan, 2026-11-05)
 22. **What bounds the call time:** `statement_timeout = '3s'` on the two public functions applies to the statements inside them; the timer for the call itself starts before the function runs. The role-level timeouts (Supabase defaults: anon 3 s, authenticated 8 s) bound the call today. Role settings are not changed. `apply_places_refresh` clears the claim after any applied outcome, so a result applies once. (Archan, 2026-11-05)
+
+23. **Development build:** the iOS Simulator on Archan's Mac first (Xcode 27.2, iOS 27.2 simulator), a real iPhone later (needs the paid Apple account for an EAS build). Archan runs `npx expo run:ios` and any `brew install` himself; Claude never runs `expo run:ios`, `expo prebuild` or a global install. `expo-dev-client` is added to the dependencies so the app starts with `npx expo start --dev-client`. (Archan, 2026-11-05)
+24. **Maps config via the `react-native-maps` plugin:** the Google keys go in through that plugin's props (`iosGoogleMapsApiKey`, `androidGoogleMapsApiKey`, read from `EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY` / `…_ANDROID_KEY`), not `ios.config.googleMapsApiKey`, because the plugin also links the Google Maps pod only when the iOS key is set. With no key the map screen renders "Map isn't configured" and never mounts a Google map (an empty key can crash the native SDK); the variable name is shown only in development. (Gate C, 2026-11-05)
 
 ## Open questions
 1. **Google Maps terms text** could not be loaded in full here. Please have the §16 "Google terms review" item cover: Places content only on a Google map, the 30-day lat/lng cache limit, and linking out by place ID.

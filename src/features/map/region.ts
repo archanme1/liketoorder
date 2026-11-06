@@ -71,3 +71,15 @@ export function regionAround(latitude: number, longitude: number): MapRegion {
     longitudeDelta: NEIGHBOURHOOD_DELTA,
   };
 }
+
+/** Rounds a box to ~100 m (3 decimals) so tiny pans share one cache entry and one request. */
+export function roundBox(box: MapBox, decimals = 3): MapBox {
+  const factor = 10 ** decimals;
+  const round = (n: number) => Math.round(n * factor) / factor;
+  return {
+    minLat: round(box.minLat),
+    maxLat: round(box.maxLat),
+    minLng: round(box.minLng),
+    maxLng: round(box.maxLng),
+  };
+}

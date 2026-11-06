@@ -26,8 +26,8 @@ export const type = { caption: 12, body: 15, bodyLg: 17, title: 20, h1: 28 };
 
 export const weight = { regular: '400', semibold: '600', bold: '700' } as const;
 
-// Minimum touch target (accessibility rule: ≥ 44pt), avatar diameters, tab bar icons and photo
-// thumbnails.
+// Minimum touch target (accessibility rule: ≥ 44pt), avatar diameters, tab bar icons, photo
+// thumbnails and map marker sizes.
 export const size = {
   touch: 44,
   avatarSm: 40,
@@ -35,6 +35,12 @@ export const size = {
   avatarLg: 96,
   tabIcon: 24,
   photoThumb: 96,
+  // Map markers (spec 07): flag pill, and cluster circles that grow with the count.
+  flagWidth: 32,
+  flagHeight: 24,
+  clusterSm: 36,
+  clusterMd: 42,
+  clusterLg: 48,
 };
 
 // Pressable feedback and inactive (disabled / loading) controls.

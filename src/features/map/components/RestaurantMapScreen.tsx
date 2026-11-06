@@ -1,27 +1,45 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useCuisines } from '@/features/cuisines/hooks/useCuisines';
+import type { Cuisine } from '@/features/cuisines/schema';
 import { useTheme } from '@/theme/useTheme';
 
+import { createClusterIndex } from '../clustering';
 import { useInitialRegion } from '../hooks/useInitialRegion';
 import { useLocationPermission } from '../hooks/useLocationPermission';
 import { useMapRegion } from '../hooks/useMapRegion';
+import { usePinsInBounds } from '../hooks/usePinsInBounds';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { mapKeyName, useMapConfigured } from '../mapConfig';
 import { isOverServerLimit, regionAround, type MapRegion } from '../region';
 
+import { mapErrorMessage } from '../messages';
+
+import { ClusterMarker } from './ClusterMarker';
+import { FlagMarker } from './FlagMarker';
 import { LocationPrompt } from './LocationPrompt';
-import { LocationNotice, MapNotConfigured, ZoomInNotice } from './MapNotices';
+import {
+  EmptyAreaNotice,
+  LoadingPinsIndicator,
+  LocationNotice,
+  MapNotConfigured,
+  PinsErrorNotice,
+  RateLimitedNotice,
+  ZoomInMoreNotice,
+  ZoomInNotice,
+} from './MapNotices';
 
 type LocationNoticeReason = 'denied' | 'denied_forever' | 'services_off' | 'no_fix';
 
 const CAMERA_MS = 600;
 
-// The Restaurants tab. Public: guests see the map too. Pins, clusters and the sheet arrive in
-// the next gates; this is the shell: the Google map, the opening view and the location flow.
+// The Restaurants tab. Public: guests see the map too. The Google map, the opening view, the
+// location flow, and the restaurants in the visible area as flags and clusters. The details
+// sheet arrives in the next gate.
 export function RestaurantMapScreen() {
   const configured = useMapConfigured();
   const { space } = useTheme();
@@ -49,7 +67,28 @@ function ConfiguredMap() {
     permission: permission.state,
     getPosition: permission.getPosition,
   });
-  const { region, onRegionChangeComplete } = useMapRegion(opening?.region ?? null);
+  const { region, settledRegion, box, onRegionChangeComplete } = useMapRegion(
+    opening?.region ?? null,
+  );
+
+  // Pins are requested for the settled box only, and never for a view the server would refuse.
+  const wideView = region ? isOverServerLimit(region) : false;
+  const queryBox = settledRegion && !isOverServerLimit(settledRegion) ? box : null;
+  const pins = usePinsInBounds(queryBox);
+
+  const cuisines = useCuisines();
+  const cuisineByCode = useMemo(() => {
+    const map = new Map<string, Cuisine>();
+    for (const cuisine of cuisines.data ?? []) map.set(cuisine.code, cuisine);
+    return map;
+  }, [cuisines.data]);
+
+  const clusterIndex = useMemo(() => createClusterIndex(pins.pins), [pins.pins]);
+  const items = useMemo(
+    () => (region && !wideView ? clusterIndex.itemsFor(region) : []),
+    [clusterIndex, region, wideView],
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const moveTo = useCallback(
     (target: MapRegion) => {
@@ -62,6 +101,17 @@ function ConfiguredMap() {
   useEffect(() => {
     if (myRegion) moveTo(myRegion);
   }, [myRegion, moveTo]);
+
+  // Selecting a flag does not move the map.
+  const onSelectPin = useCallback((id: string) => setSelectedId(id), []);
+  const onClearSelection = useCallback(() => setSelectedId(null), []);
+  const onClusterPress = useCallback(
+    (clusterId: number) => {
+      const target = clusterIndex.regionForCluster(clusterId);
+      if (target) moveTo(target);
+    },
+    [clusterIndex, moveTo],
+  );
 
   const onAllow = useCallback(() => {
     void permission.request();
@@ -93,7 +143,17 @@ function ConfiguredMap() {
     );
   }
 
-  const tooWide = region ? isOverServerLimit(region) : isOverServerLimit(opening.region);
+  const tooWide = region ? wideView : isOverServerLimit(opening.region);
+  const settledNow = !pins.isFetching;
+  const showZoomIn = tooWide || (pins.tooLarge && settledNow);
+  const rateLimited = pins.error?.code === 'rate_limited';
+  const empty =
+    queryBox !== null &&
+    pins.hasData &&
+    pins.pins.length === 0 &&
+    !pins.tooLarge &&
+    settledNow &&
+    !pins.error;
 
   return (
     <View style={styles.flex}>
@@ -103,9 +163,25 @@ function ConfiguredMap() {
         provider={PROVIDER_GOOGLE}
         initialRegion={opening.region}
         onRegionChangeComplete={onRegionChangeComplete}
+        onPress={onClearSelection}
         toolbarEnabled={false}
+        moveOnMarkerPress={false}
         accessibilityLabel="Restaurants map"
-      />
+      >
+        {items.map((item) =>
+          item.kind === 'cluster' ? (
+            <ClusterMarker key={item.key} cluster={item} onPress={onClusterPress} />
+          ) : (
+            <FlagMarker
+              key={item.key}
+              pin={item.pin}
+              cuisine={cuisineByCode.get(item.pin.cuisine_code)}
+              selected={item.pin.id === selectedId}
+              onSelect={onSelectPin}
+            />
+          ),
+        )}
+      </MapView>
       <View
         pointerEvents="box-none"
         style={[
@@ -116,7 +192,14 @@ function ConfiguredMap() {
         {permission.showPrompt ? (
           <LocationPrompt onAllow={onAllow} onNotNow={permission.dismissPrompt} />
         ) : null}
-        {tooWide ? <ZoomInNotice /> : null}
+        {showZoomIn ? <ZoomInNotice /> : null}
+        {pins.capped && !showZoomIn && settledNow ? <ZoomInMoreNotice /> : null}
+        {queryBox !== null && pins.isFetching && !pins.error ? <LoadingPinsIndicator /> : null}
+        {pins.error && rateLimited ? <RateLimitedNotice onTryAgain={pins.retry} /> : null}
+        {pins.error && !rateLimited ? (
+          <PinsErrorNotice message={mapErrorMessage(pins.error.code)} onRetry={pins.retry} />
+        ) : null}
+        {empty ? <EmptyAreaNotice /> : null}
         {notice ? (
           <LocationNotice
             reason={notice}

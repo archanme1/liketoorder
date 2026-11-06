@@ -127,9 +127,15 @@ jest.mock('react-native-maps', () => {
     React.useImperativeHandle(ref, () => ({ animateToRegion }));
     return React.createElement(View, { testID: 'map-view', ...props });
   });
+  // Markers render their children in a View that keeps every prop (coordinate, onPress,
+  // tracksViewChanges, accessibility*), so tests can find and press them.
+  const Marker = function MockMarker(props: object) {
+    return React.createElement(View, { testID: 'marker', ...props });
+  };
   return {
     __esModule: true,
     default: MapView,
+    Marker,
     PROVIDER_GOOGLE: 'google',
     __animateToRegion: animateToRegion,
   };

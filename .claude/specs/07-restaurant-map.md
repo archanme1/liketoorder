@@ -393,6 +393,13 @@ Feature-specific:
 
 **Decided (Decision 23): option 1, the iOS Simulator on Archan's Mac first; a real iPhone later.** Archan runs every build command himself; Claude only changes project files.
 
+## Device-run notes
+Manual checks on a real build, kept here so the final manual run knows what is still open.
+
+**Gate C: partial manual run, 2026-11-05 (Archan).** iOS Simulator only (iPhone 18 Pro, iOS 27.2).
+- Passed: the app builds and launches; Google map tiles show with the iOS key; the location note and the system permission prompt work; with a faked location (`xcrun simctl location`: Oshawa, then Cambridge, Ontario) the map centres on it.
+- **Not yet checked:** a real iPhone; Android; VoiceOver / TalkBack; large text; the denied, denied-forever and services-off states; the slow-GPS and phone-country fallbacks.
+
 ## Decisions
 1. **Two PRs** as above; PR 1 keeps the status 🚧, only PR 2 marks ✅ Shipped. (Archan, 2026-11-04)
 2. **Option A for the 30-day rule:** this spec builds the refresh job and the 30-day hide guard. The guard is the real protection; the job is the normal path. For the guard to hold, nothing else may hand out the coordinates, so direct reads of `businesses.map_lat`, `map_lng` and `public_address` are revoked from `anon` and `authenticated` (Decision 20). (Archan, 2026-11-04; extended 2026-11-05)

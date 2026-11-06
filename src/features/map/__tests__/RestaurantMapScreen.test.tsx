@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import * as Location from 'expo-location';
 import { getLocales } from 'expo-localization';
@@ -18,6 +19,10 @@ const { __animateToRegion: animateToRegion } = require('react-native-maps') as {
 
 jest.mock('@/lib/supabase', () => ({
   supabase: { rpc: jest.fn(), from: jest.fn(), functions: { invoke: jest.fn() } },
+}));
+jest.mock('@/features/cuisines/api', () => ({
+  ...jest.requireActual('@/features/cuisines/api'),
+  listCuisines: jest.fn(async () => []),
 }));
 jest.mock('../mapConfig', () => ({
   ...jest.requireActual('../mapConfig'),
@@ -40,15 +45,18 @@ function permission(status: string, canAskAgain = true) {
 }
 
 async function renderScreen() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
   const result = await render(
-    <SafeAreaProvider
-      initialMetrics={{
-        frame: { x: 0, y: 0, width: 390, height: 844 },
-        insets: { top: 47, left: 0, right: 0, bottom: 34 },
-      }}
-    >
-      <RestaurantMapScreen />
-    </SafeAreaProvider>,
+    <QueryClientProvider client={queryClient}>
+      <SafeAreaProvider
+        initialMetrics={{
+          frame: { x: 0, y: 0, width: 390, height: 844 },
+          insets: { top: 47, left: 0, right: 0, bottom: 34 },
+        }}
+      >
+        <RestaurantMapScreen />
+      </SafeAreaProvider>
+    </QueryClientProvider>,
   );
   await screen.findByTestId('map-view');
   return result;
@@ -60,6 +68,8 @@ beforeEach(async () => {
   getPermission.mockClear();
   requestPermission.mockClear();
   getPosition.mockReset();
+  db.rpc.mockReset();
+  db.rpc.mockResolvedValue({ data: { pins: [], capped: false, too_large: false }, error: null });
   mockedConfigured.mockReturnValue(true);
   services.mockResolvedValue(true);
   permission('undetermined');
@@ -257,20 +267,39 @@ describe('RestaurantMapScreen: location flow', () => {
 });
 
 describe("RestaurantMapScreen: the person's position never leaves the phone", () => {
-  it('sends nothing to Supabase or the network, even with a known position', async () => {
+  it('sends only the map box to Supabase, never the position, and nothing else anywhere', async () => {
     const fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no network'));
     permission('granted');
-    getPosition.mockResolvedValue({
-      coords: { latitude: 12.3456, longitude: 65.4321 },
-    } as Location.LocationObject);
+    const person = { latitude: 12.3456, longitude: 65.4321 };
+    getPosition.mockResolvedValue({ coords: person } as Location.LocationObject);
     await renderScreen();
     await waitFor(() => expect(animateToRegion).toHaveBeenCalled());
+    // The map settles on the person's neighbourhood.
+    await act(async () => {
+      screen.getByTestId('map-view').props.onRegionChangeComplete({
+        ...person,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      });
+    });
     await fireEvent.press(screen.getByRole('button', { name: 'Locate me' }));
-    await act(async () => undefined);
-    expect(db.rpc).not.toHaveBeenCalled();
+    await waitFor(() => expect(db.rpc.mock.calls.length).toBeGreaterThan(1), { timeout: 2000 });
+
+    for (const [name, args] of db.rpc.mock.calls) {
+      expect(name).toBe('map_restaurants_in_bounds');
+      expect(Object.keys(args).sort()).toEqual([
+        'p_max_lat',
+        'p_max_lng',
+        'p_min_lat',
+        'p_min_lng',
+      ]);
+      expect(Object.values(args)).not.toContain(person.latitude);
+      expect(Object.values(args)).not.toContain(person.longitude);
+    }
+    expect(JSON.stringify(db.rpc.mock.calls)).not.toMatch(/12\.3456|65\.4321/);
     expect(db.from).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
-    // The only thing stored is a region (four numbers), under the last-region key.
+    // The only thing stored is a region (four numbers) under the map keys.
     const keys = await AsyncStorage.getAllKeys();
     expect(keys.every((key) => key.startsWith('map.'))).toBe(true);
     fetchSpy.mockRestore();

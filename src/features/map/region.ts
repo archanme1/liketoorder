@@ -101,6 +101,11 @@ export function snapBox(box: MapBox): MapBox {
 /** A pick from the list keeps the person's zoom if they are already this close (degrees). */
 export const PICK_MAX_DELTA = 0.05;
 
+/** Homemade circle: 500 m, the largest shift the server applies, so the real home is inside. */
+export const CIRCLE_RADIUS_M = 500;
+/** The circle is drawn only at or below this zoom (latitude span in degrees); above it, none. */
+export const CIRCLE_MAX_DELTA = 0.05;
+
 /** Share of the view height the sheet's half snap takes from the top of the pin's centre. */
 const SHEET_OFFSET = 0.25;
 

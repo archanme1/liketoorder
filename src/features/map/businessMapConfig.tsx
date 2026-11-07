@@ -18,6 +18,8 @@ export type MarkerProps = {
   cuisine: Cuisine | undefined;
   selected: boolean;
   onSelect: (pin: Pin) => void;
+  /** True while zoomed in enough for the Homemade circle. The Restaurants marker ignores it. */
+  zoomedIn: boolean;
 };
 
 /** What a pins hook hands the screen (the shape usePinsQuery returns). */
@@ -63,7 +65,7 @@ export const restaurantMapConfig: BusinessMapConfig = {
   kind: 'restaurant',
   mapLabel: 'Restaurants map',
   regionKey: REGION_KEY,
-  promptThings: 'restaurants',
+  promptThings: 'restaurants and homemade cooks',
   texts: {
     things: 'restaurants',
     zoomIn: ZOOM_IN_MESSAGE,
@@ -74,6 +76,8 @@ export const restaurantMapConfig: BusinessMapConfig = {
     detailsLabel: 'Restaurant details',
   },
   usePins: usePinsInBounds,
-  renderMarker: (props) => <FlagMarker {...props} />,
+  renderMarker: ({ pin, cuisine, selected, onSelect }) => (
+    <FlagMarker pin={pin} cuisine={cuisine} selected={selected} onSelect={onSelect} />
+  ),
   DetailsBody: SheetDetails,
 };

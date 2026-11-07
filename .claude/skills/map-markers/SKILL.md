@@ -69,9 +69,13 @@ export function useFloat() {
 - Cluster: "<n> places, double tap to zoom in".
 - Provide a "List view" button on the map for screen-reader users.
 
-## Homemade markers
-- Always use the **public approximate coordinates** (`approx_lat`, `approx_lng`) — never the exact address table.
-- Show a translucent circle (~300 m radius) instead of a pinpoint for homemade sellers when zoomed in close.
+## Homemade markers (spec 08)
+- Pins come only from `map_homemade_in_bounds`, which returns the server's shifted public point (`businesses.map_lat` / `map_lng`) as `lat` / `lng`. The exact coordinates and the address stay in `business_locations` and are never returned. The app never receives, computes, rounds or offsets a homemade point.
+- A flag at that point inside a translucent circle of **500 m** (`CIRCLE_RADIUS_M` in `region.ts`). 500 m is the largest shift the server applies, so the real home is always inside; never draw it smaller. Colours come from `mapArea` in `tokens.ts`.
+- Draw the circle only while the view is zoomed in (`latitudeDelta <= CIRCLE_MAX_DELTA`, 0.05); none when zoomed out, and none for clustered pins (clusters render `ClusterMarker`, so they cannot get one). The screen passes the markers one boolean (`zoomedIn`), so a pan re-renders them only when it flips.
+- `Circle` goes under every flag (`zIndex` 0; flags are 1 and 2).
+- **The circle is not tappable.** react-native-maps 1.29 gives `Circle` no `onPress`, no `tappable` and no `stopPropagation` (only `Marker` has `stopPropagation`), on iOS or Android; the Android `overlay-press` event is for ground overlays, not circles. A tap inside a circle reaches the map as a plain map press (iOS: no `action` field; Android: `action: 'press'`), so it clears the selection like any bare-map tap. Only the flag opens the sheet. The jest `Circle` fake has no press either.
+- The sheet says "approximate area" on purpose: no address, no Directions, no place ID. Marker label: "<Name>, <Cuisine> cuisine, homemade, approximate area".
 
 ## Lessons from spec 07 (read before any map work)
 Each one cost a fix after the spec 07 manual run. Source: `.claude/specs/07-restaurant-map.md` (Decisions 23–31, device-run notes).

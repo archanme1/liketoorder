@@ -167,10 +167,17 @@ jest.mock('react-native-maps', () => {
     };
     return React.createElement(View, { testID: 'marker', ...props, onPress });
   };
+  // Circle renders a plain View (testID "map-circle") that keeps every prop (center, radius, fill,
+  // stroke, zIndex). The real Circle has no press at all (react-native-maps 1.29: no onPress on
+  // either platform), so this fake has no press either: a tap inside a circle is a plain map tap.
+  const Circle = function MockCircle(props: object) {
+    return React.createElement(View, { testID: 'map-circle', ...props });
+  };
   return {
     __esModule: true,
     default: MapView,
     Marker,
+    Circle,
     PROVIDER_GOOGLE: 'google',
     __animateToRegion: animateToRegion,
     __setIgnoreStopPropagation: (value: boolean) => {

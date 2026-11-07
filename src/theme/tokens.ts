@@ -50,6 +50,14 @@ export const opacity = { disabled: 0.5, pressed: 0.8 };
 // Border widths: a selected option gets a thicker border as well as a check icon.
 export const stroke = { selected: 2 };
 
-export const theme = { colors, space, radius, type, weight, size, opacity, stroke };
+// The homemade "somewhere in this area" circle (spec 08): the primary colour, translucent fill with
+// a firmer outline so the edge still reads without relying on the fill alone.
+export const mapArea = {
+  fill: 'rgba(207, 71, 28, 0.15)',
+  stroke: 'rgba(207, 71, 28, 0.7)',
+  strokeWidth: 2,
+};
+
+export const theme = { colors, space, radius, type, weight, size, opacity, stroke, mapArea };
 
 export type Theme = typeof theme;

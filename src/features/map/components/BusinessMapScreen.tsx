@@ -17,7 +17,13 @@ import { useReduceMotion } from '../hooks/useReduceMotion';
 import { mapKeyName, useMapConfigured } from '../mapConfig';
 import { isMarkerPressEvent } from '../mapEvents';
 import { MAP_STYLE } from '../mapStyle';
-import { isOverServerLimit, regionAround, regionForPick, type MapRegion } from '../region';
+import {
+  CIRCLE_MAX_DELTA,
+  isOverServerLimit,
+  regionAround,
+  regionForPick,
+  type MapRegion,
+} from '../region';
 import type { Pin } from '../schema';
 
 import { mapErrorMessage } from '../messages';
@@ -90,6 +96,9 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
     for (const cuisine of cuisines.data ?? []) map.set(cuisine.code, cuisine);
     return map;
   }, [cuisines.data]);
+
+  // One boolean, not the region, goes to the markers: a pan re-renders them only when it flips.
+  const zoomedIn = region !== null && region.latitudeDelta <= CIRCLE_MAX_DELTA;
 
   const clusterIndex = useMemo(() => createClusterIndex(pins.pins), [pins.pins]);
   const items = useMemo(
@@ -256,6 +265,7 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
                 cuisine: cuisineByCode.get(item.pin.cuisine_code),
                 selected: item.pin.id === selected?.id,
                 onSelect: onSelectPin,
+                zoomedIn,
               })}
             </Fragment>
           ),
@@ -277,10 +287,15 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
         ) : null}
         {showZoomIn ? <ZoomInNotice message={config.texts.zoomIn} /> : null}
         {pins.capped && !showZoomIn && settledNow ? <ZoomInMoreNotice /> : null}
-        {queryBox !== null && pins.isFetching && !pins.error ? <LoadingPinsIndicator things={config.texts.things} /> : null}
+        {queryBox !== null && pins.isFetching && !pins.error ? (
+          <LoadingPinsIndicator things={config.texts.things} />
+        ) : null}
         {pins.error && rateLimited ? <RateLimitedNotice onTryAgain={pins.retry} /> : null}
         {pins.error && !rateLimited ? (
-          <PinsErrorNotice message={mapErrorMessage(pins.error.code, config.texts.things)} onRetry={pins.retry} />
+          <PinsErrorNotice
+            message={mapErrorMessage(pins.error.code, config.texts.things)}
+            onRetry={pins.retry}
+          />
         ) : null}
         {empty ? <EmptyAreaNotice title={config.texts.emptyTitle} /> : null}
         {notice ? (

@@ -15,6 +15,8 @@ type FlagMarkerProps = {
   cuisine: Cuisine | undefined;
   selected: boolean;
   onSelect: (pin: Pin) => void;
+  /** Spoken name. Defaults to "<name>, <cuisine> cuisine" (the Homemade tab says more). */
+  accessibilityLabel?: string;
 };
 
 export function markerLabel(name: string, cuisine: Cuisine | undefined): string {
@@ -24,7 +26,7 @@ export function markerLabel(name: string, cuisine: Cuisine | undefined): string 
 // Flag in a rounded pill; neutral cuisines show their icon instead. The name is never carried by
 // the flag alone: the accessibility label always names the restaurant and its cuisine. The
 // outer box is 44 × 44 so the touch target meets the minimum even though the pill is smaller.
-function FlagMarkerBase({ pin, cuisine, selected, onSelect }: FlagMarkerProps) {
+function FlagMarkerBase({ pin, cuisine, selected, onSelect, accessibilityLabel }: FlagMarkerProps) {
   const { colors, radius, size, stroke, space } = useTheme();
   const tracksViewChanges = useTracksViewChanges(`${cuisine?.code ?? ''}|${selected}`);
   const coordinate = useMemo(() => ({ latitude: pin.lat, longitude: pin.lng }), [pin.lat, pin.lng]);
@@ -39,7 +41,7 @@ function FlagMarkerBase({ pin, cuisine, selected, onSelect }: FlagMarkerProps) {
       stopPropagation
       accessible
       accessibilityRole="button"
-      accessibilityLabel={markerLabel(pin.name, cuisine)}
+      accessibilityLabel={accessibilityLabel ?? markerLabel(pin.name, cuisine)}
       zIndex={selected ? 2 : 1}
     >
       <View testID="flag-hit" style={[styles.hit, { width: size.touch, height: size.touch }]}>

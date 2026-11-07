@@ -9,7 +9,9 @@ import { supabase } from '@/lib/supabase';
 import type { MapBox } from './region';
 import {
   pinsResponseSchema,
+  homemadeDetailsSchema,
   restaurantDetailsSchema,
+  type HomemadeDetails,
   type PinsResponse,
   type RestaurantDetails,
 } from './schema';
@@ -78,6 +80,36 @@ export async function fetchRestaurantDetails(id: string): Promise<RestaurantDeta
   if (error) throw mapMapError(error);
   if (data === null) return null;
   const parsed = restaurantDetailsSchema.safeParse(data);
+  if (!parsed.success) throw new MapAppError('unknown');
+  return parsed.data;
+}
+
+/**
+ * The homemade cooks in the visible area. Sends only the map box. The points that come back are
+ * the server's shifted public points; nothing exact is ever returned.
+ */
+export async function fetchHomemadeInBounds(box: MapBox): Promise<PinsResponse> {
+  const { data, error } = await supabase.rpc('map_homemade_in_bounds', {
+    p_min_lat: box.minLat,
+    p_max_lat: box.maxLat,
+    p_min_lng: box.minLng,
+    p_max_lng: box.maxLng,
+  });
+  if (error) throw mapMapError(error);
+  const parsed = pinsResponseSchema.safeParse(data);
+  if (!parsed.success) throw new MapAppError('unknown');
+  return parsed.data;
+}
+
+/**
+ * One cook's public details, or `null` when not available (hidden, unlisted, stale, a restaurant
+ * or no such id: the server answers the same for all of them). Sends only the id.
+ */
+export async function fetchHomemadeDetails(id: string): Promise<HomemadeDetails | null> {
+  const { data, error } = await supabase.rpc('get_homemade_details', { p_business_id: id });
+  if (error) throw mapMapError(error);
+  if (data === null) return null;
+  const parsed = homemadeDetailsSchema.safeParse(data);
   if (!parsed.success) throw new MapAppError('unknown');
   return parsed.data;
 }

@@ -57,3 +57,16 @@ export const restaurantDetailsSchema = z.strictObject({
 export type DetailsPhoto = z.output<typeof detailsPhotoSchema>;
 export type DetailsItem = z.output<typeof detailsItemSchema>;
 export type RestaurantDetails = z.output<typeof restaurantDetailsSchema>;
+
+// get_homemade_details: public fields only, and no place, address or coordinates at all. Strict, so
+// a payload carrying any of them is refused rather than carried around.
+export const homemadeDetailsSchema = z.strictObject({
+  id: z.string().min(1),
+  name: z.string(),
+  cuisine_code: z.string().min(1),
+  currency_code: z.string().nullable(),
+  photos: z.array(detailsPhotoSchema),
+  items: z.array(detailsItemSchema),
+});
+
+export type HomemadeDetails = z.output<typeof homemadeDetailsSchema>;

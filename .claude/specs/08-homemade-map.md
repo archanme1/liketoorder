@@ -313,17 +313,17 @@ No test file defines its own map or sheet mock.
 
 ## Definition of done
 **Database (PR 1)** (run pgTAP before seeding any local demo data)
-- [ ] `anon` and `authenticated` can execute exactly `map_homemade_in_bounds` and `get_homemade_details` among the new functions; `private.homemade_is_fresh` is not executable by them (42501); the allowlist test is updated.
-- [ ] `map_homemade_in_bounds` returns only fresh homemade businesses: a homemade row with `resolved_at` 29 days old appears, 31 days old does not, and it appears again after `apply_places_refresh('ok', …)`.
-- [ ] A restaurant, an unlisted homemade, a `not_found` homemade, a homemade with no `map_lat` and a stale homemade never appear in `map_homemade_in_bounds`; `get_homemade_details` returns `null` for each, for a restaurant id and for a random uuid, with the same value.
-- [ ] `map_restaurants_in_bounds` never returns a homemade business and `get_restaurant_details` returns `null` for a homemade id (unchanged; pinned by a test).
-- [ ] **Outsider cannot** (as `anon` and as another signed-in user) read a homemade business's exact coordinates, `business_locations` row, `place_id`, address, `resolved_at` or `place_status`: not through either function, not through any table (42501), and the pin and details JSON contain no key for them. A returned pin's `lat/lng` equal `businesses.map_lat/map_lng` and differ from `business_locations.lat/lng` by 200–500 m.
-- [ ] **Outsider cannot** `select` `businesses.map_lat`, `map_lng` or `public_address` (42501; unchanged from spec 07).
-- [ ] Box rules for homemade match restaurant: inverted/null/NaN raise `invalid_bounds`; latitude clamped; a box over 90° returns `too_large` with no scan; a box crossing the 180° line returns both sides; 501 rows → 500 pins and `capped = true`, exactly 500 → `capped = false`.
-- [ ] Rate limits: the 121st `homemade_pins` call in a minute raises `rate_limited` (31st for `homemade_details`); a different caller is unaffected; the guest ceiling applies to the homemade kinds; the counters are separate from `pins`/`details` (using up one does not limit the other).
-- [ ] `business_owner_view.map_status` for homemade is `visible`, `place_not_found` or `needs_refresh` by the same rule as restaurants, and null with no saved address; restaurant results are unchanged.
-- [ ] A homemade photo of a fresh listed business is readable by `anon` through the existing storage policy, and not when the business is unlisted.
-- [ ] `src/types/database.ts` regenerated; existing migrations untouched; every spec 05, 06 and 07 pgTAP test passes unedited (apart from the allowlist).
+- [x] `anon` and `authenticated` can execute exactly `map_homemade_in_bounds` and `get_homemade_details` among the new functions; `private.homemade_is_fresh` is not executable by them (42501); the allowlist test is updated.
+- [x] `map_homemade_in_bounds` returns only fresh homemade businesses: a homemade row with `resolved_at` 29 days old appears, 31 days old does not, and it appears again after `apply_places_refresh('ok', …)`.
+- [x] A restaurant, an unlisted homemade, a `not_found` homemade, a homemade with no `map_lat` and a stale homemade never appear in `map_homemade_in_bounds`; `get_homemade_details` returns `null` for each, for a restaurant id and for a random uuid, with the same value.
+- [x] `map_restaurants_in_bounds` never returns a homemade business and `get_restaurant_details` returns `null` for a homemade id (unchanged; pinned by a test).
+- [x] **Outsider cannot** (as `anon` and as another signed-in user) read a homemade business's exact coordinates, `business_locations` row, `place_id`, address, `resolved_at` or `place_status`: not through either function, not through any table (42501), and the pin and details JSON contain no key for them. A returned pin's `lat/lng` equal `businesses.map_lat/map_lng` and differ from `business_locations.lat/lng` by 200–500 m.
+- [x] **Outsider cannot** `select` `businesses.map_lat`, `map_lng` or `public_address` (42501; unchanged from spec 07).
+- [x] Box rules for homemade match restaurant: inverted/null/NaN raise `invalid_bounds`; latitude clamped; a box over 90° returns `too_large` with no scan; a box crossing the 180° line returns both sides; 501 rows → 500 pins and `capped = true`, exactly 500 → `capped = false`.
+- [x] Rate limits: the 121st `homemade_pins` call in a minute raises `rate_limited` (31st for `homemade_details`); a different caller is unaffected; the guest ceiling applies to the homemade kinds; the counters are separate from `pins`/`details` (using up one does not limit the other).
+- [x] `business_owner_view.map_status` for homemade is `visible`, `place_not_found` or `needs_refresh` by the same rule as restaurants, and null with no saved address; restaurant results are unchanged.
+- [x] A homemade photo of a fresh listed business is readable by `anon` through the existing storage policy, and not when the business is unlisted.
+- [x] `src/types/database.ts` regenerated; existing migrations untouched; every spec 05, 06 and 07 pgTAP test passes unedited (apart from the allowlist). One approved assertion edit in spec 07: the homemade `map_status` assertion now expects `visible` instead of null (Decision 4).
 
 **App (PR 2)**
 - [ ] The Homemade tab shows a Google map (`PROVIDER_GOOGLE`) for guests, with homemade flags only.

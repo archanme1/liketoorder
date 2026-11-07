@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 
 import { RestaurantMapScreen } from '../components/RestaurantMapScreen';
 import { getCountryView } from '../countryViews';
+import * as lastRegion from '../lastRegion';
 import { useMapConfigured } from '../mapConfig';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -241,6 +242,48 @@ describe('RestaurantMapScreen: location flow', () => {
     expect(openSettings).toHaveBeenCalledTimes(1);
     await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByText(/Location is off for LikeToOrder/)).not.toBeOnTheScreen();
+  });
+
+  it('moves to the position even when the fix lands before the map is on screen', async () => {
+    permission('granted');
+    getPosition.mockResolvedValue({
+      coords: { latitude: 7, longitude: 6 },
+    } as Location.LocationObject);
+    // The saved opening view is slow to read, so the position arrives first.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow = jest.spyOn(lastRegion, 'readLastRegion').mockImplementation(async () => {
+      await held;
+      return null;
+    });
+    try {
+      const queryClient = new QueryClient();
+      await render(
+        <QueryClientProvider client={queryClient}>
+          <SafeAreaProvider
+            initialMetrics={{
+              frame: { x: 0, y: 0, width: 390, height: 844 },
+              insets: { top: 47, left: 0, right: 0, bottom: 34 },
+            }}
+          >
+            <RestaurantMapScreen />
+          </SafeAreaProvider>
+        </QueryClientProvider>,
+      );
+      // The fix has been read while the map is still loading.
+      await waitFor(() => expect(getPosition).toHaveBeenCalled());
+      expect(screen.queryByTestId('map-view')).not.toBeOnTheScreen();
+      expect(animateToRegion).not.toHaveBeenCalled();
+      await act(async () => release());
+      await screen.findByTestId('map-view');
+      await waitFor(() => expect(animateToRegion).toHaveBeenCalled());
+      expect(animateToRegion.mock.calls.at(-1)?.[0]).toMatchObject({ latitude: 7, longitude: 6 });
+      await act(async () => {});
+    } finally {
+      slow.mockRestore();
+    }
   });
 
   it('locate-me reads the permission fresh: back from Settings with location on, it moves', async () => {

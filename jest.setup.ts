@@ -132,10 +132,15 @@ jest.mock('react-native-maps', () => {
   const behaviour = { ignoreStopPropagation: false };
   const MapPressContext = React.createContext(undefined);
   const MapView = React.forwardRef(function MockMapView(
-    props: { onPress?: (pressed: unknown) => void },
+    props: { onPress?: (pressed: unknown) => void; onMapReady?: () => void },
     ref: unknown,
   ) {
     React.useImperativeHandle(ref, () => ({ animateToRegion }));
+    // The real map reports when it can take camera moves; the fake is ready once mounted.
+    const { onMapReady } = props;
+    React.useEffect(() => {
+      onMapReady?.();
+    }, [onMapReady]);
     return React.createElement(
       MapPressContext.Provider,
       { value: props.onPress },

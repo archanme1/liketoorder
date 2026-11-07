@@ -110,10 +110,17 @@ function ConfiguredMap() {
     [reduceMotion],
   );
 
-  // The position arrived in time: move there. A slow or failed fix leaves the map where it is.
+  // The position arrived in time: move there, once the map can take camera moves (the fix can
+  // land before the map is on screen, or before it reports ready). A slow or failed fix leaves
+  // the map where it is.
+  const [mapReady, setMapReady] = useState(false);
+  const onMapReady = useCallback(() => setMapReady(true), []);
+  const movedTo = useRef<MapRegion | null>(null);
   useEffect(() => {
-    if (myRegion) moveTo(myRegion);
-  }, [myRegion, moveTo]);
+    if (!myRegion || !mapReady || movedTo.current === myRegion) return;
+    movedTo.current = myRegion;
+    moveTo(myRegion);
+  }, [myRegion, mapReady, moveTo]);
 
   // Tapping a flag on the map does not move the map.
   const onSelectPin = useCallback((pin: Pin) => {
@@ -216,6 +223,7 @@ function ConfiguredMap() {
         style={StyleSheet.absoluteFill}
         provider={PROVIDER_GOOGLE}
         initialRegion={opening.region}
+        onMapReady={onMapReady}
         onRegionChangeComplete={onRegionChangeComplete}
         onPress={onMapPress}
         customMapStyle={MAP_STYLE}

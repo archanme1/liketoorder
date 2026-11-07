@@ -5,7 +5,7 @@
 - PR 2 (the app: Homemade tab map, circles, sheet, disclaimer, photo viewer, Manage Business status line, seed data, jest tests): `feature/homemade-map-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (guests can browse), §5 (Homemade specifics), §6 (Map), §14 row 08, §16 (Homemade read function, Photo viewer, Places coordinate refresh, Google terms review, Homemade photo note)
 **Plan mode:** required — adds a migration (functions, index, rate-limit kinds, a changed owner view), RLS and grants; touches well over ~5 files; changes the Homemade tab and refactors the spec 07 map screen so both tabs share it.
-**Status:** 📝 Spec written
+**Status:** 🚧 In progress
 
 ## Overview
 After this ships, anyone, signed in or not, can open the **Homemade** tab and see a full-screen Google map of home cooks. Each cook shows as a country flag (or neutral cuisine icon) at the centre of a **translucent 500 m circle** that stands for "somewhere in this area". The circle is drawn only when zoomed in; zoomed out, flags cluster exactly as on the Restaurants tab. No exact point or exact address is ever shown or returned.
@@ -372,9 +372,12 @@ No test file defines its own map or sheet mock.
 6. **One map screen, two configs.** The Restaurants screen is refactored into a shared screen (no behaviour change); the last viewed region is stored per tab; the "Not now" location note is remembered once for both. (Claude's default, from the product spec §6 saying both tabs use the same map; not asked.)
 7. **Circle taps follow what the library can do.** Pitfall 1 sets the rule: tappable circles only if they cannot close the sheet through a bubbled press; otherwise only the flag is tappable and this Decision is edited to say so. (Claude's default.)
 8. **Own rate-limit kinds** (`homemade_pins`, `homemade_details`), same numbers as restaurants, so one tab cannot use up the other's quota. (Claude's default.)
+9. **"View larger" on the seller Photos screen.** The existing photo options gain a "View larger" action that opens the photo viewer; tiles still open the options as before, so editing is not disturbed. (Archan, answer to open question 1)
+10. **No pinch-to-zoom in v1 of the viewer.** Swipe between photos and show each whole on screen. (Archan, answer to open question 2)
+11. **Two PRs.** PR 1 on `feature/homemade-map-backend` (this branch, renamed from `feature/homemade-map`), PR 2 on `feature/homemade-map-app` from `main` after PR 1 is merged. (Archan, answer to open question 3)
+12. **Seed photos are generated, plain-colour, fictional images,** so no licence or privacy question arises. (Archan, answer to open question 4)
+13. **Gate A review answers (Archan).** (a) The spec 07 assertion "map_status is null for homemade" (`07-restaurant-map.test.sql`) is changed to expect `visible`; it is the only edit to that file, forced by the `business_owner_view` change. (b) The box rules are copied into `map_homemade_in_bounds`, not extracted, and pgTAP equivalence tests keep the two functions in step. (c) Photo and menu visibility is left as spec 06 built it (`private.business_is_public` ignores freshness); noted in `docs/product/v1.md` §16.
+14. **Also changed by the migration, not named in the sketch above:** `private.consume_map_quota` is replaced to know the two new kinds (it hard-codes them), and the spec 05 pgTAP list of `private` functions gains `homemade_is_fresh`.
 
 ## Open questions
-1. **Photo viewer on the seller Photos screen.** Tiles there are buttons that open photo options (edit mode). Recommendation: keep that as is and add a **"View larger"** action to the existing photo options (so editing is not disturbed). Alternative: a second small "enlarge" icon on each tile. Needs Archan's choice before PR 2.
-2. **Pinch-to-zoom in the viewer.** Recommendation: not in v1 of the viewer (swipe between photos and show each whole on screen), because it needs a gesture library setup and no spec asks for it. Say if you want it.
-3. **Branch names.** This spec assumes PR 1 on `feature/homemade-map-backend` (this branch renamed before its first push) and PR 2 on `feature/homemade-map-app`, as for specs 06 and 07. Say if you want one PR instead.
-4. **Seed photos.** The seed needs a few small, EXIF-free JPEGs committed under `scripts/seed/photos/`. Recommendation: generated, plain-colour fictional images rather than real photos, so no licence or privacy question arises.
+All four were answered by Archan and are recorded as Decisions 9–12.

@@ -87,6 +87,7 @@ export function SheetMenu({
         <ScrollView
           horizontal
           nestedScrollEnabled
+          testID="menu-pages"
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: space.sm }}
         >
@@ -99,7 +100,7 @@ export function SheetMenu({
               <PhotoTile
                 path={photo.path}
                 uri={urlFor(photo.path)}
-                size={size.photoLarge}
+                size={size.photoThumb}
                 accessibilityLabel={menuPageLabel(name, index + 1, menuPhotos.length)}
                 onExpired={onExpired}
               />

@@ -36,6 +36,8 @@ export const size = {
   tabIcon: 24,
   photoThumb: 96,
   photoLarge: 160,
+  // The short cover banner at the top of the map sheet (spec 08 Decision 15).
+  coverBanner: 88,
   // Map markers (spec 07): flag pill, and cluster circles that grow with the count.
   flagWidth: 32,
   flagHeight: 24,

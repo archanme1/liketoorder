@@ -156,21 +156,19 @@ describe('the homemade sheet', () => {
     expect(screen.getByLabelText('Homemade cook details')).toBeOnTheScreen();
   });
 
-  it('shows the food-safety box first, ahead of the photos and the menu, so it is visible at half', async () => {
+  it('shows the small safety row, collapsed, with the note hidden until it is tapped', async () => {
     await openSheet();
-    await screen.findByTestId('homemade-disclaimer');
+    const row = await screen.findByTestId('homemade-disclaimer');
     expect(screen.getByText(HOMEMADE_DISCLAIMER_TITLE)).toBeOnTheScreen();
+    expect(screen.queryByText(HOMEMADE_DISCLAIMER_BODY)).toBeNull();
+    expect(row).toHaveProp('accessibilityState', { expanded: false });
+    await fireEvent.press(row);
     expect(screen.getByText(HOMEMADE_DISCLAIMER_BODY)).toBeOnTheScreen();
-    const text = JSON.stringify(screen.toJSON());
-    const at = (needle: string) => text.indexOf(needle);
-    expect(at('Food safety and allergies')).toBeGreaterThan(-1);
-    expect(at('Food safety and allergies')).toBeLessThan(at('Menu'));
-    expect(at('Food safety and allergies')).toBeLessThan(at('photo 1 of 2'));
   });
 
-  it('never truncates the disclaimer text', async () => {
+  it('never truncates the safety text, collapsed or open', async () => {
     await openSheet();
-    await screen.findByTestId('homemade-disclaimer');
+    await fireEvent.press(await screen.findByTestId('homemade-disclaimer'));
     expect(screen.getByText(HOMEMADE_DISCLAIMER_BODY).props.numberOfLines).toBeUndefined();
     expect(screen.getByText(HOMEMADE_DISCLAIMER_TITLE).props.numberOfLines).toBeUndefined();
   });
@@ -245,10 +243,11 @@ describe('the homemade sheet', () => {
     );
   });
 
-  it('caps only the sheet title for large text (the disclaimer scales fully)', async () => {
+  it('caps only the sheet title for large text (the safety row scales fully)', async () => {
     await openSheet();
-    await screen.findByTestId('homemade-disclaimer');
+    await fireEvent.press(await screen.findByTestId('homemade-disclaimer'));
     expect(SHEET_TITLE_MAX_FONT_MULTIPLIER).toBe(1.6);
     expect(screen.getByText(HOMEMADE_DISCLAIMER_BODY).props.maxFontSizeMultiplier).toBeUndefined();
+    expect(screen.getByText(HOMEMADE_DISCLAIMER_TITLE).props.maxFontSizeMultiplier).toBeUndefined();
   });
 });

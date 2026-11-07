@@ -15,10 +15,11 @@ import type { DetailsPhoto, HomemadeDetails } from '../schema';
 import { HomemadeDisclaimer } from './HomemadeDisclaimer';
 import type { SheetBodyProps } from './RestaurantSheet';
 import { SheetMenu } from './SheetMenu';
-import { SheetPhotos } from './SheetPhotos';
+import { useCoverAndGallery } from './SheetPhotos';
 
-// The body of the sheet for one home cook: loading, not available, error with Retry, or the
-// food-safety box, photos, menu and the "approximate area" note. On purpose there is no address,
+// The body of the sheet for one home cook: loading, not available, error with Retry, or (menu
+// first, spec 08 Decision 15) the cover banner, the small food-safety row, menu pages, menu items,
+// gallery, and at the very bottom the "approximate area" note. On purpose there is no address,
 // no Directions and no Request or Report buttons (those arrive in specs 09, 11 and 17).
 export function HomemadeSheetDetails({ id, onClose, closeLabel = 'Close' }: SheetBodyProps) {
   const { space, size, type } = useTheme();
@@ -83,19 +84,28 @@ function DetailsBody({ details }: { details: HomemadeDetails }) {
   );
 
   const sections = useMemo(() => {
-    const strip: DetailsPhoto[] = [];
+    let cover: DetailsPhoto | undefined;
+    const gallery: DetailsPhoto[] = [];
     const menuPhotos: DetailsPhoto[] = [];
     const itemPhotos = new Map<string, DetailsPhoto>();
     for (const photo of details.photos) {
-      if (photo.kind === 'cover') strip.unshift(photo);
-      else if (photo.kind === 'gallery') strip.push(photo);
+      if (photo.kind === 'cover') cover ??= photo;
+      else if (photo.kind === 'gallery') gallery.push(photo);
       else if (photo.kind === 'menu') menuPhotos.push(photo);
       else if (photo.menu_item_id && !itemPhotos.has(photo.menu_item_id)) {
         itemPhotos.set(photo.menu_item_id, photo);
       }
     }
-    return { strip, menuPhotos, itemPhotos };
+    return { cover, gallery, menuPhotos, itemPhotos };
   }, [details.photos]);
+
+  const photos = useCoverAndGallery({
+    name: details.name,
+    cover: sections.cover,
+    gallery: sections.gallery,
+    urlFor,
+    onExpired,
+  });
 
   // Prices use the cook's own currency; an unknown code hides prices rather than guessing.
   const currencies = useCurrencies();
@@ -106,13 +116,8 @@ function DetailsBody({ details }: { details: HomemadeDetails }) {
 
   return (
     <View style={{ gap: space.lg }}>
+      {photos.banner}
       <HomemadeDisclaimer />
-      <SheetPhotos
-        name={details.name}
-        photos={sections.strip}
-        urlFor={urlFor}
-        onExpired={onExpired}
-      />
       <SheetMenu
         name={details.name}
         items={details.items}
@@ -123,12 +128,14 @@ function DetailsBody({ details }: { details: HomemadeDetails }) {
         urlFor={urlFor}
         onExpired={onExpired}
       />
+      {photos.gallerySection}
       <View style={{ gap: space.xs }}>
         <Text variant="bodyLg" accessibilityRole="header">
           Where
         </Text>
         <Text>{HOMEMADE_AREA_NOTE}</Text>
       </View>
+      {photos.viewer}
     </View>
   );
 }

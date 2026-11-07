@@ -5,7 +5,7 @@
 - PR 2 (the app: form, picker, My requests, detail, sheet buttons, seed data, jest tests): `feature/pickup-requests-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (requests need sign-in), §5 (Homemade specifics), §8 (Pickup requests), §12 (notifications, for what is NOT built here), §14 row 09, §16 (Function privileges, Account deletion)
 **Plan mode:** required — adds a table, RLS, status-transition and read functions, a cron job and a new route group; touches well over ~5 files; changes the two map sheets and a pgTAP function allowlist.
-**Status:** 📝 Spec written
+**Status:** 🚧 In progress
 
 ## Overview
 After this ships, a signed-in customer can open a restaurant or homemade sheet, tap **Request pickup**, choose items from the menu (or write a free-text order), choose a pickup time, and submit. They then see the request in a **My requests** list with its status. A request is always shown as "Waiting for the seller" until the seller answers; it is **never shown as confirmed while pending**. The customer can cancel while it is pending. If the seller does not answer within the window, the request **expires on its own**. Submitting twice (double tap, retry after a bad connection) creates one request. When a request is `accepted`, a homemade customer can read the cook's **exact address**; nobody else can, at any other status.
@@ -205,6 +205,10 @@ Feature-specific:
 - Never log request contents, notes or addresses.
 - Free text (`order_text`, `note`): control characters are stripped in the app and refused by the database check; length limits only; no profanity filter (Decision 12). Newlines are allowed.
 - No payment UI, no totals presented as a charge: the summary says "Estimated total. Pay the seller directly." (placeholder wording; spec 18 owns the terms).
+- **PR 2 notes from the PR 1 plan (Archan):**
+  - The order summary says "Total excludes items without a price" whenever any ordered item has no price (`menu_items.price_minor` is nullable, so the snapshot `unit_price_minor` can be null). A business with no currency (`currency_code` null) shows no currency symbol.
+  - `invalid_pickup_time` is shown as "Pick a later time": a slot at the 15-minute edge can become invalid while the person types.
+  - PR 1 error codes the app maps: `not_signed_in`, `profile_incomplete`, `invalid_input`, `business_unavailable`, `own_business`, `invalid_pickup_time`, `invalid_items`, `invalid_text`, `item_unavailable`, `empty_order`, `too_many_pending`, `rate_limited`, `invalid_transition`, `not_found`.
 - Stage gates with a commit after each (stop and commit after each gate; no edits before "approved").
   - PR 1: **A** migration + pgTAP + types → review.
   - PR 2: **B** api, schema, status, hooks + tests → **C** form, picker, StatusChip, sheet button → **D** My requests, detail, address card, profile row, seed data + tests → manual run.

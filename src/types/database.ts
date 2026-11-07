@@ -163,6 +163,38 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"pickup_requests": {
+                  Row: {
+                    "business_id": string,"created_at": string,"currency_code": string | null,"customer_id": string,"expires_at": string,"id": string,"idempotency_key": string,"items": Json | null,"note": string | null,"order_text": string | null,"pickup_at": string,"responded_at": string | null,"status": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "business_id": string,"created_at"?: string,"currency_code"?: string | null,"customer_id": string,"expires_at": string,"id"?: string,"idempotency_key": string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at": string,"responded_at"?: string | null,"status"?: string,"updated_at"?: string
+                  }
+                  Update: {
+                    "business_id"?: string,"created_at"?: string,"currency_code"?: string | null,"customer_id"?: string,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at"?: string,"responded_at"?: string | null,"status"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "pickup_requests_business_id_fkey"
+      columns: ["business_id"]
+isOneToOne: false
+      referencedRelation: "businesses"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "pickup_requests_currency_code_fkey"
+      columns: ["currency_code"]
+isOneToOne: false
+      referencedRelation: "currencies"
+      referencedColumns: ["code"]
+    },{
+      foreignKeyName: "pickup_requests_customer_id_fkey"
+      columns: ["customer_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"places_rate_limits": {
                   Row: {
                     "count": number,"kind": string,"user_id": string,"window_kind": string,"window_start": string
@@ -234,6 +266,9 @@ isOneToOne: false
 "business_owner_view":
 { Args: { "p_owner_id": string }; Returns: Json
                            },
+"cancel_pickup_request":
+{ Args: { "p_request_id": string }; Returns: Json
+                           },
 "claim_photo_cleanup":
 { Args: Record<PropertyKey, never>; Returns: string[]
                            },
@@ -266,8 +301,17 @@ isOneToOne: false
 "get_my_business":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
+"get_my_pickup_address":
+{ Args: { "p_request_id": string }; Returns: Json
+                           },
+"get_my_pickup_request":
+{ Args: { "p_request_id": string }; Returns: Json
+                           },
 "get_restaurant_details":
 { Args: { "p_business_id": string }; Returns: Json
+                           },
+"list_my_pickup_requests":
+{ Args: { "p_before"?: string }; Returns: Json
                            },
 "map_homemade_in_bounds":
 { Args: { "p_max_lat": number,"p_max_lng": number,"p_min_lat": number,"p_min_lng": number }; Returns: Json
@@ -286,6 +330,9 @@ isOneToOne: false
                            },
 "set_seller_mode":
 { Args: { "p_on": boolean }; Returns: undefined
+                           },
+"submit_pickup_request":
+{ Args: { "p_business_id": string,"p_idempotency_key": string,"p_items": Json,"p_note": string,"p_order_text": string,"p_pickup_at": string }; Returns: Json
                            },
 "update_menu_item":
 { Args: { "p_description": string,"p_is_available": boolean,"p_item_id": string,"p_name": string,"p_price_minor": number }; Returns: undefined

@@ -2,7 +2,7 @@
 -- idempotency, limits, expiry, display_status, list/get/cancel, the accepted-request address, and
 -- that nothing private leaks. Own fixtures, one rolled-back transaction.
 begin;
-select plan(231);
+select plan(239);
 
 -- ── Helpers (pg_temp) ───────────────────────────────────────────────────────
 -- Ids:  users 00000000-0000-0000-0009-<n>   businesses …-0049-<n>   items …-0059-<n>
@@ -51,6 +51,15 @@ returns text language sql as $$
   select pg_temp.submit_err(p_biz, gen_random_uuid(), coalesce(p_at, now() + interval '1 hour'), p_items, p_text, p_note);
 $$;
 
+-- A submit that returns the request, or { "error": message } instead of raising.
+create function pg_temp.submit_json(p_biz uuid, p_key uuid, p_at timestamptz, p_items jsonb, p_text text, p_note text)
+returns jsonb language plpgsql as $$
+begin
+  return public.submit_pickup_request(p_biz, p_key, p_at, p_items, p_text, p_note);
+exception when others then
+  return jsonb_build_object('error', sqlerrm);
+end $$;
+
 create function pg_temp.cancel_err(p_id uuid) returns text language plpgsql as $$
 begin
   perform public.cancel_pickup_request(p_id);
@@ -98,14 +107,14 @@ grant all on res to public;
 --         8 rate limit   9 pending limit   10..18, 20..27 owners of businesses 10..18, 20..27
 --         30 thirty lines   31 validation   32 paging (51 rows)   33 submit   34 idempotency
 --         35 one pending per business   36 expiry job   37 key sets   38 cascade customer   39 owner of business 30
---         40 second rate-limit customer
+--         40 second rate-limit customer   41 replay tests
 -- Businesses (all fresh unless noted):  1 R1 restaurant, CAD   2 H1 homemade, CAD   3 H2 homemade, no currency
 --   10 unlisted   11 stale 31 d   12 exactly 30 d   13 place not_found   14 no map point, no location
 --   15 stale 31 d homemade   16 H3 homemade stale 31 d   17 H4 homemade   18 restaurant   20..27 homemade   30 homemade
 -- Items:  1 Soup 850   2 Salad (no price)   3 Sold out   all on R1;   4 Bread 450 on H1;   5 Other Cake on H2;   101..131 on R1
 insert into auth.users (id, email)
 select pg_temp.u(n), 'p09_' || n || '@example.test'
-  from unnest(array[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25,26,27,30,31,32,33,34,35,36,37,38,39,40]) n;
+  from unnest(array[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25,26,27,30,31,32,33,34,35,36,37,38,39,40,41]) n;
 update public.profiles set username = 'p09_' || right(id::text, 3) where id::text like '00000000-0000-0000-0009-%';
 update public.profiles set username = null where id = pg_temp.u(3);
 
@@ -340,7 +349,8 @@ select is((select j ->> 'business_type' from res where label = 'a'), 'restaurant
 select pg_temp.clear_requests(pg_temp.u(33));
 
 -- b: free text only, pickup 20 minutes ahead: expiry is the pickup time (earlier than created + 30 minutes)
-insert into res select 'b', public.submit_pickup_request(pg_temp.b(2), gen_random_uuid(), now() + interval '20 minutes', null, 'two loaves', null);
+select lives_ok($$ insert into res select 'b', public.submit_pickup_request(pg_temp.b(2), gen_random_uuid(), now() + interval '20 minutes', null, 'two loaves', null) $$,
+  'a homemade cook accepts a free-text request');
 select is((select (j ->> 'expires_at')::timestamptz from res where label = 'b'), now() + interval '20 minutes',
   'expires_at is the pickup time when that is earlier than created + 30 minutes');
 select is((select j ->> 'display_status' from res where label = 'b'), 'pending', 'a request expiring in 20 minutes shows pending');
@@ -349,8 +359,9 @@ select ok((select jsonb_typeof(j -> 'items') = 'null' and jsonb_typeof(j -> 'not
 select pg_temp.clear_requests(pg_temp.u(33));
 
 -- c: homemade, items only
-insert into res select 'c', public.submit_pickup_request(pg_temp.b(2), gen_random_uuid(), now() + interval '3 hours',
-  jsonb_build_array(jsonb_build_object('item_id', pg_temp.i(4), 'quantity', 1)), null, null);
+select lives_ok($$ insert into res select 'c', public.submit_pickup_request(pg_temp.b(2), gen_random_uuid(), now() + interval '3 hours',
+  jsonb_build_array(jsonb_build_object('item_id', pg_temp.i(4), 'quantity', 1)), null, null) $$,
+  'a homemade cook accepts an items-only request');
 select is((select j ->> 'business_type' from res where label = 'c'), 'homemade', 'a homemade request is accepted with items only');
 select is((select j -> 'items' from res where label = 'c'),
   jsonb_build_array(jsonb_build_object('item_id', pg_temp.i(4), 'name', 'Bread', 'unit_price_minor', 450, 'quantity', 1)),
@@ -359,13 +370,15 @@ select ok((select jsonb_typeof(j -> 'order_text') = 'null' from res where label 
 select pg_temp.clear_requests(pg_temp.u(33));
 
 -- d: pickup exactly 30 minutes ahead (the two rules agree)
-insert into res select 'd', public.submit_pickup_request(pg_temp.b(2), gen_random_uuid(), now() + interval '30 minutes', null, 'x', null);
+select lives_ok($$ insert into res select 'd', public.submit_pickup_request(pg_temp.b(2), gen_random_uuid(), now() + interval '30 minutes', null, 'x', null) $$,
+  'a homemade cook accepts a request with the pickup at created + 30 minutes');
 select is((select (j ->> 'expires_at')::timestamptz from res where label = 'd'), now() + interval '30 minutes',
   'pickup at created + 30 minutes: expires_at equals both');
 select pg_temp.clear_requests(pg_temp.u(33));
 
 -- e: a business with no currency
-insert into res select 'e', public.submit_pickup_request(pg_temp.b(3), gen_random_uuid(), now() + interval '1 hour', null, 'x', null);
+select lives_ok($$ insert into res select 'e', public.submit_pickup_request(pg_temp.b(3), gen_random_uuid(), now() + interval '1 hour', null, 'x', null) $$,
+  'a homemade cook with no currency accepts a request');
 select ok((select jsonb_typeof(j -> 'currency_code') = 'null' from res where label = 'e'), 'a business with no currency gives a null currency_code');
 select pg_temp.clear_requests(pg_temp.u(33));
 
@@ -505,12 +518,26 @@ select is((select count(*)::int from public.pickup_requests where customer_id = 
 update public.businesses set is_listed = false where id = pg_temp.b(1);
 set local role authenticated;
 select pg_temp.as_user(34);
-select is((public.submit_pickup_request(pg_temp.b(1), pg_temp.k(1), now() + interval '1 hour', null, 'again', null)) ->> 'id',
+select is(pg_temp.submit_json(pg_temp.b(1), pg_temp.k(1), now() + interval '1 hour', null, 'again', null) ->> 'id',
   (select j ->> 'id' from res where label = 'i1'),
   'a replay still returns the request after the business became unavailable');
 select is(pg_temp.try(p_text := 'x'), 'business_unavailable', 'a new key to that business is business_unavailable meanwhile');
 reset role;
 update public.businesses set is_listed = true where id = pg_temp.b(1);
+
+-- Replays the on-conflict fallback cannot mask: user 41 holds the one allowed pending request for Resto One,
+-- and each replay below would fail a check (pending limit, pickup time, empty order) if the key were not looked up first.
+set local role authenticated;
+select pg_temp.as_user(41);
+select lives_ok($$ insert into res select 'r1', public.submit_pickup_request(pg_temp.b(1), pg_temp.k(10), now() + interval '1 hour', null, 'original', null) $$,
+  'a first request is accepted for the replay tests');
+select is(pg_temp.submit_json(pg_temp.b(1), pg_temp.k(10), now() + interval '2 hours', null, 'second try', null), (select j from res where label = 'r1'),
+  'a replay while the one allowed pending request for that business exists returns the original, not too_many_pending');
+select is(pg_temp.submit_json(pg_temp.b(1), pg_temp.k(10), now() - interval '1 hour', null, 'late', null), (select j from res where label = 'r1'),
+  'a replay with a pickup time now in the past returns the original unchanged');
+select is(pg_temp.submit_json(pg_temp.b(1), pg_temp.k(10), now() + interval '1 hour', null, null, null), (select j from res where label = 'r1'),
+  'a replay with an empty order returns the original unchanged');
+reset role;
 
 -- ── 7. Limits ───────────────────────────────────────────────────────────────
 set local role authenticated;
@@ -551,10 +578,10 @@ select throws_ok($$ select pg_temp.sub_biz(2) $$, 'P0001', 'too_many_pending', '
 select pg_temp.as_user(8);
 select lives_ok($$ select pg_temp.cycle(1, 10) $$, '10 submits in an hour are accepted (each cancelled before the next)');
 select throws_ok($$ select pg_temp.sub_biz(2) $$, 'P0001', 'rate_limited', 'the 11th submit in an hour is rate_limited');
-select is((public.submit_pickup_request(pg_temp.b(2), (select k from rl_keys where n = 1), now() + interval '1 hour', null, 'x', null)) ->> 'id',
-  (select id::text from rl_keys where n = 1), 'a replay is never rate limited');
+select is(pg_temp.submit_json(pg_temp.b(2), (select k from rl_keys where n = 1), now() + interval '1 hour', null, 'x', null) ->> 'id',
+  (select id::text from rl_keys where n = 1), 'a replay at the rate limit (10 in the hour) returns the original request, not rate_limited');
 select pg_temp.as_user(40);
-select is(pg_temp.sub_biz(2) is not null, true, 'another customer is not affected by the limit');
+select lives_ok($$ select pg_temp.sub_biz(2) $$, 'another customer is not affected by the limit');
 select pg_temp.as_user(8);
 reset role;
 update public.pickup_requests set created_at = now() - interval '59 minutes' where customer_id = pg_temp.u(8);

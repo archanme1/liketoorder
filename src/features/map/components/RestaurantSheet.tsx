@@ -3,7 +3,7 @@ import BottomSheet, {
   useBottomSheetTimingConfigs,
 } from '@gorhom/bottom-sheet';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { AccessibilityInfo, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { Text } from '@/components/ui';
@@ -85,7 +85,7 @@ export function scrollBottomSpace(snaps: readonly number[], index: number, gap: 
   return Math.max(0, highest - visible) + gap;
 }
 
-export function RestaurantSheet({
+export const RestaurantSheet = memo(function RestaurantSheet({
   selected,
   listOpen,
   pins,
@@ -224,7 +224,7 @@ export function RestaurantSheet({
       ) : null}
     </BottomSheet>
   );
-}
+});
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },

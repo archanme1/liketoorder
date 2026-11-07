@@ -67,10 +67,9 @@ function ConfiguredMap() {
   const [notice, setNotice] = useState<LocationNoticeReason | null>(null);
 
   const permission = useLocationPermission();
-  const { opening, myRegion } = useInitialRegion({
-    permission: permission.state,
-    getPosition: permission.getPosition,
-  });
+  // The callbacks are stable; the `permission` object itself is new on every render.
+  const { request, refresh, getPosition } = permission;
+  const { opening, myRegion } = useInitialRegion({ permission: permission.state, getPosition });
   const { region, settledRegion, box, onRegionChangeComplete } = useMapRegion(
     opening?.region ?? null,
   );
@@ -127,14 +126,20 @@ function ConfiguredMap() {
     setSelected(pin);
   }, []);
   // Picking from the list does: a short move that centres the pin above the sheet.
+  // The sheet gets this callback, so it must not change with every camera move: the current
+  // region is read from a ref.
+  const regionRef = useRef<MapRegion | null>(null);
+  useEffect(() => {
+    regionRef.current = region;
+  }, [region]);
   const onSelectFromList = useCallback(
     (pin: Pin) => {
       setListOpen(false);
       setOpenedFromList(true);
       setSelected(pin);
-      moveTo(regionForPick(pin, region));
+      moveTo(regionForPick(pin, regionRef.current));
     },
-    [moveTo, region],
+    [moveTo],
   );
   const onClearSelection = useCallback(() => {
     setSelected(null);
@@ -169,22 +174,22 @@ function ConfiguredMap() {
   );
 
   const onAllow = useCallback(() => {
-    void permission.request();
-  }, [permission]);
+    void request();
+  }, [request]);
 
   const onLocateMe = useCallback(async () => {
     setNotice(null);
     // Always ask the system again: the person may have changed it in Settings since the last look.
-    let state = await permission.refresh();
-    if (state === 'undetermined') state = await permission.request();
+    let state = await refresh();
+    if (state === 'undetermined') state = await request();
     if (state === 'granted') {
-      const position = await permission.getPosition();
+      const position = await getPosition();
       if (position) moveTo(regionAround(position.latitude, position.longitude));
       else setNotice('no_fix');
     } else if (state === 'denied' || state === 'denied_forever' || state === 'services_off') {
       setNotice(state);
     }
-  }, [permission, moveTo]);
+  }, [refresh, request, getPosition, moveTo]);
 
   const openSettings = useCallback(() => {
     void Linking.openSettings();

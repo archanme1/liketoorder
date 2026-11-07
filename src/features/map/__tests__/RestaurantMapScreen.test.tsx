@@ -333,6 +333,27 @@ describe('RestaurantMapScreen: location flow', () => {
   });
 });
 
+describe('RestaurantMapScreen: re-renders', () => {
+  it('moving the camera does not re-render the bottom sheet', async () => {
+    await renderScreen();
+    // Let the opening answers (pins, cuisines) arrive first: new data legitimately re-renders.
+    await waitFor(() => expect(db.rpc).toHaveBeenCalled());
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 100)));
+    const before = screen.getByTestId('bottom-sheet').props;
+    await act(async () => {
+      screen.getByTestId('map-view').props.onRegionChangeComplete({
+        latitude: 40,
+        longitude: 10,
+        latitudeDelta: 0.5,
+        longitudeDelta: 0.5,
+      });
+    });
+    const after = screen.getByTestId('bottom-sheet').props;
+    expect(after.onChange).toBe(before.onChange);
+    expect(after.onClose).toBe(before.onClose);
+  });
+});
+
 describe("RestaurantMapScreen: the person's position never leaves the phone", () => {
   it('sends only the map box to Supabase, never the position, and nothing else anywhere', async () => {
     const fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no network'));

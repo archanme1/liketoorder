@@ -68,6 +68,7 @@ liketoorder/
 - Shared UI → `src/components/ui/`; colors/spacing → `src/theme/tokens.ts`
 - Schema change → new migration in `supabase/migrations/` (created with `npx supabase migration new <name>`)
 - Secrets or third-party API keys (e.g. Places autocomplete) → Supabase Edge Function, never in the app bundle
+- Any map, marker, sheet or location work → read `.claude/skills/map-markers/SKILL.md` first, especially "Lessons from spec 07"
 
 ---
 
@@ -180,7 +181,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 05 | seller-onboarding | ✅ Shipped | .claude/specs/05-seller-onboarding.md |
 | 06 | menu-management | ✅ Shipped | .claude/specs/06-menu-management.md |
 | 07 | restaurant-map | ✅ Shipped | .claude/specs/07-restaurant-map.md |
-| 08 | homemade-map | ⬜ Not started | — |
+| 08 | homemade-map | 🚧 In progress | .claude/specs/08-homemade-map.md |
 | 09 | pickup-requests | ⬜ Not started | — |
 | 10 | seller-request-inbox | ⬜ Not started | — |
 | 11 | table-requests | ⬜ Not started | — |

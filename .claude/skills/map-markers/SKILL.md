@@ -72,3 +72,32 @@ export function useFloat() {
 ## Homemade markers
 - Always use the **public approximate coordinates** (`approx_lat`, `approx_lng`) — never the exact address table.
 - Show a translucent circle (~300 m radius) instead of a pinpoint for homemade sellers when zoomed in close.
+
+## Lessons from spec 07 (read before any map work)
+Each one cost a fix after the spec 07 manual run. Source: `.claude/specs/07-restaurant-map.md` (Decisions 23–31, device-run notes).
+
+**Taps and events**
+- A marker press also fires the map's `onPress` on iOS (both are bubbling events), so a flag tap closed the sheet at once. Fix twice over: every marker type (flag, cluster, and any new one) sets `stopPropagation`, **and** the map's `onPress` ignores bubbled marker presses (`isMarkerPressEvent` in `src/features/map/mapEvents.ts`: `nativeEvent.action === 'marker-press'`).
+- The jest map fake must bubble events like the real library, with a switch to ignore `stopPropagation` so the second layer can be tested alone. A fake that does not bubble hid this bug until the simulator.
+- Picking a place from a list moves the camera (one short move that puts the pin in the free part of the map above the half-open sheet, never zooming out); tapping a flag on the map never moves the camera.
+
+**Bottom sheet**
+- Sheet content uses the library's own scroll component. Long lists are a plain virtualised `FlatList` that renders `BottomSheetScrollView` (`useBottomSheetScrollableCreator`), not `BottomSheetFlatList`, which did not scroll at the half snap.
+- The library makes the sheet as tall as its highest snap, so at a lower snap the bottom of the scroll view is off screen. Give the content bottom space of (highest snap − current snap) + a gap (`scrollBottomSpace` in `RestaurantSheet.tsx`), and compute snap heights from the measured screen area, not the window. jest checks the arithmetic only; check the real layout in the simulator.
+- A place opened from a list sits on top of it like a stacked screen: swipe-down past the lowest snap and the X both go back to the list (X labelled "Back to list"). From a flag, they just close. Tapping the bare map clears the stack.
+
+**Large text**
+- Cap only the big titles and the tab labels (`maxFontSizeMultiplier`: sheet titles 1.6, tab labels 1.3); body text, rows, prices and addresses keep scaling. The collapsed snap grows with font scale. Check at the largest iOS "Larger Accessibility Sizes".
+
+**Map look**
+- Hide Google's own business labels with `customMapStyle` and one rule, `poi.business` off (`src/features/map/mapStyle.ts`). Nothing else. Android may prefer cloud styling over the JSON; check on a device.
+- Wait for the map to be ready (`onMapReady`) before moving the camera.
+- Stable callbacks (`useCallback`) and memoised markers (`React.memo`), as in "Performance rules".
+
+**Location and privacy**
+- Exact position never leaves the phone. The request box is rounded outward to a coarse grid (`snapBox`, 0.05°), so the box's middle can never be the person's position. Permission texts and the pre-permission note must say exactly this ("We only receive the map area you're looking at"); changing the iOS string needs a rebuild.
+- Re-read the location permission on "Locate me" and when the app returns from Settings (`AppState` change to `active`, in `useLocationPermission`).
+
+**Setup and tests**
+- The app needs the `expo-dev-client` development build (`npx expo run:ios`, run by Archan); Expo Go cannot run the map.
+- Local demo seed data makes pgTAP tests that count rows fail until `npx supabase db reset`.

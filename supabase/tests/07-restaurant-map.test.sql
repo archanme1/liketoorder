@@ -476,7 +476,7 @@ select is(public.get_my_business() ->> 'map_status', 'needs_refresh',
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0007-000000000007","role":"authenticated"}';
 select is(public.get_my_business() ->> 'map_status', 'place_not_found', 'map_status is place_not_found for a not_found place');
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0007-000000000004","role":"authenticated"}';
-select is(jsonb_typeof(public.get_my_business() -> 'map_status'), 'null', 'map_status is null for homemade');
+select is(public.get_my_business() ->> 'map_status', 'visible', 'map_status is visible for a fresh homemade business (spec 08)');
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0007-000000000006","role":"authenticated"}';
 select is(jsonb_typeof(public.get_my_business() -> 'map_status'), 'null',
   'map_status is null for a restaurant that has no saved address');

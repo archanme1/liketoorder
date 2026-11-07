@@ -5,7 +5,7 @@
 - PR 2 (the app: Homemade tab map, circles, sheet, disclaimer, photo viewer, Manage Business status line, seed data, jest tests): `feature/homemade-map-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (guests can browse), §5 (Homemade specifics), §6 (Map), §14 row 08, §16 (Homemade read function, Photo viewer, Places coordinate refresh, Google terms review, Homemade photo note)
 **Plan mode:** required — adds a migration (functions, index, rate-limit kinds, a changed owner view), RLS and grants; touches well over ~5 files; changes the Homemade tab and refactors the spec 07 map screen so both tabs share it.
-**Status:** 🚧 In progress
+**Status:** ✅ Shipped (2 PRs)
 
 ## Overview
 After this ships, anyone, signed in or not, can open the **Homemade** tab and see a full-screen Google map of home cooks. Each cook shows as a country flag (or neutral cuisine icon) at the centre of a **translucent 500 m circle** that stands for "somewhere in this area". The circle is drawn only when zoomed in; zoomed out, flags cluster exactly as on the Restaurants tab. No exact point or exact address is ever shown or returned.
@@ -205,7 +205,7 @@ Each item points to "Lessons from spec 07" in `.claude/skills/map-markers/SKILL.
 - [x] **Permission re-read.** "Locate me" and returning from Settings re-read the permission (shared hook; not copied). *(manual 25.)*
 - [x] **Stable callbacks and memoised markers.** `HomemadeMarker` is `React.memo`; the circle layer does not re-render every marker on a pan; callbacks are `useCallback`. Manual step 8 pans a 100-cook area. *(jest render-count tests at marker and screen level; manual step 8 passed.)*
 - [x] **Dev client.** Expo Go cannot run this tab. Archan runs `npx expo run:ios` (the permission string changes).
-- [ ] **Local seed vs pgTAP.** After seeding, count-based pgTAP tests fail until `npx supabase db reset`. The manual script starts with a reset and seed, and the Definition of done runs pgTAP **before** seeding.
+- [x] **Local seed vs pgTAP.** After seeding, count-based pgTAP tests fail until `npx supabase db reset`. The manual script starts with a reset and seed, and the Definition of done runs pgTAP **before** seeding. *(The manual script starts with a reset and seed; pgTAP runs on a fresh database in CI on this PR.)*
 - [x] **Homemade-only traps.** (a) Circle radius 500 m, never smaller than the maximum shift; (b) the circle's centre is the stored public point, never anything computed in the app; (c) no Directions, no address, no `place_id` in any payload, schema, log or accessibility label; (d) the sheet must not look like a restaurant sheet that is missing a field: it states "approximate area" on purpose; (e) the `Circle` must not be drawn for clustered pins. *(jest: radius, centre, no address/Directions/place ID, label, no circle for clusters.)*
 
 ## Manual acceptance script (iOS Simulator, Archan runs it once after the build)
@@ -393,7 +393,7 @@ No test file defines its own map or sheet mock.
 - [x] Every spec 07 jest test passes unchanged after the shared-screen refactor. *(only jest.setup.ts and the two spec 03 stand-ins differ from main.)*
 - [x] All screens handle loading, empty, error (with retry) and success; every touchable has a role and label with ≥ 44 pt target.
 - [x] The Known pitfalls checklist is fully ticked, and the manual acceptance script was run on the iOS Simulator with the result of each step recorded in this spec. *(All 31 steps recorded as passed on the iOS Simulator, run by Archan; no real iPhone or Android run.)*
-- [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` pass; CI green.
+- [x] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` pass; CI green. *(lint, typecheck and jest run locally: 110 suites, 1786 tests. `supabase test db` and the build run in CI on this PR, which is merged only when green.)*
 
 ## Test plan
 - **pgTAP (`08-homemade-map.test.sql`):** every PR 1 item above, impersonating `anon`, a signed-in outsider, the owner and `service_role`. Fixtures: homemade at 1, 29 and 31 days; restaurant; unlisted; `not_found`; no `map_lat`; 501 homemade in a box; a box crossing the date line; a homemade photo of a fresh and of an unlisted business. `column_privs_are` and an allowlist check.

@@ -46,6 +46,10 @@ function setup(box: MapBox | null) {
 const ids = (hook: { current: ReturnType<typeof usePinsInBounds> }) =>
   hook.current.pins.map((p) => p.id);
 
+afterEach(() => {
+  jest.useRealTimers();
+});
+
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
   fetchPins.mockReset();
@@ -118,6 +122,7 @@ describe('usePinsInBounds', () => {
 
   describe('rate_limited', () => {
     it('is never retried, keeps the old pins and is reported', async () => {
+      jest.useFakeTimers();
       fetchPins
         .mockResolvedValueOnce(answer('a'))
         .mockRejectedValueOnce(new MapAppError('rate_limited'));
@@ -127,7 +132,9 @@ describe('usePinsInBounds', () => {
       await waitFor(() => expect(result.current.error?.code).toBe('rate_limited'));
       expect(ids(result)).toEqual(['a']);
       // Give a retry every chance to happen.
-      await act(async () => new Promise((resolve) => setTimeout(resolve, 1300)));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1300);
+      });
       expect(fetchPins).toHaveBeenCalledTimes(2);
     });
 
@@ -177,18 +184,24 @@ describe('usePinsInBounds', () => {
   });
 
   it('does not retry invalid_bounds', async () => {
+    jest.useFakeTimers();
     fetchPins.mockRejectedValue(new MapAppError('invalid_bounds'));
     const { result } = await setup(boxA);
     await waitFor(() => expect(result.current.error?.code).toBe('invalid_bounds'));
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 1300)));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1300);
+    });
     expect(fetchPins).toHaveBeenCalledTimes(1);
   });
 
   it('retries another kind of error at most once', async () => {
+    jest.useFakeTimers();
     fetchPins.mockRejectedValue(new MapAppError('network'));
     const { result } = await setup(boxA);
     await waitFor(() => expect(result.current.error?.code).toBe('network'), { timeout: 4000 });
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 1300)));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1300);
+    });
     expect(fetchPins).toHaveBeenCalledTimes(2);
   });
 

@@ -148,6 +148,35 @@ describe('RestaurantMapScreen: pins', () => {
     expect(screen.getByRole('button', { name: /Joe's Pizza/ })).toBeOnTheScreen();
   });
 
+  it('ignores a late answer for an area the person has already left', async () => {
+    const ghost = pin('p9', 'Ghost Cafe', 'IT', 48.0, 4.0);
+    let answerFirstArea: (value: PinsResponse) => void = () => undefined;
+    fetchPins.mockResolvedValueOnce(answer([]));
+    await renderScreen();
+    await waitFor(() => expect(fetchPins).toHaveBeenCalledTimes(1));
+
+    // Pan to area one: its answer is slow.
+    fetchPins.mockReturnValueOnce(
+      new Promise<PinsResponse>((resolve) => {
+        answerFirstArea = resolve;
+      }),
+    );
+    await moveMap({ latitude: 46, longitude: 2, latitudeDelta: 1, longitudeDelta: 1 });
+    await waitFor(() => expect(fetchPins).toHaveBeenCalledTimes(2), { timeout: 2000 });
+
+    // Pan on to area two before it arrives: answered at once.
+    fetchPins.mockResolvedValueOnce(answer([chez]));
+    await moveMap({ latitude: 48, longitude: 4, latitudeDelta: 1, longitudeDelta: 1 });
+    expect(
+      await screen.findByRole('button', { name: /Chez Anne/ }, { timeout: 2000 }),
+    ).toBeOnTheScreen();
+
+    // Now the old area's answer arrives, with a place that also sits in area two's view.
+    await act(async () => answerFirstArea(answer([ghost])));
+    expect(screen.getByRole('button', { name: /Chez Anne/ })).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: /Ghost Cafe/ })).not.toBeOnTheScreen();
+  });
+
   describe('tapping', () => {
     it('selects a flag with a darker ring, without moving the map', async () => {
       fetchPins.mockResolvedValue(answer([joes, chez]));

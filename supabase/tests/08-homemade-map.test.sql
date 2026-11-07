@@ -1,7 +1,7 @@
 -- Spec 08 (PR 1): homemade map backend — freshness guard, bounding-box pins, details, own rate-limit
 -- counters, owner map_status for homemade, photo visibility, and that the box rules match restaurants.
 begin;
-select plan(132);
+select plan(136);
 
 -- ── Helpers (pg_temp) ───────────────────────────────────────────────────────
 -- A pins answer with ids removed, so a homemade answer and a restaurant answer for mirrored
@@ -31,13 +31,14 @@ end $$;
 --  1 H1  homemade, real set_business_location path, resolved 1 day ago, exact (71.123456, 101.654321)
 --  2 H29 homemade, resolved 29 days ago (71.13, 101.60)      3 H31 homemade, 31 days ago (71.14, 101.61)
 --  4 UL  homemade, unlisted (71.15, 101.62)                  5 NF  homemade, place_status not_found (71.16, 101.63)
---  6 NM  homemade, no map point, no location                 7 R1  restaurant, fresh (71.17, 101.64)
+--  6 NM  homemade, no map point, fresh ok location row       7 R1  restaurant, fresh (71.17, 101.64)
 --  8 outsider, no business                                   9 user for the equivalence runs
+-- 13 NL  homemade, no map point and no location row (the owner whose map_status is null)
 -- 10 P / 11 E / 12 W: homemade at the pole and either side of the date line; 0019-10/11/12 are restaurant twins
 --    at the same points with the same names. 1001..1501: 501 homemade cap fixtures; 0019-1001..1501: restaurant twins.
 insert into auth.users (id, email)
 select ('00000000-0000-0000-0008-' || lpad(n::text, 12, '0'))::uuid, 'h' || n || '@example.test'
-  from (select generate_series(1, 12) union all select generate_series(20, 22)
+  from (select generate_series(1, 13) union all select generate_series(20, 22)
         union all select generate_series(1001, 1501) union all select generate_series(2001, 2501)) g(n);
 
 insert into public.businesses (id, owner_id, type, name, cuisine_code, map_lat, map_lng, public_address, is_listed, currency_code) values
@@ -55,6 +56,8 @@ insert into public.businesses (id, owner_id, type, name, cuisine_code, map_lat, 
    null, null, null, true, null),
   ('00000000-0000-0000-0018-000000000007', '00000000-0000-0000-0008-000000000007', 'restaurant', 'Fresh Restaurant', 'IT',
    71.17, 101.64, '7 Resto St, Tromso', true, 'CAD'),
+  ('00000000-0000-0000-0018-000000000013', '00000000-0000-0000-0008-000000000013', 'homemade', 'No Location Kitchen', 'IT',
+   null, null, null, true, null),
   ('00000000-0000-0000-0018-000000000010', '00000000-0000-0000-0008-000000000010', 'homemade', 'Polar Pin', 'IT',
    89.5, 5.0, null, true, null),
   ('00000000-0000-0000-0018-000000000011', '00000000-0000-0000-0008-000000000011', 'homemade', 'East Pin', 'IT',
@@ -73,6 +76,7 @@ insert into public.business_locations (business_id, place_id, formatted_address,
   ('00000000-0000-0000-0018-000000000003', 'pH31', '31 Secret Rd, Tromso', 71.1401, 101.6101, now() - interval '31 days', 'ok'),
   ('00000000-0000-0000-0018-000000000004', 'pUL',  '4 Secret Rd, Tromso',  71.1501, 101.6201, now() - interval '1 day',   'ok'),
   ('00000000-0000-0000-0018-000000000005', 'pNF',  '5 Secret Rd, Tromso',  71.1601, 101.6301, now() - interval '1 day',   'not_found'),
+  ('00000000-0000-0000-0018-000000000006', 'pNM',  '6 Secret Rd, Tromso',  71.1701, 101.6401, now() - interval '1 day',   'ok'),
   ('00000000-0000-0000-0018-000000000007', 'pR1',  '7 Resto St, Tromso',   71.17, 101.64,     now() - interval '1 day',   'ok'),
   ('00000000-0000-0000-0018-000000000010', 'pP',   '1 Secret Rd, Oslo',    89.5001, 5.0001,   now(), 'ok'),
   ('00000000-0000-0000-0018-000000000011', 'pE',   '1 Secret Rd, East',    60.1001, 179.9001, now(), 'ok'),
@@ -123,11 +127,13 @@ insert into public.business_photos (id, business_id, kind, status, position, pat
   ('00000000-0000-0000-0038-000000000004', '00000000-0000-0000-0018-000000000002', 'cover', 'ready', null,
    '00000000-0000-0000-0018-000000000002/00000000-0000-0000-0038-000000000004.jpg'),
   ('00000000-0000-0000-0038-000000000005', '00000000-0000-0000-0018-000000000004', 'cover', 'ready', null,
-   '00000000-0000-0000-0018-000000000004/00000000-0000-0000-0038-000000000005.jpg');
+   '00000000-0000-0000-0018-000000000004/00000000-0000-0000-0038-000000000005.jpg'),
+  ('00000000-0000-0000-0038-000000000006', '00000000-0000-0000-0018-000000000003', 'cover', 'ready', null,
+   '00000000-0000-0000-0018-000000000003/00000000-0000-0000-0038-000000000006.jpg');
 insert into storage.objects (bucket_id, name, metadata)
 select 'business-media', business_id::text || '/' || id::text || '.jpg', '{"mimetype":"image/jpeg","size":1000}'::jsonb
   from public.business_photos
- where id between '00000000-0000-0000-0038-000000000001' and '00000000-0000-0000-0038-000000000005';
+ where id between '00000000-0000-0000-0038-000000000001' and '00000000-0000-0000-0038-000000000006';
 
 delete from public.map_rate_limits;    -- dev data must not count toward the limits below
 
@@ -402,7 +408,7 @@ set local request.jwt.claims = '{"sub":"00000000-0000-0000-0008-000000000003","r
 select is(public.get_my_business() ->> 'map_status', 'needs_refresh', 'map_status is needs_refresh once the address is over 30 days old');
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0008-000000000005","role":"authenticated"}';
 select is(public.get_my_business() ->> 'map_status', 'place_not_found', 'map_status is place_not_found for a not_found place');
-set local request.jwt.claims = '{"sub":"00000000-0000-0000-0008-000000000006","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"00000000-0000-0000-0008-000000000013","role":"authenticated"}';
 select is(jsonb_typeof(public.get_my_business() -> 'map_status'), 'null', 'map_status is null for a cook with no saved address');
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0008-000000000007","role":"authenticated"}';
 select is(public.get_my_business() ->> 'map_status', 'visible', 'a restaurant owner''s map_status is unchanged (visible)');
@@ -488,6 +494,16 @@ set local request.jwt.claims = '{"sub":"00000000-0000-0000-0008-000000000008","r
 select is((select count(*)::int from storage.objects
             where bucket_id = 'business-media' and name like '00000000-0000-0000-0018-000000000004/%'), 0,
   'a signed-in outsider cannot read the storage objects of an unlisted homemade cook');
+-- Known behaviour, spec 08 Decision 13c (see docs/product/v1.md §16): photos of a hidden (stale) cook stay
+-- readable by id and path. No location is revealed. If this is tightened later, update §16 with it.
+reset role;
+set local role anon;
+set local request.jwt.claims = '{"role":"anon"}';
+select is((select count(*)::int from public.business_photos where business_id = '00000000-0000-0000-0018-000000000003'), 1,
+  'known behaviour, Decision 13c (see docs/product/v1.md §16): anon still reads the photo row of a 31-day-old (hidden) cook');
+select is((select count(*)::int from storage.objects
+            where bucket_id = 'business-media' and name like '00000000-0000-0000-0018-000000000003/%'), 1,
+  'known behaviour, Decision 13c (see docs/product/v1.md §16): anon still reads the storage object of a 31-day-old (hidden) cook');
 reset role;
 
 -- ── Rate limits: own counters per tab ───────────────────────────────────────
@@ -609,6 +625,12 @@ select ok((select count(*) from boxes where pg_temp.run(true, a, b, c, d) like '
   'the equivalence boxes are not vacuous: at least 8 of them return pins');
 select ok((select count(*) from boxes where pg_temp.run(true, a, b, c, d) like 'ERR:invalid_bounds%') = 6,
   'and 6 of them are invalid_bounds');
+-- The answers once more, kept in a table, so the branch checks below do not spend more of the 120 calls.
+create temp table answers as select a, b, c, d, pg_temp.run(true, a, b, c, d) as r from boxes;
+select ok((select count(*) from answers where r like '%"too_large": true%') >= 4,
+  'the equivalence boxes reach the too_large branch: at least 4 of them');
+select ok((select count(*) from answers where r like '%"capped": true%') >= 1,
+  'the equivalence boxes reach the capped branch: at least 1 of them');
 reset role;
 
 select * from finish();

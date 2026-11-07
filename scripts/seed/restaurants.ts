@@ -8,14 +8,19 @@
  * - Safe to re-run: it deletes and re-creates only the accounts named seed-*@example.com.
  * - Place IDs are fake (FAKE_PLACE_…): Directions will not open a real place for them.
  * - Home cooks go through the real set_business_location function, so their public map point is
- *   the real 200–500 m shift. (Photos for cooks are added in a later step.)
+ *   the real 200–500 m shift. Photos are plain-colour files from
+ *   scripts/seed/photos/, uploaded to the local bucket; one cook's file is left out on purpose.
  * - Never run by CI.
  */
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import type { Database } from '../../src/types/database';
 
-import { HOMEMADE_COOKS, HOMEMADE_HIDDEN } from './homemadeData';
+import { HOMEMADE_COOKS, HOMEMADE_HIDDEN, type HomemadePhotos } from './homemadeData';
 import {
   AREAS,
   HIDDEN,
@@ -48,6 +53,19 @@ function fail(error: { message: string } | null, what: string): void {
   if (error) throw new Error(`${what}: ${error.message}`);
 }
 
+const BUCKET = 'business-media';
+
+// Removes the stored files of a seed user's businesses (the photo rows go with the business, but
+// the files would be left behind). Best effort: a failure here must not stop the re-seed.
+async function removeSeedFiles(db: Db, ownerId: string): Promise<void> {
+  const businesses = await db.from('businesses').select('id').eq('owner_id', ownerId);
+  const ids = (businesses.data ?? []).map((row) => row.id);
+  if (ids.length === 0) return;
+  const photos = await db.from('business_photos').select('path').in('business_id', ids);
+  const paths = (photos.data ?? []).map((row) => row.path);
+  if (paths.length > 0) await db.storage.from(BUCKET).remove(paths);
+}
+
 async function removeSeedUsers(db: Db): Promise<number> {
   let removed = 0;
   for (let page = 1; ; page++) {
@@ -56,6 +74,7 @@ async function removeSeedUsers(db: Db): Promise<number> {
     const users = data?.users ?? [];
     for (const user of users) {
       if (!isSeedEmail(user.email)) continue;
+      await removeSeedFiles(db, user.id).catch(() => undefined);
       const result = await db.auth.admin.deleteUser(user.id);
       fail(result.error, `delete ${user.email}`);
       removed++;
@@ -127,6 +146,40 @@ async function createBusiness(
   return businessId;
 }
 
+// Photo rows for a cook, the same shape the app's own upload ends with (status ready, path
+// <business_id>/<id>.jpg), and the files in the private bucket through the service role.
+async function addPhotos(db: Db, businessId: string, name: string, photos: HomemadePhotos) {
+  const entries: { kind: 'cover' | 'gallery' | 'menu'; file: string; position: number | null }[] = [
+    ...(photos.cover ? [{ kind: 'cover' as const, file: photos.cover, position: null }] : []),
+    ...(photos.gallery ?? []).map((file, i) => ({
+      kind: 'gallery' as const,
+      file,
+      position: i + 1,
+    })),
+    ...(photos.menu ?? []).map((file, i) => ({ kind: 'menu' as const, file, position: i + 1 })),
+  ];
+  for (const entry of entries) {
+    const id = randomUUID();
+    const path = `${businessId}/${id}.jpg`;
+    const row = await db.from('business_photos').insert({
+      id,
+      business_id: businessId,
+      kind: entry.kind,
+      path,
+      status: 'ready',
+      position: entry.position,
+    });
+    fail(row.error, `photo row ${name}`);
+    if (photos.fileMissing) continue;
+    const bytes = readFileSync(join('scripts', 'seed', 'photos', `${entry.file}.jpg`));
+    const upload = await db.storage
+      .from(BUCKET)
+      .upload(path, bytes, { contentType: 'image/jpeg', upsert: true });
+    fail(upload.error, `photo file ${name}`);
+  }
+  return entries.length;
+}
+
 async function addMenu(
   db: Db,
   businessId: string,
@@ -188,6 +241,7 @@ async function main() {
   let menus = 0;
   let menuItems = 0;
   let homemadeVisible = 0;
+  let photoCount = 0;
 
   try {
     for (const [index, seed] of RESTAURANTS.entries()) {
@@ -285,6 +339,7 @@ async function main() {
       });
       cooks++;
       if (cook.menu) await addMenu(db, businessId, cook.name, cook.menu);
+      if (cook.photos) photoCount += await addPhotos(db, businessId, cook.name, cook.photos);
     }
     homemadeVisible = cooks;
 
@@ -343,6 +398,9 @@ async function main() {
   );
   console.log(`Added ${homemadeVisible} home cooks that SHOULD appear on the Homemade map:`);
   console.log('  Oshawa 5, Cambridge 3, a tight downtown Toronto group of 5 (circles overlap).');
+  console.log(
+    `  ${photoCount} photos: Nonna Rosa's Table has all of them; one cook has items only, one menu photos only, one a cover only, and Little Seoul Banchan's photo FILE is missing on purpose.`,
+  );
   console.log(
     `Added ${HOMEMADE_HIDDEN.length} cooks that must NOT appear: Stale Samosas, Gone Place, Unlisted Kitchen.`,
   );

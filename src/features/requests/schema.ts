@@ -4,6 +4,8 @@ import { z } from 'zod';
 export const MAX_ORDER_TEXT = 500;
 export const MAX_NOTE = 300;
 export const MAX_LINES = 30;
+/** Rows per page of list_my_pickup_requests (the server's limit). A full page may have a next. */
+export const PAGE_SIZE = 50;
 export const MIN_QUANTITY = 1;
 export const MAX_QUANTITY = 20;
 export const MIN_LEAD_MINUTES = 15;

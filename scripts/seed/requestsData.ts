@@ -154,6 +154,73 @@ export function planRequests(now: Date): PlannedRequest[] {
   ];
 }
 
+/** Most extra requests one run will add. */
+export const MAX_EXTRA = 1000;
+
+/**
+ * Reads "--extra" / "--extra N" from the command line: how many extra requests to add for testing
+ * pagination (default 120). Null when the flag is absent; throws on a bad number.
+ */
+export function parseExtra(args: readonly string[]): number | null {
+  const at = args.indexOf('--extra');
+  if (at === -1) return null;
+  const given = args[at + 1];
+  if (given === undefined || given.startsWith('--')) return 120;
+  if (!/^\d+$/.test(given)) throw new Error('--extra needs a whole number, e.g. --extra 120');
+  const count = Number(given);
+  if (count < 1 || count > MAX_EXTRA) {
+    throw new Error(`--extra must be between 1 and ${MAX_EXTRA}.`);
+  }
+  return count;
+}
+
+const EXTRA_STATUSES: RequestStatus[] = [
+  'completed',
+  'declined',
+  'cancelled',
+  'expired',
+  'completed',
+  'no_show',
+  'declined',
+];
+
+/**
+ * `count` older requests for testing pagination: no pending ones, every created_at different
+ * (7 minutes apart, so no two rows tie at a page boundary), all older than the main plan's rows.
+ * They go to the other demo restaurants and cooks (not the ones the main plan uses).
+ */
+export function planExtraRequests(now: Date, count: number): PlannedRequest[] {
+  const rows: PlannedRequest[] = [];
+  for (let i = 0; i < count; i++) {
+    const status = EXTRA_STATUSES[i % EXTRA_STATUSES.length];
+    const createdAt = new Date(now.getTime() - 30 * HOUR - i * 7 * MINUTE);
+    const pickupAt = new Date(createdAt.getTime() + HOUR);
+    const answered = status === 'completed' || status === 'declined' || status === 'no_show';
+    const target: Target =
+      i % 4 === 3
+        ? { kind: 'homemade', ownerUsername: `seed_cook_${4 + (Math.floor(i / 4) % 10)}` }
+        : {
+            kind: 'restaurant',
+            ownerUsername: `seed_rest_${String(7 + (i % 34)).padStart(3, '0')}`,
+          };
+    const itemCount = i % 3 === 0 ? 1 : 0;
+    rows.push({
+      key: `extra-${i + 1}`,
+      purpose: 'pagination test',
+      target,
+      status,
+      createdAt,
+      pickupAt,
+      expiresAt: expiryFor(createdAt, pickupAt),
+      respondedAt: answered ? new Date(createdAt.getTime() + 10 * MINUTE) : null,
+      itemCount,
+      orderText: itemCount === 0 ? `Pagination test order ${i + 1}` : null,
+      note: null,
+    });
+  }
+  return rows;
+}
+
 export type MenuLineRow = {
   id: string;
   name: string;

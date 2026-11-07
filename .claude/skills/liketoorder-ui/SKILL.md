@@ -57,6 +57,9 @@ Always icon + text, never color alone. A pending request is never described as c
 ## Screen states
 Every data screen: `Skeleton` while loading → `EmptyState` (friendly line + action) → `ErrorState` with Retry → content. Pull-to-refresh on lists.
 
+## Lists that can grow are infinite lists
+A list that can grow without a cap (My requests today; the seller inbox in spec 10 and table requests in spec 11 next) loads a page at a time with `useInfiniteQuery` and a `FlatList`: load the next page near the end (`onEndReached`, once at a time), a small footer spinner while it loads, and on failure an inline "Try again" in the footer that keeps the rows already loaded. A full-screen error is only for a first load that failed; a failed refresh with rows on screen is a small banner. Pull-to-refresh starts again from page 1. Show each row once (de-duplicate by id). Lists capped by the database (menu items, photos) or by a reference table (currencies, cuisines) can render all rows.
+
 ## Imagery
 `expo-image` with `contentFit="cover"`, blurhash/placeholder, fixed aspect ratios (1:1 food log, 4:3 menu photos). Never stretch.
 

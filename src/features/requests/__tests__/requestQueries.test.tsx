@@ -64,7 +64,7 @@ describe('useMyRequests', () => {
     listMock.mockResolvedValue({ server_now: SERVER_NOW, requests: [pending] });
     const { result } = await renderHook(() => all(useMyRequests()), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.requests).toEqual([pending]);
+    expect(result.current.requests).toEqual([pending]);
   });
 
   it('surfaces an error that Retry can re-send', async () => {

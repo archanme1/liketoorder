@@ -238,7 +238,14 @@ Each item says how it applies here. The reviewer ticks every line. Sources: `.cl
 - `jest.setup.ts` gains one `expo-crypto` fake (counter-based uuids); the sellers tests still mock it per file.
 - Time zone: picker and formatters take an explicit `timeZone` (default: the phone's); tests pass `Pacific/Auckland`. No jest config change.
 
+## Gate E decisions (after the PR 2 simulator run)
+- **Fixed Send bar:** Send request and the estimated total sit in a bar under the title, outside the scrolling form; the title and Back step aside while the keyboard is up. Errors show in the bar.
+- **My requests is an infinite list** (50 per page, `useInfiniteQuery`) on the existing `p_before` cursor. No keyset cursor now (Archan): rows only tie through bulk or admin inserts.
+- **Seed:** `scripts/seed/requests.ts --extra 120` adds older requests for testing pagination.
+- **Native calendar and time picker (gate E3):** replaces the day buttons and slot grid; see Decision 7 (amended) and New dependencies.
+
 ## Notes for specs 10 and 12 (from the PR 1 review)
+- **Spec 10 (seller inbox) must be built with a `(created_at, id)` keyset cursor from day one** (server limit 50, text cursor sent back untouched; see the lists rule in `supabase-patterns`). Many customers can create rows at the same instant, so created_at alone would skip rows at a page boundary. `list_my_pickup_requests` keeps `created_at` alone: a single customer's rows cannot tie through the app (each submit is its own transaction), only through bulk or admin inserts; give it the same cursor when spec 10 touches this function if wanted.
 - **Spec 10:** the accept function must snapshot the address (and place) onto the request, and `get_my_pickup_address` must return the snapshot (see Decision 5).
 - **Spec 10:** the four request-object builders (`submit`, `list`, `get`, `cancel`) are written out in full today, and a pgTAP test compares their keys and values. Spec 10 adds seller reads of the same object: move it into one private helper (`private.pickup_request_json`, added to the private-function allowlist in `05-seller-onboarding.test.sql`) then.
 - **Specs 10 and 12:** one customer can send up to 10 requests an hour to the same cook (the 1-pending limit stops counting once a request is cancelled, and the hourly limit is per customer, not per customer and business). Once spec 12 sends a push per new request this is a harassment risk. Consider a per-business hourly cap (for example 3 submits to one business in 24 hours, counted from the same rows under the same lock) or a cool-down / merged notifications for requests cancelled within seconds.

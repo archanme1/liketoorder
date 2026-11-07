@@ -1,4 +1,14 @@
-import { CUSTOMER_EMAIL, expiryFor, planRequests, snapshotItems } from '../requestsData';
+import {
+  CUSTOMER_EMAIL,
+  expiryFor,
+  MAX_EXTRA,
+  parseExtra,
+  planExtraRequests,
+  planRequests,
+  snapshotItems,
+} from '../requestsData';
+import { HOMEMADE_COOKS } from '../homemadeData';
+import { RESTAURANTS } from '../restaurantData';
 import { isSeedEmail } from '../safety';
 
 const NOW = new Date('2026-11-08T17:00:00Z');
@@ -121,5 +131,76 @@ describe('snapshotItems', () => {
   it('is null for no items (the row then needs written text)', () => {
     expect(snapshotItems(menu, 0)).toBeNull();
     expect(snapshotItems([], 2)).toBeNull();
+  });
+});
+
+describe('parseExtra', () => {
+  it('is null without the flag', () => {
+    expect(parseExtra([])).toBeNull();
+    expect(parseExtra(['--other'])).toBeNull();
+  });
+
+  it('defaults to 120, or takes a number', () => {
+    expect(parseExtra(['--extra'])).toBe(120);
+    expect(parseExtra(['--extra', '--other'])).toBe(120);
+    expect(parseExtra(['--extra', '30'])).toBe(30);
+  });
+
+  it.each([['abc'], ['-5'], ['0'], ['1.5'], [String(MAX_EXTRA + 1)]])('refuses %p', (value) => {
+    expect(() => parseExtra(['--extra', value])).toThrow();
+  });
+});
+
+describe('planExtraRequests', () => {
+  const extra = planExtraRequests(NOW, 120);
+
+  it('makes the number asked for, with unique keys', () => {
+    expect(extra).toHaveLength(120);
+    expect(new Set(extra.map((row) => row.key)).size).toBe(120);
+  });
+
+  it('never ties two created_at values (no ties at a page boundary)', () => {
+    const times = extra.map((row) => row.createdAt.getTime());
+    expect(new Set(times).size).toBe(120);
+    // Newest first in plan order, and all older than the main plan.
+    expect([...times].sort((a, b) => b - a)).toEqual(times);
+    const oldestMain = Math.min(...planRequests(NOW).map((row) => row.createdAt.getTime()));
+    expect(Math.max(...times)).toBeLessThan(oldestMain);
+  });
+
+  it('has no pending rows, and follows the table rules', () => {
+    for (const row of extra) {
+      expect(row.status).not.toBe('pending');
+      expect(row.expiresAt.getTime()).toBe(expiryFor(row.createdAt, row.pickupAt).getTime());
+      expect(row.itemCount > 0 || row.orderText !== null).toBe(true);
+      expect(row.orderText?.length ?? 1).toBeLessThanOrEqual(500);
+    }
+  });
+
+  it('answered rows have a response time, the others none', () => {
+    for (const row of extra) {
+      const answered = ['completed', 'declined', 'no_show'].includes(row.status);
+      expect(row.respondedAt === null).toBe(!answered);
+    }
+  });
+
+  it('the demo restaurants and cooks it targets exist in the restaurants seed', () => {
+    const numbers = (kind: string, pattern: RegExp) =>
+      extra
+        .filter((row) => row.target.kind === kind)
+        .map((row) => Number(pattern.exec(row.target.ownerUsername)?.[1]));
+    expect(Math.max(...numbers('restaurant', /_(\d+)$/))).toBeLessThanOrEqual(RESTAURANTS.length);
+    expect(Math.max(...numbers('homemade', /_(\d+)$/))).toBeLessThanOrEqual(HOMEMADE_COOKS.length);
+  });
+
+  it('only targets demo accounts the restaurants seed creates, and mixes restaurants and cooks', () => {
+    for (const row of extra) {
+      expect(row.target.ownerUsername).toMatch(
+        /^seed_(rest_(00[7-9]|0[1-3]\d|040)|cook_([4-9]|1[0-3]))$/,
+      );
+    }
+    expect(new Set(extra.map((row) => row.target.kind))).toEqual(
+      new Set(['restaurant', 'homemade']),
+    );
   });
 });

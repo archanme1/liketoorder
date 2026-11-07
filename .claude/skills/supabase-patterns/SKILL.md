@@ -8,6 +8,9 @@ description: LikeToOrder's Supabase conventions — migrations, RLS policy templ
 ## Golden rules
 1. RLS on every table. 2. Ownership checked in SQL. 3. Status changes only via functions. 4. Migrations append-only. 5. Regenerate types after every migration (`npm run db:types`).
 
+## Lists that can grow are paginated
+Any function or query that returns rows which grow with use (requests, a seller's inbox, notifications, uploads, history) must be paginated: a server-side `limit` (50 or fewer) plus a **keyset cursor** on an immutable, tie-broken sort key, `(created_at, id)`, ordered the same way. Never return "everything for this user". A list may return all its rows only when a database-enforced cap or a reference table bounds it, and the cap is written next to the function (for example menu items: 100 per business; photos: 1 cover, 6 gallery, 10 menu). The cursor is the server's own value, returned as text and sent back untouched (never parsed into a JS Date, which would cut the microseconds). Next to build: the seller inbox (spec 10) and table requests (spec 11), both with the `(created_at, id)` cursor from day one. `list_my_pickup_requests` (spec 09) pages on `created_at` alone: rows can only tie through bulk or admin inserts, because each submit is its own transaction.
+
 ## Local stack
 After editing anything in `supabase/templates/`, run `npx supabase stop` then `npx supabase start`: `db reset` does not refresh Kong's template mount, and a stale mount makes GoTrue silently send its default link email instead of our code template.
 

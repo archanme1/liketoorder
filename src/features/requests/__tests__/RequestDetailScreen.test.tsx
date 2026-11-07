@@ -199,7 +199,10 @@ describe('cancel', () => {
     serve(makeRequest());
     cancelMock.mockResolvedValue(makeRequest({ status: 'cancelled', display_status: 'cancelled' }));
     await renderScreen();
-    client.setQueryData(requestKeys.mine, { server_now: SERVER_NOW, requests: [makeRequest()] });
+    client.setQueryData(requestKeys.mine, {
+      pages: [{ server_now: SERVER_NOW, requests: [makeRequest()] }],
+      pageParams: [{}],
+    });
     expect(client.getQueryState(requestKeys.mine)?.isInvalidated).toBe(false);
     await fireEvent.press(await screen.findByRole('button', { name: 'Cancel request' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Yes, cancel request' }));

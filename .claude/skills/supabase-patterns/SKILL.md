@@ -85,12 +85,13 @@ Expiry: the `pg_cron` job sets `expired` where `status='pending' and expires_at 
 - `created_at timestamptz not null default now()`; clients never send it (exclude from insert grants or overwrite in a `before insert` trigger).
 - `food_logs.local_date`: computed in a `before insert` trigger from `now()` and the client-supplied IANA timezone validated against `pg_timezone_names` — so no backdating.
 - Idempotency: `idempotency_key uuid`, unique **per customer** (`unique (customer_id, idempotency_key)`), generated client-side once per form session. The submit function looks the key up first and returns that row unchanged, before any other check; it also takes a per-customer `pg_advisory_xact_lock` so concurrent calls serialise, and still inserts with `on conflict do nothing` and re-selects.
+- Free text from customers (`order_text`, `note`) refuses hidden characters in both the function and a table check: ASCII controls except newline, DEL, C1 controls, zero-width (U+200B-200D, U+FEFF) and bidi overrides/isolates (U+202A-202E, U+2066-2069). Mirror the same set in the app's strip.
 - Per-customer limits that count rows (spec 09: 5 pending, 1 pending per business, 10 submits an hour) read the customer's own table rows under that lock. A pending row past `expires_at` does not count. This needs no counter table or cleanup job.
 
 ## Homemade approximate location
 Computed in SQL inside `set_business_location()` (spec 05, Decisions 3 and 10): a random bearing and a random distance of 200–500 m (uniform over the ring's area), stored in `businesses.map_lat/map_lng`. The offset and random inputs are never stored. Re-rolled **only when `place_id` changes**: saving the same place again, or a Places coordinate refresh, keeps the point (re-rolling would let an observer average points back to the real one). Never compute, round or display an offset in the app.
 
-Exact address: the owner reads it through `get_my_business()`. `get_my_pickup_address(request_id)` (spec 09) returns it only to the requesting customer while the request is `accepted` or `completed`, for homemade businesses that are still listed, and `null` for every other cause; it is not behind the 30-day map guard (spec 09 Decision 5). Spec 10 adds the seller's accept function.
+Exact address: the owner reads it through `get_my_business()`. `get_my_pickup_address(request_id)` (spec 09) returns it only to the requesting customer while the request is `accepted` or `completed`, for homemade businesses that are still listed, and `null` for every other cause; it is not behind the 30-day map guard (spec 09 Decision 5), but it stops 24 hours after `pickup_at`, and it returns the cook's current address until spec 10's accept function snapshots it onto the request. Spec 10 adds the seller's accept function.
 
 ## Storage
 | Bucket | Public? | Path | Notes |

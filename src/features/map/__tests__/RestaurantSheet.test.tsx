@@ -12,7 +12,7 @@ import { getCurrencies } from '@/features/menu/api';
 
 import { fetchPinsInBounds, fetchRestaurantDetails, MapAppError } from '../api';
 import { RestaurantMapScreen } from '../components/RestaurantMapScreen';
-import { collapsedSnap } from '../components/RestaurantSheet';
+import { collapsedSnap, SHEET_TITLE_MAX_FONT_MULTIPLIER } from '../components/RestaurantSheet';
 import { buildDirectionsUrl } from '../directions';
 import type { Pin, PinsResponse, RestaurantDetails } from '../schema';
 
@@ -711,5 +711,50 @@ describe('RestaurantSheet: stacked screens (list, then a restaurant)', () => {
     expect(buttons).toHaveLength(2); // the X and the button beside the message
     await fireEvent.press(buttons[1]);
     expect(listTitle()).toBeOnTheScreen();
+  });
+});
+
+describe('RestaurantSheet: large text', () => {
+  const titleText = (name: string) => within(screen.getByTestId('sheet-title')).getByText(name);
+
+  it('caps only the title: 1.6 times for a restaurant name', async () => {
+    expect(SHEET_TITLE_MAX_FONT_MULTIPLIER).toBe(1.6);
+    await renderScreen();
+    await openJoes();
+    expect(titleText("Joe's Pizza").props.maxFontSizeMultiplier).toBe(1.6);
+  });
+
+  it('caps the list title the same way', async () => {
+    await renderScreen();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Places in this area' }));
+    expect(titleText('Places in this area').props.maxFontSizeMultiplier).toBe(1.6);
+  });
+
+  it('leaves list rows scaling fully', async () => {
+    await renderScreen();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Places in this area' }));
+    const rows = within(screen.getByTestId('bottom-sheet'));
+    expect(rows.getByText('Chez Anne').props.maxFontSizeMultiplier).toBeUndefined();
+    expect(rows.getByText('France').props.maxFontSizeMultiplier).toBeUndefined();
+  });
+
+  it('leaves the cuisine, address, menu, prices and buttons scaling fully', async () => {
+    await renderScreen();
+    await openJoes();
+    const address = await screen.findByText('100 King St, Oshawa, ON, Canada');
+    const sheet = within(screen.getByTestId('bottom-sheet'));
+    const uncapped = [
+      address,
+      sheet.getByText('Address'),
+      sheet.getByText('Menu'),
+      sheet.getByText('Margherita pizza'),
+      sheet.getByText('CA$16.95 · Available'),
+      sheet.getByText('San Marzano tomato and basil.'),
+      sheet.getByText('Italy', { includeHiddenElements: true }),
+      sheet.getByText('Directions'),
+    ];
+    for (const node of uncapped) {
+      expect(node.props.maxFontSizeMultiplier).toBeUndefined();
+    }
   });
 });

@@ -42,6 +42,12 @@ export const HALF_INDEX = 1;
 export const BACK_TO_LIST = 'Back to list';
 export const CLOSE_LABEL = 'Close';
 export const COLLAPSED_FRACTION = 0.15;
+
+// Only the sheet's big title is capped. At the largest system text size an uncapped 20 pt title
+// is over 60 pt tall (and may wrap to three lines), so a single list row would fit beside it.
+// 1.6 keeps it clearly bigger than the body text's smallest size while leaving room for the
+// rows; the rows, prices, addresses and everything else keep scaling fully.
+export const SHEET_TITLE_MAX_FONT_MULTIPLIER = 1.6;
 export const HALF_FRACTION = 0.5;
 export const FULL_FRACTION = 0.92;
 
@@ -164,7 +170,11 @@ export function RestaurantSheet({
           <View style={[styles.header, { gap: space.md, paddingHorizontal: space.lg }]}>
             <View style={[styles.flex, { gap: space.xs }]}>
               <View ref={titleRef} accessible accessibilityRole="header" testID="sheet-title">
-                <Text variant="title" numberOfLines={3}>
+                <Text
+                  variant="title"
+                  numberOfLines={3}
+                  maxFontSizeMultiplier={SHEET_TITLE_MAX_FONT_MULTIPLIER}
+                >
                   {title}
                 </Text>
               </View>

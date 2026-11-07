@@ -404,6 +404,11 @@ Manual checks on a real build, kept here so the final manual run knows what is s
 - Passed: pins load on pan; flags and clusters render; tapping a flag does **not** move the map (correct per this spec; no workaround to be built).
 - **Not yet checked:** a real iPhone; Android (including `moveOnMarkerPress={false}`, which is an Android-only prop); VoiceOver / TalkBack on markers and clusters; large text; clustering and pan performance with the 500-pin cap; the rate-limited, error and empty-area notices on a device.
 
+**Large text on the iOS Simulator, 2026-11-06 (Archan).** Largest "Larger Accessibility Sizes" setting, checked for the **sheet and the list** only.
+- Passed: the sheet works and nothing in it is clipped.
+- Found and fixed: the sheet's big titles grew so large that one list row fit (the titles are now capped at 1.6×; rows, prices and addresses still scale fully, Decision 29), and the tab bar labels were cut off ("Rest", "Hom"). The tab bar belongs to spec 03; its labels are now capped at 1.3× in a separate commit.
+- **Not yet checked:** VoiceOver and TalkBack on markers, clusters, the sheet and the list; Android font scale 2.0; the map notices and the location screens at the largest size.
+
 ## Decisions
 1. **Two PRs** as above; PR 1 keeps the status 🚧, only PR 2 marks ✅ Shipped. (Archan, 2026-11-04)
 2. **Option A for the 30-day rule:** this spec builds the refresh job and the 30-day hide guard. The guard is the real protection; the job is the normal path. For the guard to hold, nothing else may hand out the coordinates, so direct reads of `businesses.map_lat`, `map_lng` and `public_address` are revoked from `anon` and `authenticated` (Decision 20). (Archan, 2026-11-04; extended 2026-11-05)
@@ -442,6 +447,7 @@ Manual checks on a real build, kept here so the final manual run knows what is s
 26. **A marker press must not reach the map's press:** on iOS a marker's `onPress` and the MapView's `onPress` are both bubbling events, so a flag tap also fired "tap the bare map" and closed the sheet at once (found in the Gate E simulator run; jest's fake map did not bubble). Fixed twice over: both marker types set `stopPropagation`, and the map's `onPress` ignores events whose `nativeEvent.action` is `marker-press`. The jest fake now bubbles like the real library, and a switch makes it ignore `stopPropagation` to test the second layer alone. (Archan, 2026-11-06)
 27. **Sheet scroll space:** the library makes the sheet as tall as its highest snap, so at a lower snap the bottom of its scroll view is off screen and the last rows (Directions) could not be scrolled into view. The scrolling content gets bottom space equal to (highest snap − current snap) plus a gap, and the snap heights are computed from the measured screen area rather than the window. The content already scrolls in the library's own `BottomSheetScrollView`. jest checks the arithmetic only; the real layout is checked in the simulator. (Archan, 2026-11-06)
 28. **Hide Google's business labels:** `customMapStyle` with the single rule `{ featureType: 'poi.business', stylers: [{ visibility: 'off' }] }` on both platforms, so our flags are the only restaurant pins. Roads, place names, parks and transit are untouched. Legal read and an Android device check are added to `docs/product/v1.md` §16. (Archan, 2026-11-06)
+29. **Large text:** at the largest system size only the sheet's big title (restaurant name, "Places in this area") is capped, at `maxFontSizeMultiplier` 1.6; everything else in the sheet keeps scaling fully. The collapsed snap height still grows with the font scale. (Archan, 2026-11-06)
 
 ## Open questions
 1. **Google Maps terms text** could not be loaded in full here. Please have the §16 "Google terms review" item cover: Places content only on a Google map, the 30-day lat/lng cache limit, and linking out by place ID.

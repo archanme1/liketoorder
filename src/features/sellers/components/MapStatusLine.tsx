@@ -34,7 +34,7 @@ type MapStatusLineProps = {
   onChooseAddress: () => void;
 };
 
-// Spec 07 / Decision 13 (and spec 08 Decision 4): whether the owner's listing is on the map now. Text and an
+// Spec 07 Decision 13 and spec 08 Decision 4: is the owner's listing on the map now? Text and an
 // icon carry the meaning, never colour alone. A hidden pin always offers the way back.
 export function MapStatusLine({
   status,

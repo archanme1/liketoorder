@@ -39,7 +39,6 @@ export type PinsResult = {
  * same `usePins` hook on every render.
  */
 export type BusinessMapConfig = {
-  kind: 'restaurant' | 'homemade';
   /** Accessibility label of the map itself. */
   mapLabel: string;
   /** Where this tab keeps its last viewed region on the phone. */
@@ -62,7 +61,6 @@ export type BusinessMapConfig = {
 };
 
 export const restaurantMapConfig: BusinessMapConfig = {
-  kind: 'restaurant',
   mapLabel: 'Restaurants map',
   regionKey: REGION_KEY,
   promptThings: 'restaurants and homemade cooks',

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { Dimensions, StyleSheet } from 'react-native';
 import { getLocales } from 'expo-localization';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -67,20 +67,30 @@ const items: DetailsItem[] = [
   },
 ];
 
-const wrap = (ui: React.ReactElement) => (
-  <QueryClientProvider
-    client={new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } })}
-  >
-    <SafeAreaProvider
-      initialMetrics={{
-        frame: { x: 0, y: 0, width: 390, height: 844 },
-        insets: { top: 47, left: 0, right: 0, bottom: 34 },
-      }}
-    >
-      {ui}
-    </SafeAreaProvider>
-  </QueryClientProvider>
-);
+// useSignedUrls keeps its URLs for 55 minutes after unmount; unmount first, then clear every client
+// so no gc timer outlives the test and keeps the jest worker alive.
+const testClients: QueryClient[] = [];
+afterEach(async () => {
+  await cleanup();
+  testClients.splice(0).forEach((client) => client.clear());
+});
+
+const wrap = (ui: React.ReactElement) => {
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+  testClients.push(client);
+  return (
+    <QueryClientProvider client={client}>
+      <SafeAreaProvider
+        initialMetrics={{
+          frame: { x: 0, y: 0, width: 390, height: 844 },
+          insets: { top: 47, left: 0, right: 0, bottom: 34 },
+        }}
+      >
+        {ui}
+      </SafeAreaProvider>
+    </QueryClientProvider>
+  );
+};
 
 beforeEach(async () => {
   await AsyncStorage.clear();

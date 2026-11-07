@@ -20,7 +20,13 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import type { Database } from '../../src/types/database';
 
-import { HOMEMADE_COOKS, HOMEMADE_HIDDEN, type HomemadePhotos } from './homemadeData';
+import {
+  HOMEMADE_COOKS,
+  HOMEMADE_HIDDEN,
+  homemadeCookEmail,
+  homemadeHiddenEmail,
+  type HomemadePhotos,
+} from './homemadeData';
 import {
   AREAS,
   HIDDEN,
@@ -321,12 +327,7 @@ async function main() {
         { name: cook.name, cuisine: cook.cuisine, where: { area: cook.area } },
         random,
       );
-      const owner = await createUser(
-        db,
-        `seed-homemade-${n}@example.com`,
-        `seed_cook_${n}`,
-        cook.name,
-      );
+      const owner = await createUser(db, homemadeCookEmail(n), `seed_cook_${n}`, cook.name);
       const businessId = await createBusiness(db, owner, {
         type: 'homemade',
         name: cook.name,
@@ -347,7 +348,7 @@ async function main() {
     for (const [index, hidden] of HOMEMADE_HIDDEN.entries()) {
       const owner = await createUser(
         db,
-        `seed-homemade-${hidden.key}@example.com`,
+        homemadeHiddenEmail(hidden.key),
         `seed_cook_${hidden.key}`,
         hidden.name,
       );

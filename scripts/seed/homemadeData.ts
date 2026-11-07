@@ -85,6 +85,11 @@ export const HOMEMADE_COOKS: HomemadeSeed[] = [
   { name: 'Annex Tamales', cuisine: 'MX', area: 'toronto' },
 ];
 
+// The accounts the seed creates. One place, so the safety test can prove the re-run may delete
+// every one of them (isSeedEmail) and nothing else.
+export const homemadeCookEmail = (n: number) => `seed-homemade-${n}@example.com`;
+export const homemadeHiddenEmail = (key: string) => `seed-homemade-${key}@example.com`;
+
 /** Cooks that must NOT appear on the map. Each is proof that a rule works. */
 export type HomemadeHiddenKind = 'stale' | 'not_found' | 'unlisted';
 export const HOMEMADE_HIDDEN: {

@@ -1,6 +1,12 @@
 import { assertNoHiddenMetadata, readJpegSegments } from '../../../src/features/media/jpegMetadata';
-import { HOMEMADE_COOKS, HOMEMADE_HIDDEN } from '../homemadeData';
+import {
+  HOMEMADE_COOKS,
+  HOMEMADE_HIDDEN,
+  homemadeCookEmail,
+  homemadeHiddenEmail,
+} from '../homemadeData';
 import { HIDDEN } from '../restaurantData';
+import { isSeedEmail } from '../safety';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('fs') as {
@@ -69,5 +75,25 @@ describe('the homemade seed data', () => {
       'Unlisted Kitchen',
     ]);
     expect(HIDDEN.some((row) => row.type === 'homemade')).toBe(false);
+  });
+});
+
+describe('the homemade seed accounts', () => {
+  // The re-run deletes only accounts that isSeedEmail accepts (safety.test.ts covers the helper and
+  // the local-URL guard, which the whole seed runs behind). This proves every account the homemade
+  // seed creates is one of them, so a re-run cleans up after itself and touches nothing else.
+  it('are all accounts the re-run is allowed to delete', () => {
+    const emails = [
+      ...HOMEMADE_COOKS.map((_cook, index) => homemadeCookEmail(index + 1)),
+      ...HOMEMADE_HIDDEN.map((cook) => homemadeHiddenEmail(cook.key)),
+    ];
+    expect(emails.length).toBe(HOMEMADE_COOKS.length + HOMEMADE_HIDDEN.length);
+    for (const email of emails) expect(isSeedEmail(email)).toBe(true);
+    expect(new Set(emails).size).toBe(emails.length);
+  });
+
+  it('includes the two demo logins the manual script uses', () => {
+    expect(homemadeCookEmail(1)).toBe('seed-homemade-1@example.com');
+    expect(homemadeHiddenEmail('stale')).toBe('seed-homemade-stale@example.com');
   });
 });

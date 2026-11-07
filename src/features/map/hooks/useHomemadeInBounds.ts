@@ -3,8 +3,6 @@ import type { MapBox } from '../region';
 
 import { usePinsQuery } from './usePinsQuery';
 
-export const homemadePinsKey = (box: MapBox) => ['map', 'homemade', 'pins', box] as const;
-
 const HOMEMADE_PINS = {
   keyPrefix: ['map', 'homemade', 'pins'],
   fetcher: (box: MapBox) => fetchHomemadeInBounds(box),

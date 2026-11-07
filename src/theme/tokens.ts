@@ -54,9 +54,13 @@ export const stroke = { selected: 2 };
 
 // The homemade "somewhere in this area" circle (spec 08): the primary colour, translucent fill with
 // a firmer outline so the edge still reads without relying on the fill alone.
+function withAlpha(hex: string, alpha: number): string {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 export const mapArea = {
-  fill: 'rgba(207, 71, 28, 0.15)',
-  stroke: 'rgba(207, 71, 28, 0.7)',
+  fill: withAlpha(colors.primary, 0.15),
+  stroke: withAlpha(colors.primary, 0.7),
   strokeWidth: 2,
 };
 

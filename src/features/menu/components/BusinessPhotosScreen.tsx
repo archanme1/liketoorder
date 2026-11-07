@@ -1,13 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import {
-  memo,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from 'react';
+import { memo, useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Alert, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 
 import { Banner, ErrorState, Text } from '@/components/ui';

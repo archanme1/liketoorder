@@ -3,8 +3,6 @@
 export const HOMEMADE_DISCLAIMER_TITLE = 'Food safety and allergies';
 export const HOMEMADE_DISCLAIMER_BODY =
   "Homemade food isn't inspected. Ask the cook about ingredients and allergies before you order.";
-export const HOMEMADE_DISCLAIMER = `${HOMEMADE_DISCLAIMER_TITLE}: ${HOMEMADE_DISCLAIMER_BODY}`;
-
 // What a screen reader says for the collapsed row: the whole warning, so it is heard even if the
 // person never opens the note.
 export const HOMEMADE_DISCLAIMER_LABEL = `About ${HOMEMADE_DISCLAIMER_TITLE.toLowerCase()}. ${HOMEMADE_DISCLAIMER_BODY}`;

@@ -19,7 +19,7 @@ import { CuisineLabel } from '@/features/cuisines/components/CuisineLabel';
 import type { Cuisine } from '@/features/cuisines/schema';
 import { useTheme } from '@/theme/useTheme';
 
-import { useReduceMotion } from '../hooks/useReduceMotion';
+import { useReduceMotion } from '@/lib/useReduceMotion';
 import type { Pin } from '../schema';
 
 import { PlacesList, PLACES_TITLE } from './PlacesList';

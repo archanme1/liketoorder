@@ -13,7 +13,7 @@ import { createClusterIndex } from '../clustering';
 import { useInitialRegion } from '../hooks/useInitialRegion';
 import { useLocationPermission } from '../hooks/useLocationPermission';
 import { useMapRegion } from '../hooks/useMapRegion';
-import { useReduceMotion } from '../hooks/useReduceMotion';
+import { useReduceMotion } from '@/lib/useReduceMotion';
 import { mapKeyName, useMapConfigured } from '../mapConfig';
 import { isMarkerPressEvent } from '../mapEvents';
 import { MAP_STYLE } from '../mapStyle';
@@ -105,11 +105,11 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
     () => (region && !wideView ? clusterIndex.itemsFor(region) : []),
     [clusterIndex, region, wideView],
   );
-  // The open restaurant (kept as the whole pin so the sheet can show its name at once), and
+  // The open place (kept as the whole pin so the sheet can show its name at once), and
   // whether the "Places in this area" list is open. Neither moves the map.
   const [selected, setSelected] = useState<Pin | null>(null);
   const [listOpen, setListOpen] = useState(false);
-  // True when the open restaurant was picked from the list, so "Back to list" is offered.
+  // True when the open place was picked from the list, so "Back to list" is offered.
   const [openedFromList, setOpenedFromList] = useState(false);
   // The size of the area the sheet slides in, so snap heights and scroll space are exact.
   const [containerHeight, setContainerHeight] = useState(0);

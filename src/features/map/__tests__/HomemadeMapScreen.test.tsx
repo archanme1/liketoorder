@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { getLocales } from 'expo-localization';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -79,6 +79,7 @@ const ZOOMED_OUT = { latitude: 46.6, longitude: 2.5, latitudeDelta: 2, longitude
 
 function wrap(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+  testClients.push(queryClient);
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider
@@ -108,6 +109,14 @@ function moveMap(region: typeof ZOOMED_IN) {
     screen.getByTestId('map-view').props.onRegionChangeComplete(region);
   });
 }
+
+// useSignedUrls keeps its URLs for 55 minutes after unmount; unmount first, then clear every client
+// so no gc timer outlives the test and keeps the jest worker alive.
+const testClients: QueryClient[] = [];
+afterEach(async () => {
+  await cleanup();
+  testClients.splice(0).forEach((client) => client.clear());
+});
 
 beforeEach(async () => {
   await AsyncStorage.clear();
@@ -263,6 +272,28 @@ describe('HomemadeMapScreen: circles', () => {
   });
 });
 
+describe('HomemadeMapScreen: panning while zoomed in', () => {
+  it('does not re-render the markers or their circles when only the camera moves', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const maps = require('react-native-maps') as { Circle: (props: object) => unknown };
+    const circle = jest.spyOn(maps, 'Circle');
+    await renderScreen();
+    await moveMap(ZOOMED_IN);
+    await screen.findByTestId('map-circle');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    const before = circle.mock.calls.length;
+    expect(before).toBeGreaterThan(0);
+    // Three more camera moves inside the same zoom band, over the same cook.
+    await moveMap({ ...ZOOMED_IN, latitude: 46.6005 });
+    await moveMap({ ...ZOOMED_IN, latitude: 46.601 });
+    await moveMap({ ...ZOOMED_IN, longitude: 2.5005 });
+    expect(circle.mock.calls.length).toBe(before);
+    circle.mockRestore();
+  });
+});
+
 describe('HomemadeMapScreen: taps', () => {
   it('keeps the sheet open after a flag tap, although the press bubbles towards the map, and does not move the map', async () => {
     await renderScreen();
@@ -281,19 +312,23 @@ describe('HomemadeMapScreen: taps', () => {
     await sheetSettled();
   });
 
-  it('a tap inside a circle is a plain map press: it clears the selection', async () => {
-    await renderScreen();
-    await moveMap(ZOOMED_IN);
-    await fireEvent.press(await screen.findByRole('button', { name: /Nonna Rosa/ }));
-    expect(screen.getByTestId('sheet-title')).toBeOnTheScreen();
-    await sheetSettled();
-    // What the platforms report for a tap that lands inside a circle: no marker, so a map press.
-    await act(async () => screen.getByTestId('map-view').props.onPress({ nativeEvent: {} }));
-    expect(screen.queryByTestId('sheet-title')).not.toBeOnTheScreen();
-    await act(async () =>
-      screen.getByTestId('map-view').props.onPress({ nativeEvent: { action: 'press' } }),
-    );
-  });
+  // What the platforms report for a tap that lands inside a circle: no marker is involved, so it
+  // is a plain map press (iOS: no action; Android: action 'press').
+  it.each([
+    ['iOS (no action)', {}],
+    ['Android (action press)', { action: 'press' }],
+  ])(
+    'a tap inside a circle is a plain map press on %s: it clears the selection',
+    async (_label, native) => {
+      await renderScreen();
+      await moveMap(ZOOMED_IN);
+      await fireEvent.press(await screen.findByRole('button', { name: /Nonna Rosa/ }));
+      expect(screen.getByTestId('sheet-title')).toBeOnTheScreen();
+      await sheetSettled();
+      await act(async () => screen.getByTestId('map-view').props.onPress({ nativeEvent: native }));
+      expect(screen.queryByTestId('sheet-title')).not.toBeOnTheScreen();
+    },
+  );
 
   it('a cluster tap zooms in and does not open a sheet', async () => {
     const stack: Pin[] = ['a', 'b', 'c'].map((id, i) => ({

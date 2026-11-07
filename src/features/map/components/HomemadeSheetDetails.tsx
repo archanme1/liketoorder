@@ -8,7 +8,11 @@ import { MEDIA_BUCKET } from '@/features/menu/photos';
 import { useTheme } from '@/theme/useTheme';
 
 import { useHomemadeDetails } from '../hooks/useHomemadeDetails';
-import { HOMEMADE_AREA_NOTE, HOMEMADE_NOT_AVAILABLE_MESSAGE } from '../homemadeText';
+import {
+  HOMEMADE_AREA_NOTE,
+  HOMEMADE_NOT_AVAILABLE_MESSAGE,
+  HOMEMADE_THINGS,
+} from '../homemadeText';
 import { mapErrorMessage, RATE_LIMITED_MESSAGE } from '../messages';
 import type { DetailsPhoto, HomemadeDetails } from '../schema';
 
@@ -48,7 +52,7 @@ export function HomemadeSheetDetails({ id, onClose, closeLabel = 'Close' }: Shee
         <Text accessibilityRole={rateLimited ? undefined : 'alert'}>
           {rateLimited
             ? RATE_LIMITED_MESSAGE
-            : mapErrorMessage(details.error.code, 'homemade cooks')}
+            : mapErrorMessage(details.error.code, HOMEMADE_THINGS)}
         </Text>
         <Button
           title={rateLimited ? 'Try again' : 'Retry'}

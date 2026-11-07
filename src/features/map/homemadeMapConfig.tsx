@@ -8,7 +8,6 @@ import { HOMEMADE_REGION_KEY } from './lastRegion';
 // The Homemade tab: the shared map screen with homemade data, flag-in-a-circle markers and the
 // homemade sheet body.
 export const homemadeMapConfig: BusinessMapConfig = {
-  kind: 'homemade',
   mapLabel: 'Homemade map',
   regionKey: HOMEMADE_REGION_KEY,
   promptThings: 'restaurants and homemade cooks',

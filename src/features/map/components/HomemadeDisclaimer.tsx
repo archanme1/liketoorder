@@ -18,7 +18,7 @@ import {
 // warning on the collapsed row, and the expanded state is exposed. The icon and the words carry
 // the meaning, never colour alone. Placeholder wording until spec 18 (see homemadeText.ts).
 export function HomemadeDisclaimer() {
-  const { colors, space, radius, size } = useTheme();
+  const { colors, space, radius, size, opacity } = useTheme();
   const [open, setOpen] = useState(false);
 
   return (
@@ -39,7 +39,7 @@ export function HomemadeDisclaimer() {
           borderRadius: radius.md,
           borderColor: colors.border,
           backgroundColor: colors.surfaceAlt,
-          opacity: pressed ? 0.8 : 1,
+          opacity: pressed ? opacity.pressed : 1,
         },
       ]}
     >

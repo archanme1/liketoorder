@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { getLocales } from 'expo-localization';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -96,6 +96,7 @@ function details(overrides: Partial<HomemadeDetails> = {}): HomemadeDetails {
 
 async function openSheet() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+  testClients.push(queryClient);
   await render(
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider
@@ -115,6 +116,14 @@ async function openSheet() {
     await new Promise((resolve) => setTimeout(resolve, 350));
   });
 }
+
+// useSignedUrls keeps its URLs for 55 minutes after unmount; unmount first, then clear every client
+// so no gc timer outlives the test and keeps the jest worker alive.
+const testClients: QueryClient[] = [];
+afterEach(async () => {
+  await cleanup();
+  testClients.splice(0).forEach((client) => client.clear());
+});
 
 beforeEach(async () => {
   await AsyncStorage.clear();

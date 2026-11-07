@@ -2,7 +2,7 @@
 -- idempotency, limits, expiry, display_status, list/get/cancel, the accepted-request address, and
 -- that nothing private leaks. Own fixtures, one rolled-back transaction.
 begin;
-select plan(239);
+select plan(262);
 
 -- ── Helpers (pg_temp) ───────────────────────────────────────────────────────
 -- Ids:  users 00000000-0000-0000-0009-<n>   businesses …-0049-<n>   items …-0059-<n>
@@ -107,14 +107,14 @@ grant all on res to public;
 --         8 rate limit   9 pending limit   10..18, 20..27 owners of businesses 10..18, 20..27
 --         30 thirty lines   31 validation   32 paging (51 rows)   33 submit   34 idempotency
 --         35 one pending per business   36 expiry job   37 key sets   38 cascade customer   39 owner of business 30
---         40 second rate-limit customer   41 replay tests
+--         40 second rate-limit customer   41 replay tests   42 address window   43 overdue pending   44 cancel boundary
 -- Businesses (all fresh unless noted):  1 R1 restaurant, CAD   2 H1 homemade, CAD   3 H2 homemade, no currency
 --   10 unlisted   11 stale 31 d   12 exactly 30 d   13 place not_found   14 no map point, no location
 --   15 stale 31 d homemade   16 H3 homemade stale 31 d   17 H4 homemade   18 restaurant   20..27 homemade   30 homemade
 -- Items:  1 Soup 850   2 Salad (no price)   3 Sold out   all on R1;   4 Bread 450 on H1;   5 Other Cake on H2;   101..131 on R1
 insert into auth.users (id, email)
 select pg_temp.u(n), 'p09_' || n || '@example.test'
-  from unnest(array[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25,26,27,30,31,32,33,34,35,36,37,38,39,40,41]) n;
+  from unnest(array[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25,26,27,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44]) n;
 update public.profiles set username = 'p09_' || right(id::text, 3) where id::text like '00000000-0000-0000-0009-%';
 update public.profiles set username = null where id = pg_temp.u(3);
 
@@ -157,6 +157,9 @@ insert into public.menu_items (id, business_id, name, description, price_minor, 
   (pg_temp.i(3), pg_temp.b(1), 'Sold Out',   null, 700,  false, 3),
   (pg_temp.i(4), pg_temp.b(2), 'Bread',      null, 450,  true,  1),
   (pg_temp.i(5), pg_temp.b(3), 'Other Cake', null, 300,  true,  1);
+-- An item whose id has hex letters, for the upper-case id tests.
+insert into public.menu_items (id, business_id, name, description, price_minor, is_available, position)
+values ('00000000-0000-0000-0059-00000000abcd', pg_temp.b(1), 'Hex Item', null, 500, true, 50);
 insert into public.menu_items (id, business_id, name, description, price_minor, is_available, position)
 select pg_temp.i(100 + n), pg_temp.b(1), 'Bulk ' || n, null, 100, true, 9 + n from generate_series(1, 31) n;
 
@@ -192,6 +195,21 @@ select pg_temp.r(100 + n), pg_temp.b(2), pg_temp.u(32), 'cancelled', now() + int
 insert into public.pickup_requests (id, business_id, customer_id, pickup_at, order_text, idempotency_key, expires_at)
 values (pg_temp.r(200), pg_temp.b(1),  pg_temp.u(38), now() + interval '2 hours', 'cascade', pg_temp.k(1200), now() + interval '30 minutes'),
        (pg_temp.r(201), pg_temp.b(30), pg_temp.u(38), now() + interval '2 hours', 'cascade', pg_temp.k(1201), now() + interval '30 minutes');
+
+-- Address-window fixtures (user 42): pickup times around the 24-hour line. now() is frozen, so the line is exact.
+insert into public.pickup_requests (id, business_id, customer_id, status, pickup_at, order_text, idempotency_key, expires_at, created_at)
+select pg_temp.r(f.n), pg_temp.b(f.biz), pg_temp.u(42), f.st, now() + f.pk, 'window', pg_temp.k(900 + f.n), now() + f.pk, now() + f.pk - interval '1 hour'
+  from (values (300, 2, 'accepted',  interval '-25 hours'), (301, 2, 'completed', interval '-25 hours'),
+               (302, 2, 'accepted',  interval '-23 hours'), (303, 2, 'completed', interval '-23 hours'),
+               (304, 2, 'accepted',  interval '-24 hours'), (305, 2, 'accepted',  interval '-24 hours' + interval '1 second'),
+               (306, 26, 'accepted', interval '1 hour')) as f(n, biz, st, pk);
+
+-- Pending-request fixtures: user 43 has one overdue (unswept) on Home One; user 44 has one at expires_at = now()
+-- and one with a second left.
+insert into public.pickup_requests (id, business_id, customer_id, status, pickup_at, order_text, idempotency_key, expires_at, created_at)
+values (pg_temp.r(310), pg_temp.b(2), pg_temp.u(43), 'pending', now() + interval '2 hours', 'overdue',  pg_temp.k(1310), now() - interval '1 minute', now() - interval '31 minutes'),
+       (pg_temp.r(311), pg_temp.b(2), pg_temp.u(44), 'pending', now() + interval '2 hours', 'boundary', pg_temp.k(1311), now(),                      now() - interval '30 minutes'),
+       (pg_temp.r(312), pg_temp.b(3), pg_temp.u(44), 'pending', now() + interval '2 hours', 'one left', pg_temp.k(1312), now() + interval '1 second', now() - interval '29 minutes');
 
 -- ── 1. Table, RLS and constraints ───────────────────────────────────────────
 select ok((select relrowsecurity from pg_class where oid = 'public.pickup_requests'::regclass),
@@ -231,6 +249,12 @@ select throws_ok($$ insert into public.pickup_requests (business_id, customer_id
 select throws_ok($$ insert into public.pickup_requests (business_id, customer_id, pickup_at, expires_at, idempotency_key, order_text)
                     values (pg_temp.b(1), pg_temp.u(7), now() + interval '1 day', now() + interval '1 hour', gen_random_uuid(), ' padded') $$,
   '23514', null, 'order_text with a leading space is refused by the table');
+select throws_ok($$ insert into public.pickup_requests (business_id, customer_id, pickup_at, expires_at, idempotency_key, order_text)
+                    values (pg_temp.b(1), pg_temp.u(7), now() + interval '1 day', now() + interval '1 hour', gen_random_uuid(), 'a' || chr(8238) || 'b') $$,
+  '23514', null, 'a bidi override (U+202E) in order_text is refused by the table');
+select throws_ok($$ insert into public.pickup_requests (business_id, customer_id, pickup_at, expires_at, idempotency_key, order_text, note)
+                    values (pg_temp.b(1), pg_temp.u(7), now() + interval '1 day', now() + interval '1 hour', gen_random_uuid(), 'x', 'a' || chr(133) || 'b') $$,
+  '23514', null, 'a C1 control (U+0085) in note is refused by the table');
 select throws_ok($$ insert into public.pickup_requests (business_id, customer_id, pickup_at, expires_at, idempotency_key, order_text, note)
                     values (pg_temp.b(1), pg_temp.u(7), now() + interval '1 day', now() + interval '1 hour', gen_random_uuid(), 'x', repeat('n', 301)) $$,
   '23514', null, 'a 301-character note is refused by the table');
@@ -273,6 +297,16 @@ select is_empty(
                       'private.pickup_request_expiry(timestamptz, timestamptz)'::regprocedure)
         and (not p.prosecdef or p.proconfig is distinct from array['search_path=""']) $$,
   'all seven new functions are security definer with an empty search_path');
+
+-- The per-customer advisory lock is what keeps the limits and idempotency safe under parallel calls. pgTAP runs in one
+-- transaction and cannot race two calls, so this only proves the lock is there and comes first; the real race was run by
+-- hand with two psql sessions (recorded in the PR description).
+select ok(position('pg_advisory_xact_lock(hashtextextended(''pickup_request:'' || v_uid::text, 0))'
+                   in pg_get_functiondef('public.submit_pickup_request(uuid, uuid, timestamptz, jsonb, text, text)'::regprocedure)) > 0,
+  'submit_pickup_request takes the per-customer advisory lock');
+select ok(position('pg_advisory_xact_lock' in pg_get_functiondef('public.submit_pickup_request(uuid, uuid, timestamptz, jsonb, text, text)'::regprocedure))
+        < position('r.idempotency_key = p_idempotency_key' in pg_get_functiondef('public.submit_pickup_request(uuid, uuid, timestamptz, jsonb, text, text)'::regprocedure)),
+  'and takes it before the idempotency lookup, the limits and the insert');
 
 -- ── 3. No client read or write path on the table ────────────────────────────
 set local role authenticated;
@@ -466,6 +500,11 @@ select is(pg_temp.try(p_items := jsonb_build_object('item_id', pg_temp.i(1), 'qu
 select is(pg_temp.try(p_items := jsonb_build_array(jsonb_build_object('quantity', 1))), 'invalid_items', 'a line with no item_id is invalid_items');
 select is(pg_temp.try(p_items := jsonb_build_array(jsonb_build_object('item_id', 'not-a-uuid', 'quantity', 1))), 'invalid_items', 'an item_id that is not a uuid is invalid_items');
 select is(pg_temp.try(p_items := '[1]'::jsonb), 'invalid_items', 'a line that is not an object is invalid_items');
+select is(pg_temp.try(p_items := jsonb_build_array(jsonb_build_object('item_id', '00000000-0000-0000-0059-00000000ABCD', 'quantity', 1))), 'OK',
+  'an upper-case item id is accepted');
+select is(pg_temp.try(p_items := jsonb_build_array(jsonb_build_object('item_id', '00000000-0000-0000-0059-00000000abcd', 'quantity', 1),
+                                                   jsonb_build_object('item_id', '00000000-0000-0000-0059-00000000ABCD', 'quantity', 1))),
+  'invalid_items', 'the same item in lower and upper case is still a duplicate (invalid_items)');
 
 -- free text
 select is(pg_temp.try(p_text := repeat('a', 500)), 'OK', 'a 500-character order is accepted');
@@ -476,6 +515,13 @@ select is(pg_temp.try(p_text := E'a\tb'), 'invalid_text', 'a tab in the order is
 select is(pg_temp.try(p_text := E'a\rb'), 'invalid_text', 'a carriage return in the order is invalid_text');
 select is(pg_temp.try(p_text := 'x', p_note := E'a\x01b'), 'invalid_text', 'a control character in the note is invalid_text');
 select is(pg_temp.try(p_text := E'line one\nline two'), 'OK', 'a newline inside the order is allowed');
+select is(pg_temp.try(p_text := 'a' || chr(8238) || 'b'), 'invalid_text', 'a bidi override (U+202E) in the order is invalid_text');
+select is(pg_temp.try(p_text := 'a' || chr(8294) || 'b'), 'invalid_text', 'a bidi isolate (U+2066) in the order is invalid_text');
+select is(pg_temp.try(p_text := 'a' || chr(133) || 'b'), 'invalid_text', 'a C1 control (U+0085) in the order is invalid_text');
+select is(pg_temp.try(p_text := 'a' || chr(8203) || 'b'), 'invalid_text', 'a zero-width space (U+200B) in the order is invalid_text');
+select is(pg_temp.try(p_text := 'x', p_note := 'a' || chr(65279) || 'b'), 'invalid_text', 'a byte order mark (U+FEFF) in the note is invalid_text');
+select is(pg_temp.try(p_text := 'caf' || chr(233) || ' ' || chr(23517) || chr(21496) || ' ' || chr(127843), p_note := 'ok'), 'OK',
+  'ordinary non-ASCII text (accents, kanji, an emoji) is accepted');
 
 -- 30 lines is the maximum (user 30)
 select pg_temp.as_user(30);
@@ -546,6 +592,11 @@ select pg_temp.as_user(35);
 select lives_ok($$ select pg_temp.sub_biz(2) $$, 'a first pending request to a business is accepted');
 select throws_ok($$ select pg_temp.sub_biz(2) $$, 'P0001', 'too_many_pending', 'a second pending request to the same business is too_many_pending');
 select lives_ok($$ select pg_temp.sub_biz(3) $$, 'a pending request to a different business is accepted');
+
+-- an unswept overdue request does not block a new one at the same business (user 43)
+select pg_temp.as_user(43);
+select is(pg_temp.try(p_text := 'x', p_biz := pg_temp.b(2)), 'OK',
+  'a pending request past its expires_at (not yet swept) does not count against the one-per-business limit');
 
 -- five pending in total (user 9)
 select pg_temp.as_user(9);
@@ -669,6 +720,9 @@ select is(pg_temp.cancel_err(pg_temp.r(4)), 'invalid_transition', 'a declined re
 select is(pg_temp.cancel_err(pg_temp.r(5)), 'invalid_transition', 'an expired request cannot be cancelled');
 select is(pg_temp.cancel_err(pg_temp.r(6)), 'invalid_transition', 'a cancelled request cannot be cancelled again');
 select is(pg_temp.cancel_err(pg_temp.r(7)), 'invalid_transition', 'a no_show request cannot be cancelled');
+select pg_temp.as_user(44);
+select is(pg_temp.cancel_err(pg_temp.r(311)), 'invalid_transition', 'a pending request with expires_at = now() cannot be cancelled');
+select is(pg_temp.cancel_err(pg_temp.r(312)), 'OK', 'a pending request with one second left can be cancelled');
 reset role;
 select is((select status from public.pickup_requests where id = pg_temp.r(1)), 'pending', 'the refused cancels left the pending request pending');
 select is((select status from public.pickup_requests where id = pg_temp.r(11)), 'pending', 'and the overdue request unchanged');
@@ -713,6 +767,24 @@ select pg_temp.as_user(1);
 select is(public.get_my_pickup_address(pg_temp.r(9)), null, 'no address once the cook is no longer listed');
 reset role;
 
+-- The address stops 24 hours after the pickup time (amends Decision 5). User 42's requests sit around the line.
+set local role authenticated;
+select pg_temp.as_user(42);
+select is(public.get_my_pickup_address(pg_temp.r(300)), null, 'an accepted request whose pickup was 25 hours ago gets no address');
+select is(public.get_my_pickup_address(pg_temp.r(301)), null, 'a completed request whose pickup was 25 hours ago gets no address');
+select is(public.get_my_pickup_address(pg_temp.r(302)) ->> 'formatted_address', '2 Secret Rd, Homeville', 'an accepted request whose pickup was 23 hours ago gets the address');
+select is(public.get_my_pickup_address(pg_temp.r(303)) ->> 'formatted_address', '2 Secret Rd, Homeville', 'a completed request whose pickup was 23 hours ago gets the address');
+select is(public.get_my_pickup_address(pg_temp.r(304)), null, 'a pickup exactly 24 hours ago is outside the window');
+select is(public.get_my_pickup_address(pg_temp.r(305)) ->> 'formatted_address', '2 Secret Rd, Homeville', 'a pickup one second inside the window gets the address');
+select is(public.get_my_pickup_address(pg_temp.r(306)) ->> 'formatted_address', '26 Secret Rd, Lineville', 'an upcoming accepted pickup gets the address');
+reset role;
+update public.business_locations set formatted_address = '99 New Rd, Newville' where business_id = pg_temp.b(26);
+set local role authenticated;
+select pg_temp.as_user(42);
+select is(public.get_my_pickup_address(pg_temp.r(306)) ->> 'formatted_address', '99 New Rd, Newville',
+  'current behaviour: inside the window the customer sees the cook''s current address, not the one at acceptance (spec 10 must snapshot it)');
+reset role;
+
 -- ── 14. Nothing private leaks ───────────────────────────────────────────────
 set local role authenticated;
 select pg_temp.as_user(1);
@@ -721,8 +793,8 @@ select ok(
       and position('Secret Rd' in t) = 0 and position('71.987654' in t) = 0 and position('101.123456' in t) = 0
       and position('customer_id' in t) = 0 and position('idempotency_key' in t) = 0 and position('responded_at' in t) = 0
      from (select public.list_my_pickup_requests()::text || public.get_my_pickup_request(pg_temp.r(2))::text
-                  || public.cancel_pickup_request(pg_temp.r(1))::text t) s),
-  'list, get and cancel contain no place_id, map point, exact coordinate, address, customer_id, idempotency_key or responded_at');
+                  || (select j::text from res where label = 'k_cancel') t) s),
+  'list, get and the cancel answer contain no place_id, map point, exact coordinate, address, customer_id, idempotency_key or responded_at');
 select ok(
   (select position('place_id' in t) = 0 and position('map_lat' in t) = 0 and position('Secret Rd' in t) = 0 and position('71.987654' in t) = 0
      from (select (res.j)::text t from res where label = 'c') s),

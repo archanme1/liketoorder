@@ -332,7 +332,7 @@ isOneToOne: false
 { Args: { "p_on": boolean }; Returns: undefined
                            },
 "submit_pickup_request":
-{ Args: { "p_business_id": string,"p_idempotency_key": string,"p_items": Json,"p_note": string,"p_order_text": string,"p_pickup_at": string }; Returns: Json
+{ Args: { "p_business_id": string,"p_idempotency_key": string,"p_items"?: Json,"p_note"?: string,"p_order_text"?: string,"p_pickup_at": string }; Returns: Json
                            },
 "update_menu_item":
 { Args: { "p_description": string,"p_is_available": boolean,"p_item_id": string,"p_name": string,"p_price_minor": number }; Returns: undefined

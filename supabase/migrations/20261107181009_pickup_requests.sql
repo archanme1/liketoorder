@@ -17,10 +17,12 @@ create table public.pickup_requests (
   -- Snapshot read from menu_items inside submit_pickup_request, so later menu edits never rewrite
   -- history: [{ "item_id", "name", "unit_price_minor" (null = no price), "quantity" }]. Null when free text only.
   items            jsonb check (jsonb_typeof(items) = 'array' and jsonb_array_length(items) between 1 and 30),
+  -- Hidden characters are refused: ASCII controls except newline, DEL, C1 controls (U+0080-009F),
+  -- zero-width (U+200B-200D, U+FEFF) and bidi overrides/isolates (U+202A-202E, U+2066-2069). Newlines allowed.
   order_text       text check (char_length(order_text) between 1 and 500 and order_text = btrim(order_text)
-                               and order_text !~ '[\x00-\x09\x0B-\x1F\x7F]'),   -- newlines allowed
+                               and order_text !~ '[\x00-\x09\x0B-\x1F\u007F-\u009F\u200B-\u200D\u202A-\u202E\u2066-\u2069\uFEFF]'),
   note             text check (char_length(note) between 1 and 300 and note = btrim(note)
-                               and note !~ '[\x00-\x09\x0B-\x1F\x7F]'),
+                               and note !~ '[\x00-\x09\x0B-\x1F\u007F-\u009F\u200B-\u200D\u202A-\u202E\u2066-\u2069\uFEFF]'),
   currency_code    text references public.currencies(code),        -- copied from the business at submit; null if it has none
   idempotency_key  uuid not null,
   expires_at       timestamptz not null,
@@ -58,6 +60,7 @@ revoke execute on function private.pickup_request_expiry(timestamptz, timestampt
 --   id, business_id, business_name, business_type, status, display_status, pickup_at, items,
 --   order_text, note, currency_code, expires_at, created_at
 -- p_items is [{ "item_id": uuid, "quantity": 1..20 }]; any other key (a price, a name) is ignored.
+-- p_items, p_order_text and p_note default to null so the generated types make them optional.
 -- Error codes: not_signed_in, profile_incomplete, invalid_input, business_unavailable, own_business,
 -- invalid_pickup_time, invalid_items, invalid_text, item_unavailable, empty_order, too_many_pending,
 -- rate_limited.
@@ -65,9 +68,9 @@ create function public.submit_pickup_request(
   p_business_id uuid,
   p_idempotency_key uuid,
   p_pickup_at timestamptz,
-  p_items jsonb,
-  p_order_text text,
-  p_note text
+  p_items jsonb default null,
+  p_order_text text default null,
+  p_note text default null
 ) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -86,7 +89,7 @@ declare
   v_pending_b integer;
   v_recent    integer;
   c_uuid      constant text := '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
-  c_ctrl      constant text := '[\x00-\x09\x0B-\x1F\x7F]';
+  c_ctrl      constant text := '[\x00-\x09\x0B-\x1F\u007F-\u009F\u200B-\u200D\u202A-\u202E\u2066-\u2069\uFEFF]';
 begin
   if v_uid is null then raise exception 'not_signed_in'; end if;
   if not exists (select 1 from public.profiles where id = v_uid and username is not null) then
@@ -217,6 +220,10 @@ grant execute on function public.submit_pickup_request(uuid, uuid, timestamptz, 
 
 -- ── list_my_pickup_requests ───────────────────────────────────────────────────
 -- { server_now, requests: [...] }: the caller's requests, newest first, 50 a page.
+-- Known limit: the cursor is created_at alone (`created_at < p_before`) while the order is
+-- (created_at desc, id desc), so rows that share one timestamp at a page boundary can be skipped.
+-- created_at is the transaction start, so ties are rare for one customer. A keyset cursor
+-- (created_at, id) can replace it later if needed.
 create function public.list_my_pickup_requests(p_before timestamptz default null) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -317,6 +324,10 @@ grant execute on function public.cancel_pickup_request(uuid) to authenticated;
 -- accepted or completed. Null for every other reason, identically. Not behind the 30-day map guard
 -- (Decision 5): an accepted customer must still find the cook. Restaurants never use it (their
 -- address is public). If the legal read of Google's terms overrules Decision 5, change only this function.
+-- Time window: only until 24 hours after the pickup time, so an old completed (or never-closed
+-- accepted) request stops revealing a home address. The address is the cook's CURRENT one: if the cook
+-- saves a new address inside the window, the customer sees the new one. Spec 10's accept function must
+-- snapshot the address onto the request, and this function must then return the snapshot.
 create function public.get_my_pickup_address(p_request_id uuid) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -332,6 +343,7 @@ begin
    where r.id = p_request_id
      and r.customer_id = v_uid
      and r.status in ('accepted', 'completed')
+     and r.pickup_at > now() - interval '24 hours'
      and b.type = 'homemade'
      and b.is_listed;
 

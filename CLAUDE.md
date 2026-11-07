@@ -68,6 +68,7 @@ liketoorder/
 - Shared UI → `src/components/ui/`; colors/spacing → `src/theme/tokens.ts`
 - Schema change → new migration in `supabase/migrations/` (created with `npx supabase migration new <name>`)
 - Secrets or third-party API keys (e.g. Places autocomplete) → Supabase Edge Function, never in the app bundle
+- Any map, marker, sheet or location work → read `.claude/skills/map-markers/SKILL.md` first, especially "Lessons from spec 07"
 
 ---
 

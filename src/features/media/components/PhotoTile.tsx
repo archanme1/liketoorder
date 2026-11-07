@@ -20,6 +20,11 @@ type PhotoTileProps = {
   /** Edit-mode action label, e.g. "Gallery photo 2 of 6. Opens photo options." */
   editLabel?: string;
   size?: number;
+  /**
+   * Width of the tile. Default: square (the same as the height). Pass '100%' or a number for a
+   * banner: the photo is cropped to fill it (contentFit "cover").
+   */
+  width?: number | '100%';
 };
 
 type Status = 'loading' | 'loaded' | 'retrying' | 'failed';
@@ -32,6 +37,7 @@ export function PhotoTile({
   onPress,
   editLabel,
   size: tileSize,
+  width: tileWidth,
 }: PhotoTileProps) {
   const { colors, radius, size, space, type, opacity } = useTheme();
   const dimension = Math.max(tileSize ?? size.photoThumb, size.touch);
@@ -54,7 +60,7 @@ export function PhotoTile({
     }
   }
 
-  const box = { width: dimension, height: dimension, borderRadius: radius.md };
+  const box = { width: tileWidth ?? dimension, height: dimension, borderRadius: radius.md };
 
   const body = (
     <View style={[styles.box, box, { backgroundColor: colors.surfaceAlt }]}>

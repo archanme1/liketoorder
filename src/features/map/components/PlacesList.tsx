@@ -25,6 +25,8 @@ type PlacesListProps = {
   onSelect: (pin: Pin) => void;
   /** Padding and gap of the scrolling content (the sheet works out the bottom space). */
   contentContainerStyle: StyleProp<ViewStyle>;
+  /** Shown when there are no pins. Defaults to the restaurants wording. */
+  emptyText?: string;
 };
 
 export const PLACES_TITLE = 'Places in this area';
@@ -86,6 +88,7 @@ export function PlacesList({
   cuisineByCode,
   onSelect,
   contentContainerStyle,
+  emptyText = NO_PLACES_MESSAGE,
 }: PlacesListProps) {
   const sorted = useMemo(() => [...pins].sort((a, b) => a.name.localeCompare(b.name)), [pins]);
   const ScrollComponent = useBottomSheetScrollableCreator();
@@ -106,7 +109,7 @@ export function PlacesList({
       keyExtractor={keyOf}
       renderItem={renderItem}
       contentContainerStyle={contentContainerStyle}
-      ListEmptyComponent={<Text color="textMuted">{NO_PLACES_MESSAGE}</Text>}
+      ListEmptyComponent={<Text color="textMuted">{emptyText}</Text>}
     />
   );
 }

@@ -1,7 +1,11 @@
+import { useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui';
+import { PhotoOpenTarget } from '@/features/media/components/PhotoOpenTarget';
 import { PhotoTile } from '@/features/media/components/PhotoTile';
+import { PhotoViewer } from '@/features/media/components/PhotoViewer';
+import { usePhotoViewer } from '@/features/media/hooks/usePhotoViewer';
 import { photoNames } from '@/features/menu/photos';
 import { formatPrice } from '@/features/menu/price';
 import { useTheme } from '@/theme/useTheme';
@@ -52,6 +56,15 @@ export function SheetMenu({
   onExpired,
 }: SheetMenuProps) {
   const { colors, space, radius, size, weight } = useTheme();
+  const viewer = usePhotoViewer();
+  const viewerPhotos = useMemo(
+    () =>
+      menuPhotos.map((photo, index) => ({
+        path: photo.path,
+        label: menuPageLabel(name, index + 1, menuPhotos.length),
+      })),
+    [menuPhotos, name],
+  );
 
   if (items.length === 0 && menuPhotos.length === 0) {
     return (
@@ -74,21 +87,36 @@ export function SheetMenu({
         <ScrollView
           horizontal
           nestedScrollEnabled
+          testID="menu-pages"
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: space.sm }}
         >
           {menuPhotos.map((photo, index) => (
-            <PhotoTile
+            <PhotoOpenTarget
               key={photo.id}
-              path={photo.path}
-              uri={urlFor(photo.path)}
-              size={size.photoLarge}
-              accessibilityLabel={menuPageLabel(name, index + 1, menuPhotos.length)}
-              onExpired={onExpired}
-            />
+              accessibilityLabel={`${menuPageLabel(name, index + 1, menuPhotos.length)}. Opens photo viewer.`}
+              onPress={() => viewer.open(index)}
+            >
+              <PhotoTile
+                path={photo.path}
+                uri={urlFor(photo.path)}
+                size={size.photoThumb}
+                accessibilityLabel={menuPageLabel(name, index + 1, menuPhotos.length)}
+                onExpired={onExpired}
+              />
+            </PhotoOpenTarget>
           ))}
         </ScrollView>
       ) : null}
+      <PhotoViewer
+        visible={viewer.visible}
+        photos={viewerPhotos}
+        index={viewer.index}
+        onIndexChange={viewer.setIndex}
+        onClose={viewer.close}
+        urlFor={urlFor}
+        onExpired={onExpired}
+      />
 
       {items.map((item) => {
         const price = itemPrice(item, currency, locale);

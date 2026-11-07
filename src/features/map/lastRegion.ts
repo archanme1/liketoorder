@@ -4,12 +4,14 @@ import { isValidRegion, type MapRegion } from './region';
 
 // Phone-only storage. The last viewed *region* is the only map data kept, and it never leaves the
 // phone. Every call is wrapped: storage can be missing or full, and must never block the map.
-const REGION_KEY = 'map.lastRegion';
+export const REGION_KEY = 'map.lastRegion';
+export const HOMEMADE_REGION_KEY = 'map.lastRegion.homemade';
 const PROMPT_DISMISSED_KEY = 'map.locationPromptDismissed';
 
-export async function readLastRegion(): Promise<MapRegion | null> {
+/** `key` is per tab; the default is the Restaurants tab's key. */
+export async function readLastRegion(key: string = REGION_KEY): Promise<MapRegion | null> {
   try {
-    const raw = await AsyncStorage.getItem(REGION_KEY);
+    const raw = await AsyncStorage.getItem(key);
     if (raw === null) return null;
     const parsed: unknown = JSON.parse(raw);
     return isValidRegion(parsed) ? parsed : null;
@@ -18,12 +20,12 @@ export async function readLastRegion(): Promise<MapRegion | null> {
   }
 }
 
-export async function saveLastRegion(region: MapRegion): Promise<void> {
+export async function saveLastRegion(region: MapRegion, key: string = REGION_KEY): Promise<void> {
   try {
     // Store only the four numbers, never anything else the caller may have attached.
     const { latitude, longitude, latitudeDelta, longitudeDelta } = region;
     await AsyncStorage.setItem(
-      REGION_KEY,
+      key,
       JSON.stringify({ latitude, longitude, latitudeDelta, longitudeDelta }),
     );
   } catch {

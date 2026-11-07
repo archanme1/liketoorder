@@ -126,7 +126,7 @@ export const RESTAURANTS: Seed[] = [
 ];
 
 /** Rows that must NOT appear on the map. Each is proof that a rule works. */
-export type HiddenKind = 'stale' | 'not_found' | 'unlisted' | 'homemade';
+export type HiddenKind = 'stale' | 'not_found' | 'unlisted';
 export const HIDDEN: {
   kind: HiddenKind;
   name: string;
@@ -136,7 +136,6 @@ export const HIDDEN: {
   { kind: 'stale', name: 'Hidden Stale Diner (31 days old)', cuisine: 'US', type: 'restaurant' },
   { kind: 'not_found', name: 'Hidden NotFound Cafe', cuisine: 'FR', type: 'restaurant' },
   { kind: 'unlisted', name: 'Hidden Unlisted Bistro', cuisine: 'IT', type: 'restaurant' },
-  { kind: 'homemade', name: 'Hidden Homemade Kitchen', cuisine: 'other', type: 'homemade' },
 ];
 
 export type MenuLine = {

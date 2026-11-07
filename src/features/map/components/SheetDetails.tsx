@@ -13,7 +13,7 @@ import { mapErrorMessage, RATE_LIMITED_MESSAGE } from '../messages';
 import type { DetailsPhoto, RestaurantDetails } from '../schema';
 
 import { SheetMenu } from './SheetMenu';
-import { SheetPhotos } from './SheetPhotos';
+import { useCoverAndGallery } from './SheetPhotos';
 
 export const NOT_AVAILABLE_MESSAGE = "This restaurant isn't available right now.";
 
@@ -25,8 +25,9 @@ type SheetDetailsProps = {
   closeLabel?: string;
 };
 
-// The body of the sheet for one restaurant: loading, not available, error with Retry, or the
-// photos, menu, address and Directions. Only what exists today: no Request or Report buttons.
+// The body of the sheet for one restaurant: loading, not available, error with Retry, or (menu
+// first, spec 08 Decision 15) the cover banner, menu pages, menu items, gallery, and at the very
+// bottom the address and Directions. Only what exists today: no Request or Report buttons.
 export function SheetDetails({ id, onClose, closeLabel = 'Close' }: SheetDetailsProps) {
   const { space, size, type } = useTheme();
   const details = useRestaurantDetails(id);
@@ -89,19 +90,28 @@ function DetailsBody({ details }: { details: RestaurantDetails }) {
   );
 
   const sections = useMemo(() => {
-    const strip: DetailsPhoto[] = [];
+    let cover: DetailsPhoto | undefined;
+    const gallery: DetailsPhoto[] = [];
     const menuPhotos: DetailsPhoto[] = [];
     const itemPhotos = new Map<string, DetailsPhoto>();
     for (const photo of details.photos) {
-      if (photo.kind === 'cover') strip.unshift(photo);
-      else if (photo.kind === 'gallery') strip.push(photo);
+      if (photo.kind === 'cover') cover ??= photo;
+      else if (photo.kind === 'gallery') gallery.push(photo);
       else if (photo.kind === 'menu') menuPhotos.push(photo);
       else if (photo.menu_item_id && !itemPhotos.has(photo.menu_item_id)) {
         itemPhotos.set(photo.menu_item_id, photo);
       }
     }
-    return { strip, menuPhotos, itemPhotos };
+    return { cover, gallery, menuPhotos, itemPhotos };
   }, [details.photos]);
+
+  const photos = useCoverAndGallery({
+    name: details.name,
+    cover: sections.cover,
+    gallery: sections.gallery,
+    urlFor,
+    onExpired,
+  });
 
   // Prices use the business's own currency and the currencies table's decimals. If the code is
   // unknown to the app (or the list is still loading) prices are hidden, not guessed.
@@ -121,12 +131,7 @@ function DetailsBody({ details }: { details: RestaurantDetails }) {
 
   return (
     <View style={{ gap: space.lg }}>
-      <SheetPhotos
-        name={details.name}
-        photos={sections.strip}
-        urlFor={urlFor}
-        onExpired={onExpired}
-      />
+      {photos.banner}
       <SheetMenu
         name={details.name}
         items={details.items}
@@ -137,6 +142,7 @@ function DetailsBody({ details }: { details: RestaurantDetails }) {
         urlFor={urlFor}
         onExpired={onExpired}
       />
+      {photos.gallerySection}
       <View style={{ gap: space.xs }}>
         <Text variant="bodyLg" accessibilityRole="header">
           Address
@@ -151,6 +157,7 @@ function DetailsBody({ details }: { details: RestaurantDetails }) {
         />
         {openFailed ? <Text accessibilityRole="alert">{"Couldn't open Google Maps."}</Text> : null}
       </View>
+      {photos.viewer}
     </View>
   );
 }

@@ -3,7 +3,15 @@ import BottomSheet, {
   useBottomSheetTimingConfigs,
 } from '@gorhom/bottom-sheet';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { memo, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+  type ComponentType,
+} from 'react';
 import { AccessibilityInfo, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { Text } from '@/components/ui';
@@ -11,7 +19,7 @@ import { CuisineLabel } from '@/features/cuisines/components/CuisineLabel';
 import type { Cuisine } from '@/features/cuisines/schema';
 import { useTheme } from '@/theme/useTheme';
 
-import { useReduceMotion } from '../hooks/useReduceMotion';
+import { useReduceMotion } from '@/lib/useReduceMotion';
 import type { Pin } from '../schema';
 
 import { PlacesList, PLACES_TITLE } from './PlacesList';
@@ -35,6 +43,23 @@ type RestaurantSheetProps = {
   onClose: () => void;
   /** Height of the area the sheet slides in (the map screen). 0 until it is measured. */
   containerHeight: number;
+  /**
+   * What differs between the tabs. All optional; the defaults are the Restaurants tab's, so the
+   * Restaurants screen passes none of them.
+   */
+  DetailsBody?: ComponentType<SheetBodyProps>;
+  detailsLabel?: string;
+  placesTitle?: string;
+  emptyText?: string;
+};
+
+/** What a sheet body (the details of one place) is given. */
+export type SheetBodyProps = {
+  id: string;
+  /** Leaves this place: closes the sheet, or goes back to the list. */
+  onClose: () => void;
+  /** What that button is called ("Close", or "Back to list"). */
+  closeLabel?: string;
 };
 
 // Index 0 = collapsed, 1 = half, 2 = full.
@@ -95,6 +120,10 @@ export const RestaurantSheet = memo(function RestaurantSheet({
   onBackToList,
   onClose,
   containerHeight,
+  DetailsBody = SheetDetails,
+  detailsLabel = 'Restaurant details',
+  placesTitle = PLACES_TITLE,
+  emptyText,
 }: RestaurantSheetProps) {
   const { colors, space, radius, size } = useTheme();
   const { height: windowHeight, fontScale } = useWindowDimensions();
@@ -145,7 +174,7 @@ export const RestaurantSheet = memo(function RestaurantSheet({
     paddingBottom: scrollBottomSpace(snaps, snapIndex, space.xxl),
     gap: space.lg,
   };
-  const title = detailsMode ? selected.name : PLACES_TITLE;
+  const title = detailsMode ? selected.name : placesTitle;
 
   return (
     <BottomSheet
@@ -185,7 +214,7 @@ export const RestaurantSheet = memo(function RestaurantSheet({
           style={styles.flex}
           // While the sheet is up (half or full) a screen reader stays inside it.
           accessibilityViewIsModal={index >= HALF_INDEX}
-          accessibilityLabel={detailsMode ? 'Restaurant details' : PLACES_TITLE}
+          accessibilityLabel={detailsMode ? detailsLabel : placesTitle}
         >
           <View style={[styles.header, { gap: space.md, paddingHorizontal: space.lg }]}>
             <View style={[styles.flex, { gap: space.xs }]}>
@@ -219,7 +248,7 @@ export const RestaurantSheet = memo(function RestaurantSheet({
           </View>
           {selected ? (
             <BottomSheetScrollView testID="sheet-scroll" contentContainerStyle={contentStyle}>
-              <SheetDetails
+              <DetailsBody
                 key={selected.id}
                 id={selected.id}
                 onClose={dismiss}
@@ -232,6 +261,7 @@ export const RestaurantSheet = memo(function RestaurantSheet({
               cuisineByCode={cuisineByCode}
               onSelect={onSelect}
               contentContainerStyle={{ ...contentStyle, gap: space.xs }}
+              emptyText={emptyText}
             />
           )}
         </View>

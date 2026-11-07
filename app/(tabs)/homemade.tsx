@@ -1,5 +1,5 @@
-import { ComingSoon } from '@/features/navigation/components/ComingSoon';
+import { HomemadeMapScreen } from '@/features/map/components/HomemadeMapScreen';
 
 export default function HomemadeScreen() {
-  return <ComingSoon title="Homemade" message="Homemade food near you is coming soon." />;
+  return <HomemadeMapScreen />;
 }

@@ -2,7 +2,8 @@ import type { MapErrorCode } from './api';
 
 export const RATE_LIMITED_MESSAGE = 'Try again in a moment';
 
-export function mapErrorMessage(code: MapErrorCode): string {
+/** `things` is what the tab lists, e.g. "restaurants" (the default) or "homemade cooks". */
+export function mapErrorMessage(code: MapErrorCode, things = 'restaurants'): string {
   switch (code) {
     case 'network':
       return 'No connection. Check your internet and try again.';
@@ -11,6 +12,6 @@ export function mapErrorMessage(code: MapErrorCode): string {
     case 'rate_limited':
       return RATE_LIMITED_MESSAGE;
     default:
-      return "We couldn't load restaurants. Try again.";
+      return `We couldn't load ${things}. Try again.`;
   }
 }

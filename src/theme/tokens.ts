@@ -36,6 +36,8 @@ export const size = {
   tabIcon: 24,
   photoThumb: 96,
   photoLarge: 160,
+  // The short cover banner at the top of the map sheet (spec 08 Decision 15).
+  coverBanner: 88,
   // Map markers (spec 07): flag pill, and cluster circles that grow with the count.
   flagWidth: 32,
   flagHeight: 24,
@@ -50,6 +52,36 @@ export const opacity = { disabled: 0.5, pressed: 0.8 };
 // Border widths: a selected option gets a thicker border as well as a check icon.
 export const stroke = { selected: 2 };
 
-export const theme = { colors, space, radius, type, weight, size, opacity, stroke };
+// The homemade "somewhere in this area" circle (spec 08): the primary colour, translucent fill with
+// a firmer outline so the edge still reads without relying on the fill alone.
+function withAlpha(hex: string, alpha: number): string {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+export const mapArea = {
+  fill: withAlpha(colors.primary, 0.15),
+  stroke: withAlpha(colors.primary, 0.7),
+  strokeWidth: 2,
+};
+
+// The full-screen photo viewer: a dark backdrop with light text and controls on top of it.
+export const viewer = {
+  backdrop: 'rgba(0, 0, 0, 0.94)',
+  text: '#FFFFFF',
+  control: 'rgba(255, 255, 255, 0.16)',
+};
+
+export const theme = {
+  colors,
+  space,
+  radius,
+  type,
+  weight,
+  size,
+  opacity,
+  stroke,
+  mapArea,
+  viewer,
+};
 
 export type Theme = typeof theme;

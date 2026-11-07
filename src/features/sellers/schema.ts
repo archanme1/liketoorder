@@ -70,8 +70,8 @@ export const myBusinessSchema = z.object({
     .object({ formatted_address: z.string(), lat: z.number(), lng: z.number() })
     .nullable(),
   /**
-   * Restaurants only (spec 07): is the pin on the map? Null for homemade and for a restaurant
-   * with no saved address. Optional so a payload from before this field existed still parses.
+   * Is the listing on the map (spec 07 restaurants, spec 08 homemade)? Null for a business with
+   * no saved address. Optional so a payload from before this field existed still parses.
    */
   map_status: mapStatusSchema.nullable().optional(),
 });

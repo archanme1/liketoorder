@@ -10,8 +10,8 @@ import { RATE_LIMITED_MESSAGE } from '../messages';
 
 export const ZOOM_IN_MESSAGE = 'Zoom in to see restaurants';
 
-export function ZoomInNotice() {
-  return <Banner tone="info" message={ZOOM_IN_MESSAGE} />;
+export function ZoomInNotice({ message = ZOOM_IN_MESSAGE }: { message?: string }) {
+  return <Banner tone="info" message={message} />;
 }
 
 export const ZOOM_IN_MORE_MESSAGE = 'Zoom in to see more';
@@ -21,13 +21,14 @@ export function ZoomInMoreNotice() {
 }
 
 // Small and non-blocking: the old pins stay on screen while the next area loads.
-export function LoadingPinsIndicator() {
+// `things` is what the tab lists ("restaurants" by default), shown as "Loading <things>".
+export function LoadingPinsIndicator({ things = 'restaurants' }: { things?: string }) {
   const { colors, space, radius } = useTheme();
   return (
     <View
       accessible
       accessibilityRole="progressbar"
-      accessibilityLabel="Loading restaurants"
+      accessibilityLabel={`Loading ${things}`}
       style={{
         alignSelf: 'flex-start',
         flexDirection: 'row',
@@ -42,17 +43,17 @@ export function LoadingPinsIndicator() {
       }}
     >
       <ActivityIndicator color={colors.primary} />
-      <Text>Loading restaurants</Text>
+      <Text>{`Loading ${things}`}</Text>
     </View>
   );
 }
 
-export function EmptyAreaNotice() {
+export function EmptyAreaNotice({ title = 'No restaurants here yet' }: { title?: string }) {
   const { space } = useTheme();
   return (
     <Card style={{ gap: space.xs }}>
       <Text variant="bodyLg" accessibilityRole="header">
-        No restaurants here yet
+        {title}
       </Text>
       <Text color="textMuted">Zoom out or move the map to look further.</Text>
     </Card>

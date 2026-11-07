@@ -22,6 +22,16 @@ jest.mock('@/features/map/components/RestaurantMapScreen', () => ({
   },
 }));
 
+// Same stand-in for the Homemade tab (spec 08 replaced its "coming soon" screen with the map).
+jest.mock('@/features/map/components/HomemadeMapScreen', () => ({
+  HomemadeMapScreen: () => {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const { ComingSoon } = require('@/features/navigation/components/ComingSoon');
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    return <ComingSoon title="Homemade" message="Homemade food near you is coming soon." />;
+  },
+}));
+
 jest.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {

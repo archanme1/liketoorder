@@ -103,6 +103,9 @@ export const RestaurantSheet = memo(function RestaurantSheet({
   const sheetRef = useRef<BottomSheet>(null);
   const titleRef = useRef<ComponentRef<typeof View>>(null);
   const [index, setIndex] = useState(-1);
+  // Set when a swipe down already took us back to the list, so the "closed" report that can
+  // follow the same swipe is not mistaken for a request to close everything.
+  const wentBack = useRef(false);
   // Where the sheet is heading (or rests): it opens at half, so that is the starting guess.
   const [snapIndex, setSnapIndex] = useState(HALF_INDEX);
 
@@ -157,12 +160,23 @@ export const RestaurantSheet = memo(function RestaurantSheet({
         if (next >= 0) setSnapIndex(next);
       }}
       onAnimate={(_from, to) => {
-        if (to >= 0) setSnapIndex(to);
-        // Swiped down past the lowest snap: go back to the list at once, so it is shown again
-        // instead of the sheet closing and having to reopen.
-        else if (backMode) onBackToList();
+        if (to >= 0) {
+          wentBack.current = false;
+          setSnapIndex(to);
+        } else if (backMode) {
+          // Swiped down past the lowest snap: go back to the list at once, so it is shown again
+          // instead of the sheet closing and having to reopen.
+          wentBack.current = true;
+          onBackToList();
+        }
       }}
-      onClose={dismiss}
+      onClose={() => {
+        if (wentBack.current) {
+          wentBack.current = false;
+          return;
+        }
+        dismiss();
+      }}
       backgroundStyle={{ backgroundColor: colors.surface }}
       handleIndicatorStyle={{ backgroundColor: colors.border }}
     >

@@ -634,6 +634,32 @@ describe('RestaurantSheet: stacked screens (list, then a restaurant)', () => {
     expect(listTitle()).toBeOnTheScreen();
   });
 
+  it('a swipe down that starts closing and then reports closed keeps the list open', async () => {
+    await renderScreen();
+    await openFromList();
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
+    const sheet = () => screen.getByTestId('bottom-sheet').props;
+    // The library announces the animation first, then (if it was not interrupted) onClose.
+    await act(async () => sheet().onAnimate(1, -1));
+    await act(async () => sheet().onClose());
+    expect(listTitle()).toBeOnTheScreen();
+    // The list reopens; a later real close from the list closes everything.
+    await act(async () => sheet().onAnimate(-1, 1));
+    await act(async () => sheet().onClose());
+    expect(screen.queryByTestId('sheet-title')).not.toBeOnTheScreen();
+  });
+
+  it('a swipe back that is interrupted by the reopen does not swallow a later real close', async () => {
+    await renderScreen();
+    await openFromList();
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
+    const sheet = () => screen.getByTestId('bottom-sheet').props;
+    await act(async () => sheet().onAnimate(1, -1)); // back to the list; no onClose follows
+    await act(async () => sheet().onAnimate(-1, 1)); // the list reopens at half
+    await act(async () => sheet().onClose()); // the person swipes the list away
+    expect(screen.queryByTestId('sheet-title')).not.toBeOnTheScreen();
+  });
+
   it('from the list itself, the X and a swipe down close everything', async () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: 'Places in this area' }));

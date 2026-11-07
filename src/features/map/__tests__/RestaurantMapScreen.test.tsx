@@ -328,4 +328,38 @@ describe("RestaurantMapScreen: the person's position never leaves the phone", ()
     expect(keys.every((key) => key.startsWith('map.'))).toBe(true);
     fetchSpy.mockRestore();
   });
+
+  it('two positions in one grid cell send the same box, and the box is not centred on either', async () => {
+    permission('granted');
+    const first = { latitude: 12.3105, longitude: 65.3605 };
+    const second = { latitude: 12.3205, longitude: 65.3705 };
+    getPosition.mockResolvedValue({ coords: first } as Location.LocationObject);
+    await renderScreen();
+    // (The first request is the country fallback view; the position arrives just after.)
+    const nearPerson = () =>
+      db.rpc.mock.calls.filter(([, a]) => (a as { p_min_lat: number }).p_min_lat < 20);
+    // The person's own area is asked for once the map has settled there.
+    await act(async () => {
+      screen.getByTestId('map-view').props.onRegionChangeComplete({
+        ...first,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      });
+    });
+    await waitFor(() => expect(nearPerson()).toHaveLength(1), { timeout: 2000 });
+
+    // The person walks a little (same cell) and the map settles there.
+    await act(async () => {
+      screen.getByTestId('map-view').props.onRegionChangeComplete({
+        ...second,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      });
+    });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(nearPerson()).toHaveLength(1);
+    const args = nearPerson()[0][1] as Record<string, number>;
+    expect(args).toEqual({ p_min_lat: 12.3, p_max_lat: 12.35, p_min_lng: 65.35, p_max_lng: 65.4 });
+    expect(Math.abs((args.p_min_lat + args.p_max_lat) / 2 - first.latitude)).toBeGreaterThan(0.009);
+  });
 });

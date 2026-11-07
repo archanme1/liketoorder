@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery, type Query } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 
 import { fetchPinsInBounds, MapAppError } from '../api';
-import { roundBox, type MapBox } from '../region';
+import { snapBox, type MapBox } from '../region';
 import type { Pin, PinsResponse } from '../schema';
 
 export const pinsKey = (box: MapBox) => ['map', 'pins', box] as const;
@@ -16,12 +16,12 @@ const NO_RETRY: ReadonlySet<string> = new Set(['rate_limited', 'invalid_bounds']
 const unlessFailed = (query: Query<PinsResponse, MapAppError>) => query.state.status !== 'error';
 
 /**
- * Pins for the settled map box. The key holds the rounded box, so only the latest box is
+ * Pins for the settled map box. The key holds the snapped box, so only the latest box is
  * rendered and a late answer for an old area is dropped. Old pins stay on screen while the next
  * area loads, and after a failure.
  */
 export function usePinsInBounds(box: MapBox | null) {
-  const rounded = useMemo(() => (box ? roundBox(box) : null), [box]);
+  const rounded = useMemo(() => (box ? snapBox(box) : null), [box]);
 
   const query = useQuery<PinsResponse, MapAppError>({
     queryKey: rounded ? pinsKey(rounded) : ['map', 'pins', 'none'],

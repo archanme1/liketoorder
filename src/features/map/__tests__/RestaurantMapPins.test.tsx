@@ -11,7 +11,7 @@ import type { Cuisine } from '@/features/cuisines/schema';
 import { fetchPinsInBounds, MapAppError } from '../api';
 import { RestaurantMapScreen } from '../components/RestaurantMapScreen';
 import { getCountryView } from '../countryViews';
-import { roundBox, regionToBox } from '../region';
+import { snapBox, regionToBox } from '../region';
 import type { Pin, PinsResponse } from '../schema';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -106,12 +106,12 @@ describe('RestaurantMapScreen: pins', () => {
     expect(screen.getByRole('button', { name: 'Chez Anne, France cuisine' })).toBeOnTheScreen();
   });
 
-  it('asks for the opening view only, as the rounded box', async () => {
+  it('asks for the opening view only, as the snapped box', async () => {
     await renderScreen();
     await waitFor(() => expect(fetchPins).toHaveBeenCalledTimes(1));
     const view = getCountryView('FR');
     if (!view) throw new Error('no view');
-    expect(fetchPins).toHaveBeenCalledWith(roundBox(regionToBox(view)));
+    expect(fetchPins).toHaveBeenCalledWith(snapBox(regionToBox(view)));
   });
 
   it('waits for the person to stop moving, then sends one request for the last position', async () => {
@@ -123,7 +123,7 @@ describe('RestaurantMapScreen: pins', () => {
     expect(fetchPins).toHaveBeenCalledTimes(1); // still the opening request
     await waitFor(() => expect(fetchPins).toHaveBeenCalledTimes(2), { timeout: 2000 });
     expect(fetchPins).toHaveBeenLastCalledWith(
-      roundBox(regionToBox({ latitude: 44, longitude: 4, ...base })),
+      snapBox(regionToBox({ latitude: 44, longitude: 4, ...base })),
     );
   });
 

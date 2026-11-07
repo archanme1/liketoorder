@@ -47,9 +47,14 @@ export function isValidRegion(value: unknown): value is MapRegion {
   );
 }
 
-/** True when the view is wider than the server accepts: show "Zoom in", send no request. */
+/**
+ * True when the box the app would send is wider than the server accepts: show "Zoom in", send no
+ * request. It checks the snapped box (what is really sent), which can be a little wider than the
+ * view itself.
+ */
 export function isOverServerLimit(region: MapRegion): boolean {
-  return region.latitudeDelta > MAX_SPAN_DEGREES || region.longitudeDelta > MAX_SPAN_DEGREES;
+  const box = snapBox(regionToBox(region));
+  return box.maxLat - box.minLat > MAX_SPAN_DEGREES || box.maxLng - box.minLng > MAX_SPAN_DEGREES;
 }
 
 export function regionToBox(region: MapRegion): MapBox {
@@ -72,15 +77,24 @@ export function regionAround(latitude: number, longitude: number): MapRegion {
   };
 }
 
-/** Rounds a box to ~100 m (3 decimals) so tiny pans share one cache entry and one request. */
-export function roundBox(box: MapBox, decimals = 3): MapBox {
-  const factor = 10 ** decimals;
-  const round = (n: number) => Math.round(n * factor) / factor;
+/** Boxes sent to the server sit on a grid of 1/20 degree (about 5 km). */
+export const GRID_STEPS_PER_DEGREE = 20;
+
+/**
+ * The box that is actually sent: each edge moves outward to the next grid line, so the sent box
+ * always contains the visible one, and every view inside the same grid cells sends exactly the
+ * same numbers. That keeps the person's exact position out of the request (centring the map on
+ * them would otherwise make the box's middle their position), and gives one cache entry per
+ * cell. Longitudes are not wrapped here: the server wraps them, so the date line works.
+ */
+export function snapBox(box: MapBox): MapBox {
+  const down = (n: number) => Math.floor(n * GRID_STEPS_PER_DEGREE) / GRID_STEPS_PER_DEGREE;
+  const up = (n: number) => Math.ceil(n * GRID_STEPS_PER_DEGREE) / GRID_STEPS_PER_DEGREE;
   return {
-    minLat: round(box.minLat),
-    maxLat: round(box.maxLat),
-    minLng: round(box.minLng),
-    maxLng: round(box.maxLng),
+    minLat: Math.max(-90, down(box.minLat)),
+    maxLat: Math.min(90, up(box.maxLat)),
+    minLng: down(box.minLng),
+    maxLng: up(box.maxLng),
   };
 }
 

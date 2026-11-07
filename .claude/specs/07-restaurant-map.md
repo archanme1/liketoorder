@@ -5,7 +5,7 @@
 - PR 2 (the app: libraries, map, markers, clustering, location flow, sheet, Directions, jest tests): `feature/restaurant-map-app`, created from `main` after PR 1 is merged. **Blocked on Archan's development-build decision (see "Development build").**
 **Product spec:** `docs/product/v1.md` §6 Map, §5 (Sellers & listings, Homemade specifics), §4 (guests can browse), §3 (out of scope), §14 row 07, §16 (Google map provider, Places coordinate refresh, Photo viewer, Google terms review)
 **Plan mode:** required — adds a migration (functions, index, tables, three cron jobs), RLS and grants; adds an Edge Function; adds several dependencies and native config; adds a route and navigation changes; touches well over ~5 files.
-**Status:** 🚧 In progress (PR 1 started; only PR 2 sets ✅ Shipped)
+**Status:** ✅ Shipped
 
 ## Overview
 After this ships, anyone, signed in or not, can open the **Restaurants** tab and see a full-screen **Google map** of restaurants, each as its country flag (or a neutral cuisine icon). Pins group into clusters when zoomed out. The map loads only the restaurants in the visible area. Tapping a pin opens a draggable bottom sheet (collapsed / half / full) with the restaurant's name, flag, cover photo and gallery, menu (items, prices, availability, menu photos), address and a **Directions** link that opens Google Maps.
@@ -347,17 +347,17 @@ Feature-specific:
 
 **App (PR 2)**
 - [ ] The Restaurants tab shows a Google map with `PROVIDER_GOOGLE` on iOS and Android; guests see it without signing in. *(Manual run: iOS tiles with the iOS key ✓. Not manually checked: Android and the Android Maps key; browsing as a guest.)*
-- [ ] Pins load only for the visible area, after the person stops moving the map (400 ms); a late answer for an old area is ignored; old pins stay while new ones load (no flicker). *(Manual run: pins load on pan ✓. The ordering and no-flicker parts are jest-only: not manually checked.)*
-- [ ] A `rate_limited` answer keeps the old pins, shows "Try again in a moment", and is never retried automatically.
-- [ ] 500 pins → "Zoom in to see more"; `too_large` → "Zoom in to see restaurants" with no pin request loop.
+- [x] Pins load only for the visible area, after the person stops moving the map (400 ms); a late answer for an old area is ignored; old pins stay while new ones load (no flicker). *(Manual run: pins load on pan ✓. The 400 ms wait, the late-answer drop and keeping old pins are asserted in jest (`useMapRegion`, `usePinsInBounds`, `RestaurantMapPins`). Re-checked after the review fixes, iOS Simulator, 2026-11-06: panning shows no flicker.)*
+- [x] A `rate_limited` answer keeps the old pins, shows "Try again in a moment", and is never retried automatically. *(Jest only: `usePinsInBounds`, `RestaurantMapPins`, `RestaurantSheet`; not manually checked on a device.)*
+- [x] 500 pins → "Zoom in to see more"; `too_large` → "Zoom in to see restaurants" with no pin request loop. *(Jest only: `RestaurantMapPins`; not manually checked on a device.)*
 - [x] Tap a flag → the sheet opens at half, the map doesn't move; swipe down closes it; tapping a cluster zooms in. *(Manual run, iOS Simulator, 2026-11-06.)*
 - [ ] The sheet shows exactly: name, flag + cuisine name, cover and gallery, menu items with price and availability in the business's currency, menu photos, address, Directions. No Request or Report buttons or placeholders. *(Manual run: name, flag, cuisine, menu items, prices and currency formatting, "Sold out", "Price not listed", address and Directions ✓. Not manually checked: photos (cover, gallery, menu pages, item photos): none are seeded.)*
 - [x] Directions opens a `google.com/maps/search/?api=1&query=…&query_place_id=…` URL, with no coordinates and no Apple Maps link. *(Manual run, iOS Simulator, 2026-11-06: opens a Google Maps search; the seeded place IDs are fake, so a real place was not checked. The URL itself is asserted in jest.)*
 - [ ] A photo that fails shows "Photo unavailable" once (no loop); expired signed URLs renew once per path per mount. *(Not manually checked: no photos are seeded.)*
-- [ ] Every entry of the bundled country table has a valid centre and `latDelta`, `lngDelta` of at most 40° (and more than 0), so none can reach the 90° limit; an unmapped region falls through to the world map.
-- [ ] Opening view order: allowed → centred on me; otherwise last region → phone country → plain world map with "Zoom in to see restaurants". Slow GPS (no fix in 5 s) doesn't block the map. *(Manual run: allowed → centred on a faked location ✓. Not manually checked: the last-region and phone-country fallbacks, the world map, slow GPS.)*
-- [ ] Denied-forever, services-off and empty-region states each show their message; "Open Settings" works. *(Not manually checked: the denied, denied-forever and services-off states.)*
-- [ ] No request to Supabase (or anywhere) ever contains the person's latitude/longitude: only the map box (jest asserts the exact request arguments).
+- [x] Every entry of the bundled country table has a valid centre and `latDelta`, `lngDelta` of at most 40° (and more than 0), so none can reach the 90° limit; an unmapped region falls through to the world map. *(Jest: `countryViews`, `RestaurantMapScreen`.)*
+- [ ] Opening view order: allowed → centred on me; otherwise last region → phone country → plain world map with "Zoom in to see restaurants". Slow GPS (no fix in 5 s) doesn't block the map. *(Manual run: allowed → centred on a faked location ✓. Re-checked after the review fixes, iOS Simulator, 2026-11-06: centre on me. Not manually checked: the last-region and phone-country fallbacks, the world map, slow GPS.)*
+- [ ] Denied-forever, services-off and empty-region states each show their message; "Open Settings" works. *(Re-checked after the review fixes, iOS Simulator, 2026-11-06: the new permission wording and the Settings round trip for location. Not manually checked: the services-off state.)*
+- [x] No request to Supabase (or anywhere) ever contains the person's latitude/longitude: only the map box (jest asserts the exact request arguments: `RestaurantMapScreen`, `region`, `api`). The request box is snapped outward to a 0.05° grid, so two positions in one cell send the same box.
 - [ ] Manage Business shows the status line for a restaurant: "Showing on the map" when fresh, the two hidden messages otherwise, nothing for a restaurant with no saved address (pgTAP: `get_my_business` returns `visible` / `place_not_found` / `needs_refresh` for each fixture and null for homemade and for a restaurant with no saved address; jest: each message and the button to the address screen). *(Manual run: "Showing on the map" and the needs_refresh message with its button ✓. Not manually checked: the place_not_found message.)*
 - [ ] All screens handle loading, empty, error (with retry) and success; every touchable has a role and label with ≥ 44 pt target; the "Places in this area" list works; large text isn't clipped. *(Manual run: the Places list ✓ (map centres on a picked place; stacked back with the X and by swiping); large text at the largest iOS size for the sheet, list and tab bar ✓. Not manually checked: the empty and error states on a device, VoiceOver, TalkBack, Android font scale 2.0.)*
 - [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` and the Deno tests pass; CI green.
@@ -434,6 +434,27 @@ Manual checks on a real build, kept here so the final manual run knows what is s
   - `customMapStyle` on Android.
 
 **After the review fixes (2026-11-06, Archan):** the "Places in this area" list did not scroll at the half snap once it became the library's `BottomSheetFlatList`, while the details (a `BottomSheetScrollView`) did. The list is now a plain virtualised `FlatList` that renders the library's own `BottomSheetScrollView` (`useBottomSheetScrollableCreator`), so the list and the details share one scroll path and one bottom-space rule. The cause is not proven from the code (the library's lock logic treats both the same); the fix follows the library's own pattern for virtualised lists and needs the simulator re-check (list scrolls at half and full, last row above the tab bar, large text).
+
+**Re-check after the review fixes, iOS Simulator (iPhone 18 Pro, iOS 27.2), 2026-11-06 (Archan): partial, iOS Simulator only.**
+- **Passed:**
+  - The new permission wording (the note says the request is sent as a coarse, grid-snapped box).
+  - Centre on me.
+  - The Settings round trip for location.
+  - "Places in this area" scrolls at half and at full (the earlier list-scroll fix is confirmed).
+  - A swipe back from a restaurant to the list.
+  - Panning shows no flicker.
+- **Not manually checked (all still open, tracked in `docs/product/v1.md` §16):**
+  - A real iPhone.
+  - An Android build and the Android Maps key.
+  - VoiceOver and TalkBack.
+  - Android font scale 2.0.
+  - The services-off state.
+  - The slow-GPS and phone-country fallbacks.
+  - The place_not_found status line.
+  - Photos (none are seeded).
+  - Directions to a real place.
+  - `customMapStyle` on Android.
+  - Focus returning to the marker when the sheet closes.
 
 ## Decisions
 1. **Two PRs** as above; PR 1 keeps the status 🚧, only PR 2 marks ✅ Shipped. (Archan, 2026-11-04)

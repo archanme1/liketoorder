@@ -1,4 +1,4 @@
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Banner, Button, Card, Text } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
@@ -38,7 +38,7 @@ export function LoadingPinsIndicator() {
         borderRadius: radius.pill,
         backgroundColor: colors.surface,
         borderColor: colors.border,
-        borderWidth: 1,
+        borderWidth: StyleSheet.hairlineWidth,
       }}
     >
       <ActivityIndicator color={colors.primary} />

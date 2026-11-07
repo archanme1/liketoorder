@@ -265,3 +265,19 @@ jest.mock('expo-crypto', () => {
     }),
   };
 });
+
+// ── Spec 09 pickup time: the native date and time picker ──
+// The default export renders a plain View (testID "datetimepicker-<mode>") that keeps every prop,
+// so tests can read minimumDate / maximumDate / minuteInterval / display / timeZoneName and call
+// onValueChange(event, date) themselves. DateTimePickerAndroid.open is a jest.fn: tests read its
+// argument and call onValueChange to play a dialog being answered.
+jest.mock('@react-native-community/datetimepicker', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { createElement } = require('react');
+  const { View } = require('react-native');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const DateTimePicker = (props: { mode?: string }) =>
+    createElement(View, { testID: `datetimepicker-${props.mode ?? 'date'}`, ...props });
+  const DateTimePickerAndroid = { open: jest.fn(), dismiss: jest.fn(async () => true) };
+  return { __esModule: true, default: DateTimePicker, DateTimePickerAndroid };
+});

@@ -1,15 +1,20 @@
 import {
-  buildPickupDays,
+  clampToWindow,
+  combineDateAndTime,
   earliestPickup,
   formatDateTime,
   formatTime,
   latestPickup,
   localDateKey,
+  snapToQuarter,
+  wallTimeToInstant,
 } from '../time';
 
 // Auckland is UTC+13 in November (daylight time), so its calendar day starts at 11:00 UTC the day
 // before. The tests pass the zone in; nothing here depends on the machine's own zone.
 const AUCKLAND = { timeZone: 'Pacific/Auckland', locale: 'en-US' };
+const HOUR = 3_600_000;
+const iso = (date: Date) => date.toISOString();
 
 describe('localDateKey', () => {
   it('uses the zone, not UTC', () => {
@@ -35,86 +40,195 @@ describe('earliest and latest', () => {
 
   it('earliest is 15+ minutes ahead, rounded up to a quarter hour', () => {
     const earliest = earliestPickup(now);
-    expect(earliest.toISOString()).toBe('2026-11-07T10:30:00.000Z');
+    expect(iso(earliest)).toBe('2026-11-07T10:30:00.000Z');
     expect(earliest.getTime() - now.getTime()).toBeGreaterThanOrEqual(15 * 60_000);
   });
 
   it('is a full quarter hour on an exact boundary too', () => {
-    const exact = new Date('2026-11-07T10:00:00Z');
-    expect(earliestPickup(exact).toISOString()).toBe('2026-11-07T10:30:00.000Z');
+    expect(iso(earliestPickup(new Date('2026-11-07T10:00:00Z')))).toBe('2026-11-07T10:30:00.000Z');
   });
 
   it('latest is 7 days ahead at most', () => {
-    expect(latestPickup(now).getTime()).toBeLessThanOrEqual(now.getTime() + 7 * 86_400_000);
+    expect(latestPickup(now).getTime()).toBeLessThanOrEqual(now.getTime() + 7 * 24 * HOUR);
+  });
+
+  it('the window is 7 days of elapsed time, even across a daylight-saving change', () => {
+    // Auckland springs forward on 27 September 2026: seven days from the 24th spans the change.
+    const before = new Date('2026-09-24T04:00:00Z');
+    const latest = latestPickup(before);
+    expect(latest.getTime() - before.getTime()).toBeLessThanOrEqual(7 * 24 * HOUR);
+    expect(latest.getTime() - before.getTime()).toBeGreaterThan(7 * 24 * HOUR - 15 * 60_000);
+    // On the Auckland clock that is one hour later than the same time a week on.
+    expect(formatTime(before, AUCKLAND)).toBe('4:00 PM');
+    expect(formatTime(latest, AUCKLAND)).toBe('5:00 PM');
   });
 });
 
-describe('buildPickupDays', () => {
-  it('groups slots by the local date in the zone', () => {
-    // 12:00 UTC on Nov 7 is 01:00 on Nov 8 in Auckland: the first day is Nov 8, and a UTC
-    // grouping would call it Nov 7.
-    const days = buildPickupDays(new Date('2026-11-07T12:00:00Z'), AUCKLAND);
-    expect(days[0].key).toBe('2026-11-08');
-    expect(days[0].label).toBe('Today');
-    expect(days[0].slots).toHaveLength(90); // 1:30 AM to 11:45 PM
-    expect(formatTime(days[0].slots[0], AUCKLAND)).toBe('1:30 AM');
-    expect(formatTime(days[0].slots[89], AUCKLAND)).toBe('11:45 PM');
-    expect(days[1].key).toBe('2026-11-09');
-    expect(days[1].label).toBe('Mon, Nov 9');
-    expect(days[1].slots).toHaveLength(96);
+describe('snapToQuarter', () => {
+  it('rounds to the nearest quarter hour', () => {
+    expect(iso(snapToQuarter(new Date('2026-11-07T10:07:00Z')))).toBe('2026-11-07T10:00:00.000Z');
+    expect(iso(snapToQuarter(new Date('2026-11-07T10:08:00Z')))).toBe('2026-11-07T10:15:00.000Z');
+    expect(iso(snapToQuarter(new Date('2026-11-07T10:15:00Z')))).toBe('2026-11-07T10:15:00.000Z');
   });
 
-  it('the same instant lands on a different day in a different zone', () => {
-    const now = new Date('2026-11-07T12:00:00Z');
-    const toronto = buildPickupDays(now, { timeZone: 'America/Toronto', locale: 'en-US' });
-    expect(toronto[0].key).toBe('2026-11-07'); // 07:00 in Toronto
-    expect(toronto[0].label).toBe('Today');
+  it.each([
+    ['Pacific/Auckland', '2026-11-07T10:07:40Z'],
+    ['Asia/Kathmandu', '2026-11-07T10:07:40Z'], // UTC+5:45
+    ['Australia/Adelaide', '2026-01-07T10:07:40Z'], // UTC+10:30 in summer
+    ['Australia/Lord_Howe', '2026-01-07T10:22:10Z'], // UTC+11 (30-minute daylight saving)
+    ['America/St_Johns', '2026-07-07T10:51:00Z'], // UTC-2:30
+    ['America/Toronto', '2026-11-07T10:51:00Z'],
+  ])('lands on a quarter hour of the LOCAL clock in %s', (timeZone, at) => {
+    const minutes = Number(
+      new Intl.DateTimeFormat('en-US', { timeZone, minute: 'numeric' }).format(
+        snapToQuarter(new Date(at)),
+      ),
+    );
+    expect(minutes % 15).toBe(0);
+  });
+});
+
+describe('clampToWindow', () => {
+  const now = new Date('2026-11-07T12:00:00Z'); // 01:00 on 8 November in Auckland
+  const earliest = earliestPickup(now); // 12:30Z
+  const latest = latestPickup(now);
+
+  it('keeps a time inside the window, snapped to a quarter hour', () => {
+    const result = clampToWindow(new Date('2026-11-07T18:07:00Z'), now);
+    expect(iso(result.value)).toBe('2026-11-07T18:00:00.000Z');
+    expect(result.problem).toBeNull();
   });
 
-  it('every slot is a quarter hour on the local clock', () => {
-    const days = buildPickupDays(new Date('2026-11-07T12:00:00Z'), AUCKLAND);
-    for (const day of days) {
-      for (const slot of day.slots) {
-        const minutes = Number(
-          new Intl.DateTimeFormat('en-US', {
-            timeZone: 'Pacific/Auckland',
-            minute: 'numeric',
-          }).format(slot),
-        );
-        expect(minutes % 15).toBe(0);
-      }
-    }
+  it('too soon: the earliest allowed time, and which side it was', () => {
+    const result = clampToWindow(new Date('2026-11-07T12:15:00Z'), now);
+    expect(iso(result.value)).toBe(iso(earliest));
+    expect(result.problem).toBe('too_soon');
   });
 
-  it('offers about 7 days of times, none sooner than 15 minutes', () => {
-    const now = new Date('2026-11-07T10:07:00Z');
-    const days = buildPickupDays(now, AUCKLAND);
-    const slots = days.flatMap((day) => day.slots);
-    expect(slots[0].getTime() - now.getTime()).toBeGreaterThanOrEqual(15 * 60_000);
-    expect(slots[slots.length - 1].getTime() - now.getTime()).toBeLessThanOrEqual(7 * 86_400_000);
-    expect(slots.length).toBeGreaterThan(7 * 96 - 4);
+  it('exactly the earliest and the latest are fine', () => {
+    expect(clampToWindow(earliest, now)).toEqual({ value: earliest, problem: null });
+    expect(clampToWindow(latest, now)).toEqual({ value: latest, problem: null });
   });
 
-  it('handles the daylight-saving change: Auckland springs forward on 27 September 2026', () => {
-    // 02:00 -> 03:00 that night, so the local day has 23 hours and no 2:xx AM slots.
-    const days = buildPickupDays(new Date('2026-09-26T04:00:00Z'), AUCKLAND);
-    const dst = days.find((day) => day.key === '2026-09-27');
-    expect(dst).toBeDefined();
-    expect(dst?.slots).toHaveLength(92);
-    const labels = dst?.slots.map((slot) => formatTime(slot, AUCKLAND)) ?? [];
-    expect(labels).not.toContain('2:00 AM');
-    expect(labels).not.toContain('2:30 AM');
-    expect(labels).toContain('1:45 AM');
-    expect(labels).toContain('3:00 AM');
-    // Local dates stay in order, one group per date.
-    const keys = days.map((day) => day.key);
-    expect(new Set(keys).size).toBe(keys.length);
-    expect([...keys].sort()).toEqual(keys);
+  it('too far: the latest allowed time', () => {
+    const result = clampToWindow(new Date(latest.getTime() + 2 * HOUR), now);
+    expect(iso(result.value)).toBe(iso(latest));
+    expect(result.problem).toBe('too_far');
   });
 
-  it('handles the change back: Auckland falls back on 5 April 2026', () => {
-    const days = buildPickupDays(new Date('2026-04-04T04:00:00Z'), AUCKLAND);
-    const dst = days.find((day) => day.key === '2026-04-05');
-    expect(dst?.slots).toHaveLength(100); // a 25-hour day
+  it('a time a hair under the earliest snaps up into the window, not out of it', () => {
+    const result = clampToWindow(new Date(earliest.getTime() - 5 * 60_000), now);
+    expect(result.problem).toBeNull(); // 5 minutes under snaps to the earliest
+    expect(iso(result.value)).toBe(iso(earliest));
+  });
+});
+
+describe('wallTimeToInstant', () => {
+  it('Auckland: an ordinary time', () => {
+    const instant = wallTimeToInstant(
+      { year: 2026, month: 11, day: 8, hour: 18, minute: 0 },
+      'Pacific/Auckland',
+    );
+    expect(iso(instant)).toBe('2026-11-08T05:00:00.000Z'); // NZDT is UTC+13
+  });
+
+  it('Auckland: a time that never happens (clocks jump 02:00 to 03:00) moves ahead by the gap', () => {
+    const instant = wallTimeToInstant(
+      { year: 2026, month: 9, day: 27, hour: 2, minute: 30 },
+      'Pacific/Auckland',
+    );
+    expect(iso(instant)).toBe('2026-09-26T14:30:00.000Z');
+    expect(formatTime(instant, AUCKLAND)).toBe('3:30 AM');
+  });
+
+  it('Auckland: a time that happens twice (clocks go back 03:00 to 02:00) is the first one', () => {
+    const instant = wallTimeToInstant(
+      { year: 2026, month: 4, day: 5, hour: 2, minute: 30 },
+      'Pacific/Auckland',
+    );
+    expect(iso(instant)).toBe('2026-04-04T13:30:00.000Z'); // still daylight time, UTC+13
+  });
+
+  it('Toronto: the same two cases the other way round', () => {
+    expect(
+      iso(
+        wallTimeToInstant({ year: 2026, month: 3, day: 8, hour: 2, minute: 30 }, 'America/Toronto'),
+      ),
+    ).toBe('2026-03-08T07:30:00.000Z'); // 02:30 does not exist; 03:30 EDT
+    expect(
+      iso(
+        wallTimeToInstant(
+          { year: 2026, month: 11, day: 1, hour: 1, minute: 30 },
+          'America/Toronto',
+        ),
+      ),
+    ).toBe('2026-11-01T05:30:00.000Z'); // 01:30 happens twice; the EDT one
+  });
+
+  it('Kathmandu (UTC+5:45) and UTC', () => {
+    expect(
+      iso(
+        wallTimeToInstant(
+          { year: 2026, month: 11, day: 8, hour: 18, minute: 15 },
+          'Asia/Kathmandu',
+        ),
+      ),
+    ).toBe('2026-11-08T12:30:00.000Z');
+    expect(
+      iso(wallTimeToInstant({ year: 2026, month: 11, day: 8, hour: 18, minute: 15 }, 'UTC')),
+    ).toBe('2026-11-08T18:15:00.000Z');
+  });
+});
+
+describe('combineDateAndTime', () => {
+  it('takes the calendar day from one instant and the wall-clock time from the other', () => {
+    // 01:00 on 8 November in Auckland (still 7 November in UTC) and 18:00 on 7 November there.
+    const day = new Date('2026-11-07T12:00:00Z');
+    const time = new Date('2026-11-07T05:00:00Z');
+    const combined = combineDateAndTime(day, time, 'Pacific/Auckland');
+    expect(iso(combined)).toBe('2026-11-08T05:00:00.000Z'); // 8 November, 18:00 in Auckland
+    expect(formatDateTime(combined, AUCKLAND)).toBe('Sun, Nov 8, 6:00 PM');
+    // UTC would have said 7 November 05:00Z + 12:00 = a different day.
+    expect(localDateKey(combined, 'Pacific/Auckland')).toBe('2026-11-08');
+  });
+
+  it('keeps the wall-clock time across a daylight-saving change (the instant moves by 23 hours)', () => {
+    // 18:00 on 26 September (UTC+12) moved to 27 September (UTC+13) is still 18:00 on the clock.
+    const time = wallTimeToInstant(
+      { year: 2026, month: 9, day: 26, hour: 18, minute: 0 },
+      'Pacific/Auckland',
+    );
+    const day = wallTimeToInstant(
+      { year: 2026, month: 9, day: 27, hour: 9, minute: 0 },
+      'Pacific/Auckland',
+    );
+    const combined = combineDateAndTime(day, time, 'Pacific/Auckland');
+    expect(formatDateTime(combined, AUCKLAND)).toBe('Sun, Sep 27, 6:00 PM');
+    expect(combined.getTime() - time.getTime()).toBe(23 * HOUR);
+  });
+
+  it('a wall time that does not exist on the chosen day moves ahead (02:30 on the spring-forward day)', () => {
+    const time = wallTimeToInstant(
+      { year: 2026, month: 9, day: 26, hour: 2, minute: 30 },
+      'Pacific/Auckland',
+    );
+    const day = wallTimeToInstant(
+      { year: 2026, month: 9, day: 27, hour: 12, minute: 0 },
+      'Pacific/Auckland',
+    );
+    expect(formatDateTime(combineDateAndTime(day, time, 'Pacific/Auckland'), AUCKLAND)).toBe(
+      'Sun, Sep 27, 3:30 AM',
+    );
+  });
+
+  it('works in Kathmandu and in Toronto, and with the same instant for both', () => {
+    const kathmandu = { timeZone: 'Asia/Kathmandu', locale: 'en-US' };
+    const day = new Date('2026-11-08T05:00:00Z'); // 10:45 on 8 November there
+    const time = new Date('2026-11-07T13:00:00Z'); // 18:45 on 7 November there
+    expect(formatDateTime(combineDateAndTime(day, time, 'Asia/Kathmandu'), kathmandu)).toBe(
+      'Sun, Nov 8, 6:45 PM',
+    );
+    const same = new Date('2026-11-08T17:00:00Z');
+    expect(iso(combineDateAndTime(same, same, 'America/Toronto'))).toBe(iso(same));
   });
 });

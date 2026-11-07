@@ -1,16 +1,18 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import { useState } from 'react';
+import { Platform, View } from 'react-native';
 
-import { Text } from '@/components/ui';
+import { Button, Text } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
 
+import type { PickupTimeProblem } from '../schema';
 import {
-  buildPickupDays,
-  formatFullDay,
-  formatTime,
-  localDateKey,
+  clampToWindow,
+  combineDateAndTime,
   deviceTimeZone,
+  earliestPickup,
+  formatDateTime,
+  latestPickup,
   type TimeOptions,
 } from '../time';
 
@@ -18,109 +20,91 @@ type PickupTimePickerProps = TimeOptions & {
   /** "Now" on the phone; the earliest time offered is 15 minutes after it. */
   now: Date;
   value: Date | null;
-  onChange: (value: Date) => void;
+  /** The chosen time (a quarter hour, inside the allowed window), and which side it was outside of. */
+  onChange: (value: Date, problem: PickupTimeProblem | null) => void;
 };
 
-// Built from React Native primitives (no date-picker library): day buttons for the next 7 days,
-// then a grid of quarter-hour times for the chosen day. Days and times are in `timeZone` (the
-// phone's by default); the chosen value is an instant, sent to the server as UTC.
+// The platform's own calendar and time picker. iOS: one inline control (calendar and time
+// together) shown after "Choose pickup time", 15-minute steps, limited to the allowed window.
+// Android: the date dialog, then the time dialog; its time dialog ignores minimum and maximum
+// dates, so the result is snapped and clamped here. Either way the result is an instant that
+// goes to the server as UTC, and what is shown is in `timeZone` (the phone's unless a test says
+// otherwise: it is only handed to the native picker when it was given explicitly).
 export function PickupTimePicker({
   now,
   value,
   onChange,
-  timeZone = deviceTimeZone(),
+  timeZone,
   locale,
 }: PickupTimePickerProps) {
-  const { colors, space, radius, size, stroke } = useTheme();
-  const options = useMemo(() => ({ timeZone, locale }), [timeZone, locale]);
-  const days = useMemo(() => buildPickupDays(now, options), [now, options]);
-  const [dayKey, setDayKey] = useState<string | null>(null);
+  const { space } = useTheme();
+  const [open, setOpen] = useState(false);
+  const zone = timeZone ?? deviceTimeZone();
+  const earliest = earliestPickup(now);
+  const latest = latestPickup(now);
+  const base = value ?? earliest;
 
-  const valueKey = value ? localDateKey(value, timeZone) : null;
-  const shownKey = dayKey ?? valueKey ?? days[0]?.key ?? null;
-  const day = days.find((entry) => entry.key === shownKey) ?? days[0];
+  const finish = (picked: Date) => {
+    const { value: next, problem } = clampToWindow(picked, now);
+    onChange(next, problem);
+  };
 
-  if (!day) return null;
+  const choose = () => {
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        mode: 'date',
+        value: base,
+        minimumDate: earliest,
+        maximumDate: latest,
+        timeZoneName: timeZone,
+        onValueChange: (_event, pickedDay) => {
+          // Keep the wall-clock time already chosen, on the new day, whatever the dialog returned.
+          const withDay = combineDateAndTime(pickedDay, base, zone);
+          DateTimePickerAndroid.open({
+            mode: 'time',
+            value: withDay,
+            minuteInterval: 15,
+            timeZoneName: timeZone,
+            onValueChange: (_timeEvent, pickedTime) => {
+              finish(combineDateAndTime(withDay, pickedTime, zone));
+            },
+          });
+        },
+      });
+      return;
+    }
+    // iOS: showing the control also selects its first value, so what is shown is what is chosen.
+    if (value === null) finish(earliest);
+    setOpen((current) => !current);
+  };
 
+  const label = value ? 'Change pickup time' : 'Choose pickup time';
   return (
     <View style={{ gap: space.md }}>
-      <View style={[styles.wrap, { gap: space.sm }]} accessibilityLabel="Pickup day">
-        {days.map((entry) => {
-          const selected = entry.key === day.key;
-          return (
-            <Pressable
-              key={entry.key}
-              onPress={() => setDayKey(entry.key)}
-              accessibilityRole="button"
-              accessibilityLabel={entry.spokenLabel}
-              accessibilityState={{ selected }}
-              style={[
-                styles.option,
-                {
-                  minHeight: size.touch,
-                  minWidth: size.touch,
-                  paddingHorizontal: space.md,
-                  gap: space.xs,
-                  borderRadius: radius.md,
-                  borderColor: selected ? colors.primary : colors.border,
-                  borderWidth: selected ? stroke.selected : StyleSheet.hairlineWidth,
-                  backgroundColor: colors.surface,
-                },
-              ]}
-            >
-              {selected ? (
-                <Ionicons name="checkmark" size={size.tabIcon * 0.7} color={colors.primary} />
-              ) : null}
-              <Text>{entry.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <ScrollView
-        nestedScrollEnabled
-        style={{ maxHeight: size.photoLarge * 2 }}
-        accessibilityLabel={`Pickup times on ${day.spokenLabel}`}
-      >
-        <View style={[styles.wrap, { gap: space.sm }]}>
-          {day.slots.map((slot) => {
-            const selected = value !== null && slot.getTime() === value.getTime();
-            const time = formatTime(slot, options);
-            return (
-              <Pressable
-                key={slot.getTime()}
-                onPress={() => onChange(slot)}
-                accessibilityRole="button"
-                accessibilityLabel={`${formatFullDay(slot, options)}, ${time}`}
-                accessibilityState={{ selected }}
-                style={[
-                  styles.option,
-                  {
-                    minHeight: size.touch,
-                    minWidth: size.touch,
-                    paddingHorizontal: space.md,
-                    gap: space.xs,
-                    borderRadius: radius.md,
-                    borderColor: selected ? colors.primary : colors.border,
-                    borderWidth: selected ? stroke.selected : StyleSheet.hairlineWidth,
-                    backgroundColor: colors.surface,
-                  },
-                ]}
-              >
-                {selected ? (
-                  <Ionicons name="checkmark" size={size.tabIcon * 0.7} color={colors.primary} />
-                ) : null}
-                <Text>{time}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      {value ? (
+        <Text accessibilityRole="header">{`Pickup: ${formatDateTime(value, { timeZone: zone, locale })}`}</Text>
+      ) : (
+        <Text color="textMuted">No pickup time chosen yet.</Text>
+      )}
+      <Button
+        title={Platform.OS === 'ios' && open ? 'Hide calendar' : label}
+        variant="secondary"
+        accessibilityLabel={Platform.OS === 'ios' && open ? 'Hide pickup calendar' : label}
+        onPress={choose}
+      />
+      {Platform.OS === 'ios' && open ? (
+        <DateTimePicker
+          mode="datetime"
+          display="inline"
+          value={base}
+          minimumDate={earliest}
+          maximumDate={latest}
+          minuteInterval={15}
+          timeZoneName={timeZone}
+          locale={locale}
+          onValueChange={(_event, picked) => finish(picked)}
+        />
+      ) : null}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: { flexDirection: 'row', flexWrap: 'wrap' },
-  option: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-});

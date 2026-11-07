@@ -120,13 +120,9 @@ async function formReady() {
   await screen.findByRole('header', { name: 'Request pickup' });
 }
 
-// The first time button on offer (the day starts on today, and the earliest slot is valid).
+// Opening the native picker also selects its first value, the earliest allowed time.
 async function pickFirstTime() {
-  const slot = screen
-    .getAllByRole('button')
-    .find((button) => /, \d{1,2}:\d{2}/.test(button.props.accessibilityLabel ?? ''));
-  if (!slot) throw new Error('no time slot');
-  await fireEvent.press(slot);
+  await fireEvent.press(screen.getByRole('button', { name: 'Choose pickup time' }));
 }
 
 const send = () => screen.getByRole('button', { name: "Send pickup request to Joe's Pizza" });
@@ -619,5 +615,82 @@ describe('the title steps aside while the keyboard is up', () => {
 
     await act(async () => handlers.keyboardWillHide());
     expect(screen.getByRole('header', { name: 'Request pickup' })).toBeOnTheScreen();
+  });
+});
+
+describe('the pickup time', () => {
+  const control = () => screen.getByTestId('datetimepicker-datetime');
+  const picked = (date: Date) => ({ nativeEvent: { timestamp: date.getTime(), utcOffset: 0 } });
+
+  it("is chosen with the native control, whose limits are the server's window", async () => {
+    await renderScreen();
+    await formReady();
+    expect(screen.getByText('No pickup time chosen yet.')).toBeOnTheScreen();
+    await pickFirstTime();
+    const { minimumDate, maximumDate, minuteInterval, mode, display } = control().props;
+    expect(mode).toBe('datetime');
+    expect(display).toBe('inline');
+    expect(minuteInterval).toBe(15);
+    const now = Date.now();
+    expect(minimumDate.getTime() - now).toBeGreaterThanOrEqual(15 * 60_000);
+    expect(minimumDate.getTime() - now).toBeLessThanOrEqual(31 * 60_000);
+    expect(maximumDate.getTime() - now).toBeLessThanOrEqual(7 * 24 * 3_600_000);
+    expect(screen.getByText(/^Pickup: /)).toBeOnTheScreen();
+  });
+
+  it('sends the chosen time as UTC', async () => {
+    submitMock.mockResolvedValue(makeRequest());
+    await renderScreen();
+    await formReady();
+    await fireEvent.changeText(screen.getByLabelText('Anything else'), 'two pizzas');
+    await pickFirstTime();
+    const chosen = new Date(Math.ceil((Date.now() + 3 * 3_600_000) / 900_000) * 900_000);
+    await act(async () => control().props.onValueChange(picked(chosen), chosen));
+    await fireEvent.press(send());
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+    expect(submitMock.mock.calls[0][0].pickupAt.toISOString()).toBe(chosen.toISOString());
+  });
+
+  it('a time the control let through that is too soon is moved to the earliest, with "Pick a later time"', async () => {
+    await renderScreen();
+    await formReady();
+    await pickFirstTime();
+    const earliest = control().props.minimumDate as Date;
+    await act(async () =>
+      control().props.onValueChange(picked(new Date()), new Date(Date.now() + 60_000)),
+    );
+    expect(
+      await within(screen.getByTestId('send-bar')).findByText('Pick a later time'),
+    ).toBeOnTheScreen();
+    expect(control().props.value.getTime()).toBe(earliest.getTime());
+  });
+
+  it('a time too far ahead is moved to the latest, with a message', async () => {
+    await renderScreen();
+    await formReady();
+    await pickFirstTime();
+    await act(async () =>
+      control().props.onValueChange(picked(new Date()), new Date(Date.now() + 30 * 24 * 3_600_000)),
+    );
+    expect(
+      await within(screen.getByTestId('send-bar')).findByText('Pick a time within the next 7 days'),
+    ).toBeOnTheScreen();
+  });
+
+  it('a fixed-up time can be sent after choosing again', async () => {
+    submitMock.mockResolvedValue(makeRequest());
+    await renderScreen();
+    await formReady();
+    await fireEvent.changeText(screen.getByLabelText('Anything else'), 'two pizzas');
+    await pickFirstTime();
+    await act(async () =>
+      control().props.onValueChange(picked(new Date()), new Date(Date.now() + 60_000)),
+    );
+    await screen.findByText('Pick a later time');
+    const later = new Date(Math.ceil((Date.now() + 2 * 3_600_000) / 900_000) * 900_000);
+    await act(async () => control().props.onValueChange(picked(later), later));
+    await waitFor(() => expect(screen.queryByText('Pick a later time')).not.toBeOnTheScreen());
+    await fireEvent.press(send());
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
   });
 });

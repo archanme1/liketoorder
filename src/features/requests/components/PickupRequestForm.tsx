@@ -281,17 +281,22 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
           <Text variant="bodyLg" accessibilityRole="header">
             Pickup time
           </Text>
-          {pickupAt ? (
-            <Text color="textMuted">{`Selected: ${formatDateTime(pickupAt, { locale })}`}</Text>
-          ) : null}
           <PickupTimePicker
             now={now}
             value={pickupAt}
             locale={locale}
-            onChange={(value) => {
+            onChange={(value, problem) => {
               edited();
-              setTimeProblem(null);
               setPickupAt(value);
+              // The native picker may offer a time the server would refuse (Android's time
+              // dialog ignores its limits): the nearest allowed time is kept and the person told.
+              setTimeProblem(
+                problem === 'too_soon'
+                  ? LATER_TIME_MESSAGE
+                  : problem === 'too_far'
+                    ? FAR_TIME_MESSAGE
+                    : null,
+              );
             }}
           />
         </View>

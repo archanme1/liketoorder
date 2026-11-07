@@ -59,6 +59,7 @@ const config: ExpoConfig = {
         microphonePermission: false,
       },
     ],
+    '@react-native-community/datetimepicker',
   ],
 };
 

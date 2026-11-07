@@ -225,7 +225,14 @@ function ConfiguredMap() {
       >
         {items.map((item) =>
           item.kind === 'cluster' ? (
-            <ClusterMarker key={item.key} cluster={item} onPress={onClusterPress} />
+            <ClusterMarker
+              key={item.key}
+              clusterId={item.clusterId}
+              count={item.count}
+              latitude={item.latitude}
+              longitude={item.longitude}
+              onPress={onClusterPress}
+            />
           ) : (
             <FlagMarker
               key={item.key}

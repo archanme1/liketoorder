@@ -1,16 +1,19 @@
-import { memo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Marker } from 'react-native-maps';
 
 import { Text } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
 
-import type { ClusterItem } from '../clustering';
-
 import { useTracksViewChanges } from '../hooks/useTracksViewChanges';
 
+// Plain values, not a cluster object: the cluster list is rebuilt on every camera move, and
+// primitives let `memo` skip the clusters that did not change.
 type ClusterMarkerProps = {
-  cluster: ClusterItem;
+  clusterId: number;
+  count: number;
+  latitude: number;
+  longitude: number;
   onPress: (clusterId: number) => void;
 };
 
@@ -28,16 +31,17 @@ export function clusterDiameter(
   return sizes.clusterLg;
 }
 
-function ClusterMarkerBase({ cluster, onPress }: ClusterMarkerProps) {
+function ClusterMarkerBase({ clusterId, count, latitude, longitude, onPress }: ClusterMarkerProps) {
   const { colors, size, radius, weight } = useTheme();
-  const diameter = clusterDiameter(cluster.count, size);
-  const { count } = cluster;
+  const diameter = clusterDiameter(count, size);
   const tracksViewChanges = useTracksViewChanges(String(count));
+  const coordinate = useMemo(() => ({ latitude, longitude }), [latitude, longitude]);
+  const handlePress = useCallback(() => onPress(clusterId), [onPress, clusterId]);
 
   return (
     <Marker
-      coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
-      onPress={() => onPress(cluster.clusterId)}
+      coordinate={coordinate}
+      onPress={handlePress}
       tracksViewChanges={tracksViewChanges}
       stopPropagation
       accessible

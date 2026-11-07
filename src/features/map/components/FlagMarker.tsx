@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Marker } from 'react-native-maps';
 
@@ -27,11 +27,13 @@ export function markerLabel(name: string, cuisine: Cuisine | undefined): string 
 function FlagMarkerBase({ pin, cuisine, selected, onSelect }: FlagMarkerProps) {
   const { colors, radius, size, stroke, space } = useTheme();
   const tracksViewChanges = useTracksViewChanges(`${cuisine?.code ?? ''}|${selected}`);
+  const coordinate = useMemo(() => ({ latitude: pin.lat, longitude: pin.lng }), [pin.lat, pin.lng]);
+  const handlePress = useCallback(() => onSelect(pin), [onSelect, pin]);
 
   return (
     <Marker
-      coordinate={{ latitude: pin.lat, longitude: pin.lng }}
-      onPress={() => onSelect(pin)}
+      coordinate={coordinate}
+      onPress={handlePress}
       tracksViewChanges={tracksViewChanges}
       // A marker press must not also reach the map's onPress (it would close the sheet).
       stopPropagation

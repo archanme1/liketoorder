@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { Pressable , StyleSheet } from 'react-native';
 
 import type { Cuisine } from '@/features/cuisines/schema';
 
-import type { ClusterItem } from '../clustering';
 import { ClusterMarker, clusterDiameter, clusterLabel } from '../components/ClusterMarker';
 import { FlagMarker, markerLabel } from '../components/FlagMarker';
 import { TRACK_VIEW_MS } from '../hooks/useTracksViewChanges';
@@ -122,9 +122,7 @@ describe('FlagMarker', () => {
   });
 });
 
-const cluster: ClusterItem = {
-  kind: 'cluster',
-  key: 'c7',
+const cluster = {
   clusterId: 7,
   latitude: 43.6,
   longitude: -79.4,
@@ -133,7 +131,7 @@ const cluster: ClusterItem = {
 
 describe('ClusterMarker', () => {
   it('says how many places and what a tap does', async () => {
-    await render(<ClusterMarker cluster={cluster} onPress={jest.fn()} />);
+    await render(<ClusterMarker {...cluster} onPress={jest.fn()} />);
     expect(
       screen.getByRole('button', { name: '12 places, double tap to zoom in' }),
     ).toBeOnTheScreen();
@@ -143,7 +141,7 @@ describe('ClusterMarker', () => {
 
   it('reports the cluster id when pressed', async () => {
     const onPress = jest.fn();
-    await render(<ClusterMarker cluster={cluster} onPress={onPress} />);
+    await render(<ClusterMarker {...cluster} onPress={onPress} />);
     await fireEvent.press(screen.getByRole('button', { name: /12 places/ }));
     expect(onPress).toHaveBeenCalledWith(7);
   });
@@ -158,9 +156,49 @@ describe('ClusterMarker', () => {
   });
 
   it('keeps a touch target of at least 44 even for the smallest circle', async () => {
-    await render(<ClusterMarker cluster={{ ...cluster, count: 3 }} onPress={jest.fn()} />);
+    await render(<ClusterMarker {...cluster} count={3} onPress={jest.fn()} />);
     expect(flat(screen.getByTestId('cluster-circle')).width).toBe(36);
     expect(flat(screen.getByTestId('cluster-hit')).width).toBeGreaterThanOrEqual(44);
     expect(flat(screen.getByTestId('cluster-hit')).height).toBeGreaterThanOrEqual(44);
+  });
+});
+
+describe('marker props stay stable when the map re-renders', () => {
+  // A parent that re-renders (as the map screen does on every camera move) and hands over
+  // freshly built but equal values, the way the cluster list does.
+  function Parent({ kind }: { kind: 'cluster' | 'flag' }) {
+    const [tick, setTick] = useState(0);
+    const onPress = useCallbackStable();
+    return (
+      <>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="rerender"
+          onPress={() => setTick(tick + 1)}
+        />
+        {kind === 'cluster' ? (
+          <ClusterMarker
+            clusterId={cluster.clusterId}
+            count={cluster.count}
+            latitude={cluster.latitude}
+            longitude={cluster.longitude}
+            onPress={onPress}
+          />
+        ) : (
+          <FlagMarker pin={pin} cuisine={italy} selected={false} onSelect={onPress} />
+        )}
+      </>
+    );
+  }
+  const stable = jest.fn();
+  const useCallbackStable = () => stable;
+
+  it.each(['cluster', 'flag'] as const)('%s: same coordinate and press handler', async (kind) => {
+    await render(<Parent kind={kind} />);
+    const first = screen.getByTestId('marker').props;
+    await fireEvent.press(screen.getByRole('button', { name: 'rerender' }));
+    const second = screen.getByTestId('marker').props;
+    expect(second.coordinate).toBe(first.coordinate);
+    expect(second.onPress).toBe(first.onPress);
   });
 });

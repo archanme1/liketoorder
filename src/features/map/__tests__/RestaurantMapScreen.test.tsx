@@ -87,6 +87,12 @@ describe('RestaurantMapScreen: the map', () => {
     expect(map.props.accessibilityLabel).toBe('Restaurants map');
   });
 
+  it("hides Google's own business labels with exactly one style rule, and nothing else", async () => {
+    await renderScreen();
+    const style = screen.getByTestId('map-view').props.customMapStyle;
+    expect(style).toEqual([{ featureType: 'poi.business', stylers: [{ visibility: 'off' }] }]);
+  });
+
   it('opens on the world map with a "Zoom in" note when nothing else is known', async () => {
     jest
       .mocked(getLocales)

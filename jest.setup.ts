@@ -115,22 +115,52 @@ jest.mock('expo-image', () => {
 // ── Spec 07 map modules: native under jest, so each gets a small controllable fake. ──
 
 // MapView renders a plain View (testID "map-view") that keeps every prop, so tests can read
-// provider / initialRegion and call onRegionChangeComplete. The ref exposes animateToRegion, which
-// is the shared jest.fn `__animateToRegion` so tests can assert the camera moved (or didn't).
+// provider / initialRegion / customMapStyle and call onRegionChangeComplete. The ref exposes
+// animateToRegion, which is the shared jest.fn `__animateToRegion` so tests can assert the camera
+// moved (or didn't).
+//
+// Marker presses BUBBLE to the map's onPress, like the real library on iOS (both are bubbling
+// events there): the fake calls the marker's onPress, then the map's onPress with the same event,
+// unless propagation was stopped. The marker's `stopPropagation` prop does what the library's does.
+// `__setIgnoreStopPropagation(true)` models a platform where stopPropagation has no effect.
 jest.mock('react-native-maps', () => {
   /* eslint-disable @typescript-eslint/no-require-imports */
   const React = require('react');
   const { View } = require('react-native');
   /* eslint-enable @typescript-eslint/no-require-imports */
   const animateToRegion = jest.fn();
-  const MapView = React.forwardRef(function MockMapView(props: object, ref: unknown) {
+  const behaviour = { ignoreStopPropagation: false };
+  const MapPressContext = React.createContext(undefined);
+  const MapView = React.forwardRef(function MockMapView(
+    props: { onPress?: (pressed: unknown) => void },
+    ref: unknown,
+  ) {
     React.useImperativeHandle(ref, () => ({ animateToRegion }));
-    return React.createElement(View, { testID: 'map-view', ...props });
+    return React.createElement(
+      MapPressContext.Provider,
+      { value: props.onPress },
+      React.createElement(View, { testID: 'map-view', ...props }),
+    );
   });
-  // Markers render their children in a View that keeps every prop (coordinate, onPress,
-  // tracksViewChanges, accessibility*), so tests can find and press them.
-  const Marker = function MockMarker(props: object) {
-    return React.createElement(View, { testID: 'marker', ...props });
+  const Marker = function MockMarker(props: {
+    coordinate?: unknown;
+    stopPropagation?: boolean;
+    onPress?: (pressed: unknown) => void;
+  }) {
+    const mapPress = React.useContext(MapPressContext);
+    const onPress = () => {
+      let stopped = false;
+      const pressEvent = {
+        nativeEvent: { action: 'marker-press', id: 'unknown', coordinate: props.coordinate },
+        stopPropagation() {
+          if (!behaviour.ignoreStopPropagation) stopped = true;
+        },
+      };
+      if (props.stopPropagation) pressEvent.stopPropagation();
+      props.onPress?.(pressEvent);
+      if (!stopped) mapPress?.(pressEvent);
+    };
+    return React.createElement(View, { testID: 'marker', ...props, onPress });
   };
   return {
     __esModule: true,
@@ -138,6 +168,9 @@ jest.mock('react-native-maps', () => {
     Marker,
     PROVIDER_GOOGLE: 'google',
     __animateToRegion: animateToRegion,
+    __setIgnoreStopPropagation: (value: boolean) => {
+      behaviour.ignoreStopPropagation = value;
+    },
   };
 });
 

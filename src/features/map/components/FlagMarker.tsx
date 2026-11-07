@@ -33,6 +33,8 @@ function FlagMarkerBase({ pin, cuisine, selected, onSelect }: FlagMarkerProps) {
       coordinate={{ latitude: pin.lat, longitude: pin.lng }}
       onPress={() => onSelect(pin)}
       tracksViewChanges={tracksViewChanges}
+      // A marker press must not also reach the map's onPress (it would close the sheet).
+      stopPropagation
       accessible
       accessibilityRole="button"
       accessibilityLabel={markerLabel(pin.name, cuisine)}

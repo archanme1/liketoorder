@@ -39,6 +39,7 @@ function ClusterMarkerBase({ cluster, onPress }: ClusterMarkerProps) {
       coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
       onPress={() => onPress(cluster.clusterId)}
       tracksViewChanges={tracksViewChanges}
+      stopPropagation
       accessible
       accessibilityRole="button"
       accessibilityLabel={clusterLabel(count)}

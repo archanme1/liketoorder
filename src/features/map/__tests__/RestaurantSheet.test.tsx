@@ -565,54 +565,113 @@ describe('RestaurantSheet: Places in this area', () => {
   });
 });
 
-describe('RestaurantSheet: Back to list', () => {
-  const backToList = () => screen.queryByRole('button', { name: 'Back to list' });
+describe('RestaurantSheet: stacked screens (list, then a restaurant)', () => {
+  const closeButton = () => screen.queryByRole('button', { name: 'Close' });
+  const backButton = () => screen.queryByRole('button', { name: 'Back to list' });
+  const listTitle = () =>
+    within(screen.getByTestId('sheet-title')).queryByText('Places in this area');
 
-  async function openFromList() {
+  async function openFromList(name = "Joe's Pizza, Italy cuisine") {
     await fireEvent.press(await screen.findByRole('button', { name: 'Places in this area' }));
     const sheet = within(screen.getByTestId('bottom-sheet'));
-    await fireEvent.press(sheet.getByRole('button', { name: "Joe's Pizza, Italy cuisine" }));
-    await screen.findByText('100 King St, Oshawa, ON, Canada');
+    await fireEvent.press(sheet.getByRole('button', { name }));
   }
 
-  it('is offered, with Close, when the restaurant was picked from the list', async () => {
+  it('a restaurant opened from the list has an X called "Back to list" (and no separate button)', async () => {
     await renderScreen();
     await openFromList();
-    const button = backToList();
-    expect(button).toBeOnTheScreen();
-    expect(StyleSheet.flatten(button?.props.style).minHeight).toBeGreaterThanOrEqual(44);
-    expect(screen.getByRole('button', { name: 'Close' })).toBeOnTheScreen();
-  });
-
-  it('is not offered when a flag was tapped on the map: only Close', async () => {
-    await renderScreen();
-    await openJoes();
     await screen.findByText('100 King St, Oshawa, ON, Canada');
-    expect(backToList()).not.toBeOnTheScreen();
-    expect(screen.getByRole('button', { name: 'Close' })).toBeOnTheScreen();
+    expect(screen.getAllByRole('button', { name: 'Back to list' })).toHaveLength(1);
+    expect(closeButton()).not.toBeOnTheScreen();
+    const style = StyleSheet.flatten(backButton()?.props.style);
+    expect(style.width).toBeGreaterThanOrEqual(44);
+    expect(style.height).toBeGreaterThanOrEqual(44);
   });
 
-  it('returns to the list, keeps the sheet open and leaves the map where it is', async () => {
+  it('tapping that X returns to the list, keeps the sheet open and leaves the map where it is', async () => {
     await renderScreen();
     await openFromList();
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
     animateToRegion.mockClear();
     closeSheet.mockClear();
-    await fireEvent.press(backToList() as never);
-    expect(
-      within(screen.getByTestId('sheet-title')).getByText('Places in this area'),
-    ).toBeOnTheScreen();
+    await fireEvent.press(backButton() as never);
+    expect(listTitle()).toBeOnTheScreen();
     expect(
       within(screen.getByTestId('bottom-sheet')).getByRole('button', {
         name: 'Chez Anne, France cuisine',
       }),
     ).toBeOnTheScreen();
-    expect(backToList()).not.toBeOnTheScreen();
+    expect(screen.queryByText('100 King St, Oshawa, ON, Canada')).not.toBeOnTheScreen();
     expect(animateToRegion).not.toHaveBeenCalled();
     expect(closeSheet).not.toHaveBeenCalled();
-    expect(screen.queryByText('100 King St, Oshawa, ON, Canada')).not.toBeOnTheScreen();
+    // Now on the list: the X closes everything.
+    expect(closeButton()).toBeOnTheScreen();
+    expect(backButton()).not.toBeOnTheScreen();
   });
 
-  it('can pick another place from the list afterwards, and centres on it', async () => {
+  it('swiping down past the lowest snap also returns to the list, and reopens it at half', async () => {
+    await renderScreen();
+    await openFromList();
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
+    animateToRegion.mockClear();
+    snapToIndex.mockClear();
+    await act(async () => screen.getByTestId('bottom-sheet').props.onClose());
+    expect(listTitle()).toBeOnTheScreen();
+    expect(screen.queryByText('100 King St, Oshawa, ON, Canada')).not.toBeOnTheScreen();
+    expect(snapToIndex).toHaveBeenCalledWith(1);
+    expect(animateToRegion).not.toHaveBeenCalled();
+  });
+
+  it('goes back as soon as the swipe starts to close the sheet (no close-and-reopen flash)', async () => {
+    await renderScreen();
+    await openFromList();
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
+    // Moving between snaps is not a close.
+    await act(async () => screen.getByTestId('bottom-sheet').props.onAnimate(1, 2));
+    expect(screen.getByText('100 King St, Oshawa, ON, Canada')).toBeOnTheScreen();
+    // Heading for "closed" is.
+    await act(async () => screen.getByTestId('bottom-sheet').props.onAnimate(0, -1));
+    expect(listTitle()).toBeOnTheScreen();
+  });
+
+  it('from the list itself, the X and a swipe down close everything', async () => {
+    await renderScreen();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Places in this area' }));
+    expect(closeButton()).toBeOnTheScreen();
+    expect(backButton()).not.toBeOnTheScreen();
+    await fireEvent.press(closeButton() as never);
+    expect(screen.queryByTestId('sheet-title')).not.toBeOnTheScreen();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Places in this area' }));
+    await act(async () => screen.getByTestId('bottom-sheet').props.onClose());
+    expect(screen.queryByTestId('sheet-title')).not.toBeOnTheScreen();
+    // Heading for "closed" from the list is not a "back".
+    await fireEvent.press(screen.getByRole('button', { name: 'Places in this area' }));
+    await act(async () => screen.getByTestId('bottom-sheet').props.onAnimate(1, -1));
+    expect(listTitle()).toBeOnTheScreen();
+  });
+
+  it('a restaurant opened from a flag just closes: the X is "Close", and swiping down closes', async () => {
+    await renderScreen();
+    await openJoes();
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
+    expect(closeButton()).toBeOnTheScreen();
+    expect(backButton()).not.toBeOnTheScreen();
+    await act(async () => screen.getByTestId('bottom-sheet').props.onClose());
+    expect(screen.queryByTestId('sheet-title')).not.toBeOnTheScreen();
+  });
+
+  it('tapping the bare map clears the whole stack', async () => {
+    await renderScreen();
+    await openFromList();
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
+    await act(async () =>
+      screen.getByTestId('map-view').props.onPress({ nativeEvent: { action: 'press' } }),
+    );
+    expect(screen.queryByTestId('sheet-title')).not.toBeOnTheScreen();
+  });
+
+  it('can pick another place after going back, and centres on it', async () => {
     fetchDetails.mockImplementation(async (id) =>
       id === 'b2'
         ? details({ id: 'b2', name: 'Chez Anne', cuisine_code: 'FR', items: [], photos: [] })
@@ -620,23 +679,37 @@ describe('RestaurantSheet: Back to list', () => {
     );
     await renderScreen();
     await openFromList();
-    await fireEvent.press(backToList() as never);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Back to list' }));
     animateToRegion.mockClear();
     const sheet = within(screen.getByTestId('bottom-sheet'));
     await fireEvent.press(sheet.getByRole('button', { name: 'Chez Anne, France cuisine' }));
     expect(within(screen.getByTestId('sheet-title')).getByText('Chez Anne')).toBeOnTheScreen();
     expect(animateToRegion).toHaveBeenCalledTimes(1);
     expect(animateToRegion.mock.calls[0][0].longitude).toBe(4.0);
-    expect(backToList()).toBeOnTheScreen();
+    expect(backButton()).toBeOnTheScreen();
   });
 
-  it('is forgotten once the sheet is closed: a later flag tap shows only Close', async () => {
+  it('is forgotten once everything is closed: a later flag tap shows "Close"', async () => {
     await renderScreen();
     await openFromList();
-    await act(async () => screen.getByTestId('bottom-sheet').props.onClose());
-    expect(backToList()).not.toBeOnTheScreen();
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
+    await act(async () =>
+      screen.getByTestId('map-view').props.onPress({ nativeEvent: { action: 'press' } }),
+    );
     await openJoes();
     await screen.findByText('100 King St, Oshawa, ON, Canada');
-    expect(backToList()).not.toBeOnTheScreen();
+    expect(backButton()).not.toBeOnTheScreen();
+    expect(closeButton()).toBeOnTheScreen();
+  });
+
+  it('the "not available" button also says "Back to list" and goes back', async () => {
+    fetchDetails.mockResolvedValue(null);
+    await renderScreen();
+    await openFromList();
+    expect(await screen.findByText("This restaurant isn't available right now.")).toBeOnTheScreen();
+    const buttons = screen.getAllByRole('button', { name: 'Back to list' });
+    expect(buttons).toHaveLength(2); // the X and the button beside the message
+    await fireEvent.press(buttons[1]);
+    expect(listTitle()).toBeOnTheScreen();
   });
 });

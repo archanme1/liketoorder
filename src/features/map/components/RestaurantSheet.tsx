@@ -25,24 +25,58 @@ type RestaurantSheetProps = {
   pins: readonly Pin[];
   cuisineByCode: ReadonlyMap<string, Cuisine>;
   onSelect: (pin: Pin) => void;
-  /** The open restaurant was picked from the list: offer a way back to it. */
-  showBackToList: boolean;
+  /**
+   * The open restaurant was picked from the list. The sheet then behaves like a stacked screen:
+   * swiping it down past the lowest snap, or tapping the X, goes back to the list.
+   */
+  fromList: boolean;
   onBackToList: () => void;
+  /** Closes everything (a flag tap, or the list itself). */
   onClose: () => void;
+  /** Height of the area the sheet slides in (the map screen). 0 until it is measured. */
+  containerHeight: number;
 };
 
 // Index 0 = collapsed, 1 = half, 2 = full.
 export const HALF_INDEX = 1;
 export const BACK_TO_LIST = 'Back to list';
+export const CLOSE_LABEL = 'Close';
 export const COLLAPSED_FRACTION = 0.15;
+export const HALF_FRACTION = 0.5;
+export const FULL_FRACTION = 0.92;
 
 // Fixed-height rows need room: at large text sizes the collapsed snap grows so the name and
 // flag are still visible.
-export function collapsedSnap(windowHeight: number, fontScale: number, touch: number): number {
+export function collapsedSnap(containerHeight: number, fontScale: number, touch: number): number {
   const wanted = touch * 2 * Math.max(1, fontScale);
   return Math.round(
-    Math.min(windowHeight * 0.5, Math.max(windowHeight * COLLAPSED_FRACTION, wanted)),
+    Math.min(
+      containerHeight * HALF_FRACTION,
+      Math.max(containerHeight * COLLAPSED_FRACTION, wanted),
+    ),
   );
+}
+
+/** The three snap heights in points: collapsed, half, full. */
+export function snapHeights(containerHeight: number, fontScale: number, touch: number): number[] {
+  return [
+    collapsedSnap(containerHeight, fontScale, touch),
+    Math.round(containerHeight * HALF_FRACTION),
+    Math.round(containerHeight * FULL_FRACTION),
+  ];
+}
+
+/**
+ * Space under the scrolling content so its last row can be scrolled into view at every snap.
+ *
+ * The library makes the sheet as tall as its HIGHEST snap and slides it up from below, so at a
+ * lower snap the bottom of the sheet (and of the scroll view) is off screen. Without this, the
+ * end of the content could never be scrolled above the bottom edge of the screen area.
+ */
+export function scrollBottomSpace(snaps: readonly number[], index: number, gap: number): number {
+  const highest = Math.max(...snaps);
+  const visible = snaps[Math.min(Math.max(index, 0), snaps.length - 1)];
+  return Math.max(0, highest - visible) + gap;
 }
 
 export function RestaurantSheet({
@@ -51,23 +85,28 @@ export function RestaurantSheet({
   pins,
   cuisineByCode,
   onSelect,
-  showBackToList,
+  fromList,
   onBackToList,
   onClose,
+  containerHeight,
 }: RestaurantSheetProps) {
   const { colors, space, radius, size } = useTheme();
-  const { height, fontScale } = useWindowDimensions();
+  const { height: windowHeight, fontScale } = useWindowDimensions();
+  const height = containerHeight > 0 ? containerHeight : windowHeight;
   const reduceMotion = useReduceMotion();
   const sheetRef = useRef<BottomSheet>(null);
   const titleRef = useRef<ComponentRef<typeof View>>(null);
   const [index, setIndex] = useState(-1);
+  // Where the sheet is heading (or rests): it opens at half, so that is the starting guess.
+  const [snapIndex, setSnapIndex] = useState(HALF_INDEX);
 
   const open = selected !== null || listOpen;
   const selectedId = selected?.id ?? null;
-  const snapPoints = useMemo(
-    () => [collapsedSnap(height, fontScale, size.touch), '50%', '92%'],
+  const snaps = useMemo(
+    () => snapHeights(height, fontScale, size.touch),
     [height, fontScale, size.touch],
   );
+  const snapPoints = useMemo(() => [snaps[0], '50%', '92%'], [snaps]);
   // Reduce motion: the sheet jumps instead of gliding.
   const animationConfigs = useBottomSheetTimingConfigs({ duration: reduceMotion ? 1 : 250 });
 
@@ -87,6 +126,10 @@ export function RestaurantSheet({
   // It stays mounted while the sheet is still sliding out (index is -1 only once it has closed).
   const showContent = open || index >= 0;
   const detailsMode = selected !== null;
+  // Stacked screens: a restaurant opened from the list goes back to it; anything else closes.
+  const backMode = detailsMode && fromList;
+  const dismiss = backMode ? onBackToList : onClose;
+  const dismissLabel = backMode ? BACK_TO_LIST : CLOSE_LABEL;
   const title = detailsMode ? selected.name : PLACES_TITLE;
 
   return (
@@ -97,8 +140,17 @@ export function RestaurantSheet({
       enableDynamicSizing={false}
       enablePanDownToClose
       animationConfigs={animationConfigs}
-      onChange={setIndex}
-      onClose={onClose}
+      onChange={(next) => {
+        setIndex(next);
+        if (next >= 0) setSnapIndex(next);
+      }}
+      onAnimate={(_from, to) => {
+        if (to >= 0) setSnapIndex(to);
+        // Swiped down past the lowest snap: go back to the list at once, so it is shown again
+        // instead of the sheet closing and having to reopen.
+        else if (backMode) onBackToList();
+      }}
+      onClose={dismiss}
       backgroundStyle={{ backgroundColor: colors.surface }}
       handleIndicatorStyle={{ backgroundColor: colors.border }}
     >
@@ -124,9 +176,9 @@ export function RestaurantSheet({
               ) : null}
             </View>
             <Pressable
-              onPress={onClose}
+              onPress={dismiss}
               accessibilityRole="button"
-              accessibilityLabel="Close"
+              accessibilityLabel={dismissLabel}
               style={[
                 styles.close,
                 { width: size.touch, height: size.touch, borderRadius: radius.pill },
@@ -136,25 +188,21 @@ export function RestaurantSheet({
             </Pressable>
           </View>
           <BottomSheetScrollView
+            testID="sheet-scroll"
             contentContainerStyle={{
-              padding: space.lg,
-              paddingBottom: space.xxl * 2,
+              paddingHorizontal: space.lg,
+              paddingTop: space.lg,
+              paddingBottom: scrollBottomSpace(snaps, snapIndex, space.xxl),
               gap: space.lg,
             }}
           >
-            {selected && showBackToList ? (
-              <Pressable
-                onPress={onBackToList}
-                accessibilityRole="button"
-                accessibilityLabel={BACK_TO_LIST}
-                style={[styles.back, { minHeight: size.touch, gap: space.xs }]}
-              >
-                <Ionicons name="chevron-back" size={size.tabIcon} color={colors.primary} />
-                <Text color="primary">{BACK_TO_LIST}</Text>
-              </Pressable>
-            ) : null}
             {selected ? (
-              <SheetDetails key={selected.id} id={selected.id} onClose={onClose} />
+              <SheetDetails
+                key={selected.id}
+                id={selected.id}
+                onClose={dismiss}
+                closeLabel={dismissLabel}
+              />
             ) : (
               <PlacesList pins={pins} cuisineByCode={cuisineByCode} onSelect={onSelect} />
             )}
@@ -169,5 +217,4 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'flex-start' },
   close: { alignItems: 'center', justifyContent: 'center' },
-  back: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start' },
 });

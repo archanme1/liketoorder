@@ -16,6 +16,8 @@ import { useMapRegion } from '../hooks/useMapRegion';
 import { usePinsInBounds } from '../hooks/usePinsInBounds';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { mapKeyName, useMapConfigured } from '../mapConfig';
+import { isMarkerPressEvent } from '../mapEvents';
+import { MAP_STYLE } from '../mapStyle';
 import { isOverServerLimit, regionAround, regionForPick, type MapRegion } from '../region';
 import type { Pin } from '../schema';
 
@@ -98,6 +100,8 @@ function ConfiguredMap() {
   const [listOpen, setListOpen] = useState(false);
   // True when the open restaurant was picked from the list, so "Back to list" is offered.
   const [openedFromList, setOpenedFromList] = useState(false);
+  // The size of the area the sheet slides in, so snap heights and scroll space are exact.
+  const [containerHeight, setContainerHeight] = useState(0);
 
   const moveTo = useCallback(
     (target: MapRegion) => {
@@ -132,6 +136,14 @@ function ConfiguredMap() {
     setListOpen(false);
     setOpenedFromList(false);
   }, []);
+  // The bare map was tapped. A marker press that bubbled up to the map is not that.
+  const onMapPress = useCallback(
+    (event: unknown) => {
+      if (isMarkerPressEvent(event)) return;
+      onClearSelection();
+    },
+    [onClearSelection],
+  );
   const onOpenList = useCallback(() => {
     setSelected(null);
     setOpenedFromList(false);
@@ -194,14 +206,19 @@ function ConfiguredMap() {
     !pins.error;
 
   return (
-    <View style={styles.flex}>
+    <View
+      testID="map-screen"
+      style={styles.flex}
+      onLayout={(event) => setContainerHeight(event.nativeEvent.layout.height)}
+    >
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         provider={PROVIDER_GOOGLE}
         initialRegion={opening.region}
         onRegionChangeComplete={onRegionChangeComplete}
-        onPress={onClearSelection}
+        onPress={onMapPress}
+        customMapStyle={MAP_STYLE}
         toolbarEnabled={false}
         moveOnMarkerPress={false}
         accessibilityLabel="Restaurants map"
@@ -298,9 +315,10 @@ function ConfiguredMap() {
         pins={wideView ? NO_PINS : pins.pins}
         cuisineByCode={cuisineByCode}
         onSelect={onSelectFromList}
-        showBackToList={openedFromList}
+        fromList={selected !== null && openedFromList}
         onBackToList={onBackToList}
         onClose={onClearSelection}
+        containerHeight={containerHeight}
       />
     </View>
   );

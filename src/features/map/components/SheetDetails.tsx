@@ -19,12 +19,15 @@ export const NOT_AVAILABLE_MESSAGE = "This restaurant isn't available right now.
 
 type SheetDetailsProps = {
   id: string;
+  /** Leaves this restaurant: closes the sheet, or goes back to the list. */
   onClose: () => void;
+  /** What that button is called ("Close", or "Back to list"). */
+  closeLabel?: string;
 };
 
 // The body of the sheet for one restaurant: loading, not available, error with Retry, or the
 // photos, menu, address and Directions. Only what exists today: no Request or Report buttons.
-export function SheetDetails({ id, onClose }: SheetDetailsProps) {
+export function SheetDetails({ id, onClose, closeLabel = 'Close' }: SheetDetailsProps) {
   const { space, size, type } = useTheme();
   const details = useRestaurantDetails(id);
 
@@ -64,7 +67,7 @@ export function SheetDetails({ id, onClose }: SheetDetailsProps) {
     return (
       <View style={{ gap: space.md }}>
         <Text accessibilityRole="alert">{NOT_AVAILABLE_MESSAGE}</Text>
-        <Button title="Close" onPress={onClose} variant="secondary" />
+        <Button title={closeLabel} onPress={onClose} variant="secondary" />
       </View>
     );
   }

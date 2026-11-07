@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -61,6 +62,7 @@ type PickupRequestFormProps = {
 // prices, availability, limits, status — is the server's: the app sends item ids and quantities.
 export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
   const { space } = useTheme();
+  const router = useRouter();
   const submit = useSubmitPickupRequest();
   const currencies = useCurrencies();
   const locale = deviceLocale();
@@ -153,6 +155,7 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
         <Text color="textMuted">
           {`Pickup ${formatDateTime(sent.pickup_at, { locale })}. If ${menu.name} doesn't answer in time, it will show as expired.`}
         </Text>
+        <Button title="View my requests" onPress={() => router.replace('/requests')} />
         <Button title="Done" variant="secondary" onPress={onClose} />
       </View>
     );

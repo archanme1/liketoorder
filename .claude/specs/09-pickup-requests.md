@@ -169,7 +169,7 @@ All in `src/features/requests/` unless noted.
 - `src/features/requests/__tests__/*`
 - `src/components/ui/StatusChip.tsx` (+ test)
 - `src/features/map/components/RequestPickupButton.tsx`
-- `scripts/seed/requests.ts` — demo requests at each status
+- `scripts/seed/requests.ts` (+ `requestsData.ts`, pure and unit-tested) — demo requests at each status for `seed-customer@example.com`: one pending row that expires about 2 minutes after the seed runs, a fresh pending row for trying Cancel, an ACCEPTED homemade request with the pickup 30 minutes from now (address visible), a completed homemade one inside the 24-hour window, and a declined one. Local-only, key from `SEED_SERVICE_ROLE_KEY` (never printed), touches only `seed-*` accounts; re-run for fresh times
 
 ## Files to change
 **PR 1**
@@ -181,7 +181,7 @@ All in `src/features/requests/` unless noted.
 **PR 2**
 - `src/features/map/components/{SheetDetails,HomemadeSheetDetails}.tsx` — add the button; update the comment saying 09 is pending
 - `app/(tabs)/profile.tsx` and its component — "My requests" row
-- `src/features/auth/routeAccess.ts` (+ test) — `/requests/*` is signed-in
+- `src/features/auth/routeAccess.ts` — **test only, no code change** (decided in the PR 2 plan): `/requests/*` sits in the root layout's existing `access.app` guard, so `routeAccess.test.ts` gets cases pinning who gets through; the guest return is `src/features/auth/returnTo.ts` + `app/_layout.tsx`
 - `src/components/ui/index.ts` — export `StatusChip`
 - `.claude/skills/liketoorder-ui/SKILL.md` — only if the chip rules need a correction
 - `CLAUDE.md` — status table
@@ -230,6 +230,13 @@ Each item says how it applies here. The reviewer ticks every line. Sources: `.cl
 - [ ] **Sheet to form hand-off.** Opening the form from a map sheet closes nothing on the map behind it, and back returns to the same map and sheet state. The button is inside the sheet's scroll content (`BottomSheetScrollView`), reachable at half and full snap (`scrollBottomSpace`). *(manual run, spec 07 sheet lessons.)*
 - [ ] **Guest return.** Sign-in from the button passes the destination (`/requests/new?businessId=…`) and lands on the form after sign-in, and after a profile-complete check; a business that became unavailable meanwhile shows the calm "not available" state. *(jest + manual.)*
 - [ ] **Faithful fakes.** Tests that need the session, router and `expo-crypto` use the existing jest.setup fakes; no new ad-hoc fake in a test file. *(review.)*
+
+## Also built in PR 2 (not in the lists above)
+- `src/features/requests/{time,summary}.ts`, `hooks/{keys,useRefetchAtExpiry,useRequestMenu}.ts`, `components/{NewRequestScreen,QuantityStepper,RequestStatusChip,RequestDetailScreen}.tsx`, `__fixtures__/`; `src/features/auth/returnTo.ts` (+ test); `app/requests/_layout.tsx`.
+- `src/components/ui/StatusChip.tsx` is generic (word, icon, tone); `RequestStatusChip` maps the server's `display_status` onto it.
+- The form finds the business through the map sheet's public details (restaurant first, then homemade), so the route stays `?businessId=…`.
+- `jest.setup.ts` gains one `expo-crypto` fake (counter-based uuids); the sellers tests still mock it per file.
+- Time zone: picker and formatters take an explicit `timeZone` (default: the phone's); tests pass `Pacific/Auckland`. No jest config change.
 
 ## Notes for specs 10 and 12 (from the PR 1 review)
 - **Spec 10:** the accept function must snapshot the address (and place) onto the request, and `get_my_pickup_address` must return the snapshot (see Decision 5).

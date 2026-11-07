@@ -12,6 +12,8 @@ import { BUSINESS_ID, makeRequest } from '../__fixtures__/requests';
 import { RequestAppError, submitPickupRequest } from '../api';
 import { NewRequestScreen } from '../components/NewRequestScreen';
 
+const mockRouter = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
+jest.mock('expo-router', () => ({ useRouter: () => mockRouter }));
 jest.mock('@/lib/supabase', () => ({
   supabase: { rpc: jest.fn(), from: jest.fn(), functions: { invoke: jest.fn() } },
 }));
@@ -458,6 +460,8 @@ describe('sending', () => {
     expect(screen.getByText("Waiting for Joe's Pizza to respond.")).toBeOnTheScreen();
     expect(screen.getByLabelText('Status: Waiting')).toBeOnTheScreen();
     expect(JSON.stringify(screen.toJSON())).not.toMatch(/confirm|booked|on its way/i);
+    await fireEvent.press(screen.getByRole('button', { name: 'View my requests' }));
+    expect(mockRouter.replace).toHaveBeenCalledWith('/requests');
     await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
     expect(onClose).toHaveBeenCalled();
   });

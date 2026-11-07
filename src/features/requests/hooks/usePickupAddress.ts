@@ -17,16 +17,25 @@ export function canShowAddress(
 }
 
 /**
+ * Removes the cached address whenever the request is not accepted/completed homemade. Mounted by
+ * the detail screen itself (not only by the address card), so the address is dropped even when the
+ * card has just unmounted because the status changed.
+ */
+export function useAddressCacheGuard(id: string, request: PickupRequest | null | undefined) {
+  const queryClient = useQueryClient();
+  const allowed = canShowAddress(request);
+  useEffect(() => {
+    if (request && !allowed) queryClient.removeQueries({ queryKey: requestKeys.address(id) });
+  }, [allowed, request, id, queryClient]);
+}
+
+/**
  * The exact address for a request. The query is off for every other status, and its cached answer
  * is removed as soon as the request leaves accepted/completed, so the address never lingers.
  */
 export function usePickupAddress(id: string, request: PickupRequest | null | undefined) {
-  const queryClient = useQueryClient();
   const allowed = canShowAddress(request);
-
-  useEffect(() => {
-    if (request && !allowed) queryClient.removeQueries({ queryKey: requestKeys.address(id) });
-  }, [allowed, request, id, queryClient]);
+  useAddressCacheGuard(id, request);
 
   return useQuery<PickupAddress | null, RequestAppError>({
     queryKey: requestKeys.address(id),

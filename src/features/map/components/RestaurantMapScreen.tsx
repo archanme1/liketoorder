@@ -48,13 +48,11 @@ const NO_PINS: Pin[] = [];
 // sheet arrives in the next gate.
 export function RestaurantMapScreen() {
   const configured = useMapConfigured();
-  const { space } = useTheme();
   if (!configured) {
     // __DEV__ only: the variable name is a hint for the developer, not for users.
     return (
       <View style={styles.flex}>
         <MapNotConfigured keyName={__DEV__ ? mapKeyName(Platform.OS) : undefined} />
-        <View style={{ height: space.xl }} />
       </View>
     );
   }

@@ -260,11 +260,17 @@ isOneToOne: false
 "finish_photo_upload":
 { Args: { "p_photo_id": string }; Returns: Json
                            },
+"get_homemade_details":
+{ Args: { "p_business_id": string }; Returns: Json
+                           },
 "get_my_business":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
 "get_restaurant_details":
 { Args: { "p_business_id": string }; Returns: Json
+                           },
+"map_homemade_in_bounds":
+{ Args: { "p_max_lat": number,"p_max_lng": number,"p_min_lat": number,"p_min_lng": number }; Returns: Json
                            },
 "map_restaurants_in_bounds":
 { Args: { "p_max_lat": number,"p_max_lng": number,"p_min_lat": number,"p_min_lng": number }; Returns: Json

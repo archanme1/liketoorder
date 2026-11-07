@@ -1,5 +1,5 @@
 /**
- * LOCAL ONLY. Seeds demo restaurants so the map has pins.
+ * LOCAL ONLY. Seeds demo restaurants AND home cooks so both maps have pins.
  *
  *   SEED_SERVICE_ROLE_KEY=<local service key> npx tsx scripts/seed/restaurants.ts
  *
@@ -7,13 +7,24 @@
  * - The key is read from the environment variable SEED_SERVICE_ROLE_KEY. It is never printed.
  * - Safe to re-run: it deletes and re-creates only the accounts named seed-*@example.com.
  * - Place IDs are fake (FAKE_PLACE_…): Directions will not open a real place for them.
+ * - Home cooks go through the real set_business_location function, so their public map point is
+ *   the real 200–500 m shift. (Photos for cooks are added in a later step.)
  * - Never run by CI.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import type { Database } from '../../src/types/database';
 
-import { AREAS, HIDDEN, MENUS, RESTAURANTS, STREETS, type Seed } from './restaurantData';
+import { HOMEMADE_COOKS, HOMEMADE_HIDDEN } from './homemadeData';
+import {
+  AREAS,
+  HIDDEN,
+  MENUS,
+  RESTAURANTS,
+  STREETS,
+  type MenuLine,
+  type Seed,
+} from './restaurantData';
 import { assertLocalUrl, isSeedEmail } from './safety';
 
 type Db = SupabaseClient<Database>;
@@ -116,8 +127,13 @@ async function createBusiness(
   return businessId;
 }
 
-async function addMenu(db: Db, businessId: string, name: string): Promise<number> {
-  const lines = MENUS[name];
+async function addMenu(
+  db: Db,
+  businessId: string,
+  name: string,
+  given?: MenuLine[],
+): Promise<number> {
+  const lines = given ?? MENUS[name];
   if (!lines) return 0;
   const currency = await db
     .from('businesses')
@@ -171,6 +187,7 @@ async function main() {
   let visible = 0;
   let menus = 0;
   let menuItems = 0;
+  let homemadeVisible = 0;
 
   try {
     for (const [index, seed] of RESTAURANTS.entries()) {
@@ -241,6 +258,76 @@ async function main() {
         fail(profile.error, 'unlisted profile');
       }
     }
+
+    // Home cooks. The first is seed-homemade-1 (the demo seller); the rest are numbered.
+    let cooks = 0;
+    for (const [index, cook] of HOMEMADE_COOKS.entries()) {
+      const n = index + 1;
+      const spot = place(
+        { name: cook.name, cuisine: cook.cuisine, where: { area: cook.area } },
+        random,
+      );
+      const owner = await createUser(
+        db,
+        `seed-homemade-${n}@example.com`,
+        `seed_cook_${n}`,
+        cook.name,
+      );
+      const businessId = await createBusiness(db, owner, {
+        type: 'homemade',
+        name: cook.name,
+        cuisine: cook.cuisine,
+        acceptsTables: false,
+        placeId: `FAKE_PLACE_home_${spot.key}_${n}`,
+        address: `${20 + index * 3} ${STREETS[index % STREETS.length]}, ${spot.city}, ON, Canada`,
+        lat: spot.lat,
+        lng: spot.lng,
+      });
+      cooks++;
+      if (cook.menu) await addMenu(db, businessId, cook.name, cook.menu);
+    }
+    homemadeVisible = cooks;
+
+    // Cooks that must stay off the map, among the Oshawa ones.
+    for (const [index, hidden] of HOMEMADE_HIDDEN.entries()) {
+      const owner = await createUser(
+        db,
+        `seed-homemade-${hidden.key}@example.com`,
+        `seed_cook_${hidden.key}`,
+        hidden.name,
+      );
+      const businessId = await createBusiness(db, owner, {
+        type: 'homemade',
+        name: hidden.name,
+        cuisine: hidden.cuisine,
+        acceptsTables: false,
+        placeId: `FAKE_PLACE_home_hidden_${hidden.kind}`,
+        address: `${700 + index} Quiet Ln, Oshawa, ON, Canada`,
+        lat: centre.lat - 0.006 * (index + 1),
+        lng: centre.lng + 0.006 * (index + 1),
+      });
+      if (hidden.kind === 'stale') {
+        const stale = await db
+          .from('business_locations')
+          .update({ resolved_at: new Date(Date.now() - 31 * DAY_MS).toISOString() })
+          .eq('business_id', businessId);
+        fail(stale.error, 'stale cook');
+      } else if (hidden.kind === 'not_found') {
+        const gone = await db
+          .from('business_locations')
+          .update({ place_status: 'not_found' })
+          .eq('business_id', businessId);
+        fail(gone.error, 'not_found cook');
+      } else {
+        const unlisted = await db
+          .from('businesses')
+          .update({ is_listed: false })
+          .eq('id', businessId);
+        fail(unlisted.error, 'unlisted cook');
+        const profile = await db.from('profiles').update({ is_seller: false }).eq('id', owner);
+        fail(profile.error, 'unlisted cook profile');
+      }
+    }
   } catch (error) {
     console.error('Seeding failed; removing the partial demo data so a re-run starts clean.');
     await removeSeedUsers(db).catch(() => undefined);
@@ -252,10 +339,18 @@ async function main() {
   console.log('  Oshawa 14, Cambridge 10, downtown Toronto 10, rest of the GTA 14');
   console.log(`  ${menus} of them have a menu (${menuItems} items, prices in CAD).`);
   console.log(
-    `Added ${HIDDEN.length} rows that must NOT appear: 31-days-stale, not_found, unlisted, homemade.`,
+    `Added ${HIDDEN.length} rows that must NOT appear: 31-days-stale, not_found, unlisted.`,
+  );
+  console.log(`Added ${homemadeVisible} home cooks that SHOULD appear on the Homemade map:`);
+  console.log('  Oshawa 5, Cambridge 3, a tight downtown Toronto group of 5 (circles overlap).');
+  console.log(
+    `Added ${HOMEMADE_HIDDEN.length} cooks that must NOT appear: Stale Samosas, Gone Place, Unlisted Kitchen.`,
   );
   console.log('');
   console.log(`Demo logins: seed-restaurant-001@example.com … password ${PASSWORD}`);
+  console.log(
+    `Demo cooks: seed-homemade-1@example.com (Nonna Rosa's Table), seed-homemade-stale@example.com`,
+  );
   console.log('');
   console.log(
     'Reminder: the place IDs are fake (FAKE_PLACE_…). Directions will not open a real place.',

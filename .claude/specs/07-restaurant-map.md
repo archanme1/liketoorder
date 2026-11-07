@@ -35,7 +35,7 @@ Google's rules shape the backend. Google lets us cache a Places coordinate for a
 - As a user, I can zoom out and see nearby restaurants grouped into clusters, and tap a cluster to zoom in.
 - As a user, I can tap a flag and read the restaurant's photos, menu, prices and address in a bottom sheet, while the map stays where it was.
 - As a user, I can tap Directions and get walking or driving directions in Google Maps.
-- As a user, I can optionally let the app centre the map on me, and the app works fully if I say no. My location never leaves my phone.
+- As a user, I can optionally let the app centre the map on me, and the app works fully if I say no. My exact location never leaves my phone; the server only sees the map area I am looking at, rounded outward to a coarse grid (Decision 30).
 - As a screen-reader user, I hear each place's name and cuisine, and I can reach every action without the map.
 - As a restaurant owner, my pin never silently breaks the Google caching rule: it is refreshed before 30 days and hidden if it can't be.
 - As a homemade seller, my exact address is never used on this map. (Homemade pins are spec 08. This spec only guarantees they never appear here.)
@@ -193,7 +193,7 @@ None added. Photos in the sheet use the existing private `business-media` bucket
 
 ### Opening view and location (Decision 3)
 When the Restaurants tab first opens:
-1. If location permission is **undetermined** and the person hasn't tapped "Not now" before: show `LocationPrompt` ("LikeToOrder can centre the map on you to show restaurants nearby. Your location stays on your phone and is never sent to us. You can say no."). Buttons "Use my location" (→ system prompt) and "Not now" (remembered on the phone; the note is not shown again, but "locate me" still works).
+1. If location permission is **undetermined** and the person hasn't tapped "Not now" before: show `LocationPrompt` ("LikeToOrder can centre the map on you to show restaurants nearby. Your exact location stays on your phone. We only receive the map area you're looking at. You can say no."). Buttons "Use my location" (→ system prompt) and "Not now" (remembered on the phone; the note is not shown again, but "locate me" still works).
 2. **Allowed:** open centred on the person at neighbourhood zoom (latitudeDelta ≈ 0.02). Request one position with a **5 s timeout**; the map is shown immediately using the fallback below and moves to the person if the position arrives in time. A slow or failing GPS never blocks the map.
 3. **Denied, not asked, services off or position failed**, use the first that exists:
    1. the last viewed region (saved on the phone only, saved when the person stops moving the map);
@@ -203,7 +203,7 @@ When the Restaurants tab first opens:
 5. **Denied forever:** the button opens a small notice "Location is off for LikeToOrder. You can turn it on in Settings." with an "Open Settings" button (`Linking.openSettings()`).
 6. **Location services off:** same notice wording adapted ("Turn on Location Services in Settings").
 7. **A region with no restaurants:** the empty-state card, not a blank map.
-8. **The person's location is never sent anywhere.** It is used only to set the map's camera. The server receives only the map box. No analytics, no storage of the position, no logging. The only thing stored is the last viewed *region*, on the phone.
+8. **The person's exact location is never sent anywhere.** It is used only to set the map's camera. The server receives only the map box, snapped outward to a 0.05° (about 5 km) grid so the box's middle is never the person's position and every view inside the same grid cells sends identical numbers (Decision 30). The pins may therefore include some area outside the screen; the app draws what it receives. No analytics, no storage of the position, no logging. The only thing stored is the last viewed *region*, on the phone.
 
 ### Pins, clustering and markers
 - Markers: flag emoji (from `cuisines.flag`) in a rounded pill, 32×24 flag, 40 pt hit area (touch target ≥ 44 via `hitSlop`); neutral cuisines show their Ionicons icon. Colour comes from tokens. The Taiwan flag quirk is accepted (spec 04).
@@ -230,7 +230,7 @@ When the Restaurants tab first opens:
 ### Accessibility and large text
 - Every marker: `accessibilityRole="button"`, `accessibilityLabel` "<Name>, <Cuisine> cuisine". Cluster: "<n> places, double tap to zoom in". The flag is never the only way the cuisine is shown (the label always names it).
 - **Map alternative:** a "Places in this area" button (≥ 44 pt) opens the sheet in list mode with the current pins as rows (name + cuisine), so a screen-reader user never has to find a pin on the map. Selecting a row opens its details. (See Decision 15.)
-- Sheet: `accessibilityViewIsModal` while expanded, focus moves to the sheet title on open and back to the marker on close. Every touchable has a label and role: Close, Directions ("Directions to <name> in Google Maps"), Locate me, Retry, photo tiles ("<Name>, photo n of m"), list rows. Availability is written ("Available" / "Sold out"), never colour alone.
+- Sheet: `accessibilityViewIsModal` while expanded, focus moves to the sheet title on open and back to the marker on close (the move back on close is a known gap, not built: Decision 31). Every touchable has a label and role: Close, Directions ("Directions to <name> in Google Maps"), Locate me, Retry, photo tiles ("<Name>, photo n of m"), list rows. Availability is written ("Available" / "Sold out"), never colour alone.
 - Large text: all sheet text uses `Text` from `ui/` (scales with the system size); the sheet content is in a scroll view so nothing is clipped at the largest sizes; rows grow instead of truncating names (up to 3 lines, then ellipsis); the 15% collapsed snap shows at least name + flag at large sizes by increasing the snap height from font scale. Verified in the manual run at the largest iOS "Larger Accessibility Sizes" and Android font scale 2.0.
 - Reduce motion: no looping animation exists in this spec; sheet and camera animations follow the system setting (`useReducedMotion`).
 
@@ -272,7 +272,7 @@ When the Restaurants tab first opens:
 
 ### App config (PR 2)
 - `ios.config.googleMapsApiKey` ← `process.env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY`; `android.config.googleMaps.apiKey` ← `process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY`. Exact plugin/key names are checked against the current `react-native-maps` and Expo docs at implementation time.
-- `expo-location` plugin: `locationWhenInUsePermission: "LikeToOrder uses your location while you have the app open, only to show restaurants near you on the map. Your location stays on your phone."`, `isIosBackgroundLocationEnabled: false`, `isAndroidBackgroundLocationEnabled: false`. No background modes, no `NSLocationAlways…` strings.
+- `expo-location` plugin: `locationWhenInUsePermission: "LikeToOrder uses your location while you have the app open, only to show restaurants near you on the map. Your exact location stays on your phone. We only receive the map area you're looking at."`, `isIosBackgroundLocationEnabled: false`, `isAndroidBackgroundLocationEnabled: false`. No background modes, no `NSLocationAlways…` strings.
 - **Keys read from `EXPO_PUBLIC_*` variables listed in `.env.example`. Claude never reads or edits `.env`. No real keys are needed for code, jest or pgTAP.** Missing keys must not crash the app: the map screen shows a clear "Map isn't configured" error state in development.
 
 ## New dependencies
@@ -371,7 +371,7 @@ Feature-specific:
   - `useInitialRegion`: the fallback order in each permission state, slow GPS, services off, no country in locale.
   - `countryViews`: **every entry** in the table has lat in ±90, lng in ±180, and `latDelta` and `lngDelta` each > 0 and ≤ 40; every country code in the cuisine catalog seed has an entry; an unknown or null region returns nothing.
   - `rate_limited`: the query is not retried (react-query `retry` check and a call count of 1), the previous pins stay on screen, the "Try again in a moment" note shows with no error styling, and no further request is sent until the box changes or "Try again" is tapped.
-  - "Location never sent": with permission granted and a known position, no request argument contains it.
+  - "Location never sent": with permission granted and a known position, no request argument contains it, two positions in the same grid cell send identical arguments, the sent box always contains the visible box (also across the date line), and a view is called too wide by its snapped box.
   - `clustering`: grouping, zoom-to-cluster bounds, 500-pin performance bound.
   - `directions`: exact URL, encoding, no coordinates, no `maps.apple.com`.
   - Components: marker labels and roles, cluster label, sheet states (loading, null, error, success), price per business currency, no Request/Report buttons, photo fallback, list-mode, 4 screen states.
@@ -407,6 +407,7 @@ Manual checks on a real build, kept here so the final manual run knows what is s
 **Large text on the iOS Simulator, 2026-11-06 (Archan).** Largest "Larger Accessibility Sizes" setting, checked for the **sheet and the list** only.
 - Passed: the sheet works and nothing in it is clipped.
 - Found and fixed: the sheet's big titles grew so large that one list row fit (the titles are now capped at 1.6×; rows, prices and addresses still scale fully, Decision 29), and the tab bar labels were cut off ("Rest", "Hom"). The tab bar belongs to spec 03; its labels are now capped at 1.3× in a separate commit.
+- **Known gap (Decision 31):** focus does not return to the marker when the sheet closes; check it in the VoiceOver / TalkBack run.
 - **Not yet checked:** VoiceOver and TalkBack on markers, clusters, the sheet and the list; Android font scale 2.0; the map notices and the location screens at the largest size.
 
 **Manual run, iOS Simulator (iPhone 18 Pro, iOS 27.2), 2026-11-06 (Archan): complete for the iOS Simulator, with the local demo seed.**
@@ -471,6 +472,8 @@ Manual checks on a real build, kept here so the final manual run knows what is s
 27. **Sheet scroll space:** the library makes the sheet as tall as its highest snap, so at a lower snap the bottom of its scroll view is off screen and the last rows (Directions) could not be scrolled into view. The scrolling content gets bottom space equal to (highest snap − current snap) plus a gap, and the snap heights are computed from the measured screen area rather than the window. The content already scrolls in the library's own `BottomSheetScrollView`. jest checks the arithmetic only; the real layout is checked in the simulator. (Archan, 2026-11-06)
 28. **Hide Google's business labels:** `customMapStyle` with the single rule `{ featureType: 'poi.business', stylers: [{ visibility: 'off' }] }` on both platforms, so our flags are the only restaurant pins. Roads, place names, parks and transit are untouched. Legal read and an Android device check are added to `docs/product/v1.md` §16. (Archan, 2026-11-06)
 29. **Large text:** at the largest system size only the sheet's big title (restaurant name, "Places in this area") is capped, at `maxFontSizeMultiplier` 1.6; everything else in the sheet keeps scaling fully. The collapsed snap height still grows with the font scale. (Archan, 2026-11-06)
+30. **Position-independent map request (review fix):** the box sent to `map_restaurants_in_bounds` is snapped outward to a 0.05° (about 5 km) grid (`snapBox`). Before this, centring the map on the person made the box's middle their position (to about 50 m), which contradicted "never sent". Now the request reveals only a grid cell. Consequences: (a) the pins can include some area outside the screen; (b) the 500-pin cap applies to the larger box, so a very dense area may show "Zoom in to see more" sooner; (c) "Zoom in to see restaurants" is decided on the snapped box, so the app never asks for a box the server would refuse; (d) one cache entry per cell. The wording was made accurate at the same time: the prompt and the iOS permission string say "Your exact location stays on your phone. We only receive the map area you're looking at." The permission string is native config, so it needs a rebuild (`npx expo run:ios`). (Archan, 2026-11-06, from the code review)
+31. **Known gap, recorded not built (review Q5):** when the sheet closes, a screen reader's focus does not move back to the marker (it only moves to the sheet title on open). To be looked at in the VoiceOver / TalkBack run; also in `docs/product/v1.md` §16. (Archan, 2026-11-06)
 
 ## Open questions
 1. **Google Maps terms text** could not be loaded in full here. Please have the §16 "Google terms review" item cover: Places content only on a Google map, the 30-day lat/lng cache limit, and linking out by place ID.

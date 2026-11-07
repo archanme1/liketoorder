@@ -252,3 +252,16 @@ jest.mock('@gorhom/bottom-sheet', () => {
     __close: close,
   };
 });
+
+// ── Spec 09 idempotency keys ──
+// randomUUID returns a fresh, valid v4-shaped uuid each call (counter-based, so tests can compare
+// keys). Tests override with jest.mocked(randomUUID).mockReturnValue(...) or their own jest.mock.
+jest.mock('expo-crypto', () => {
+  let counter = 0;
+  return {
+    randomUUID: jest.fn(() => {
+      counter += 1;
+      return `00000000-0000-4000-8000-${String(counter).padStart(12, '0')}`;
+    }),
+  };
+});

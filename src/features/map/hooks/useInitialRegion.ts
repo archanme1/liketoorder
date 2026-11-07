@@ -2,7 +2,7 @@ import { getLocales } from 'expo-localization';
 import { useEffect, useRef, useState } from 'react';
 
 import { getCountryView } from '../countryViews';
-import { readLastRegion } from '../lastRegion';
+import { readLastRegion, REGION_KEY } from '../lastRegion';
 import { regionAround, WORLD_REGION, type MapRegion } from '../region';
 import type { LocationState, Position } from './useLocationPermission';
 
@@ -24,6 +24,8 @@ export function resolveFallbackView(
 type Options = {
   permission: LocationState;
   getPosition: () => Promise<Position | null>;
+  /** Where this tab keeps its last viewed region. Defaults to the Restaurants tab's key. */
+  regionKey?: string;
 };
 
 /**
@@ -31,14 +33,14 @@ type Options = {
  * requested (it times out after 5 s in getPosition) and `myRegion` is set when it arrives, so
  * a slow or failing GPS never blocks the map.
  */
-export function useInitialRegion({ permission, getPosition }: Options) {
+export function useInitialRegion({ permission, getPosition, regionKey = REGION_KEY }: Options) {
   const [opening, setOpening] = useState<OpeningView | null>(null);
   const [myRegion, setMyRegion] = useState<MapRegion | null>(null);
   const asked = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    void readLastRegion().then((last) => {
+    void readLastRegion(regionKey).then((last) => {
       if (cancelled) return;
       let regionCode: string | null | undefined;
       try {
@@ -51,7 +53,7 @@ export function useInitialRegion({ permission, getPosition }: Options) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [regionKey]);
 
   useEffect(() => {
     if (permission !== 'granted' || asked.current) return;

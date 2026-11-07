@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { saveLastRegion } from '../lastRegion';
+import { REGION_KEY, saveLastRegion } from '../lastRegion';
 import { regionToBox, type MapBox, type MapRegion } from '../region';
 
 /** Wait this long after the person stops moving the map before asking for pins. */
@@ -13,17 +13,20 @@ export const REGION_DEBOUNCE_MS = 400;
  *   The first region (the opening view) settles at once so pins load straight away.
  * - The settled region is saved on the phone as the last viewed region.
  */
-export function useMapRegion(initial: MapRegion | null) {
+export function useMapRegion(initial: MapRegion | null, regionKey: string = REGION_KEY) {
   const [region, setRegion] = useState<MapRegion | null>(null);
   const [settled, setSettled] = useState<MapRegion | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const hasSettledOnce = useRef(false);
 
-  const settle = useCallback((next: MapRegion) => {
-    hasSettledOnce.current = true;
-    setSettled(next);
-    void saveLastRegion(next);
-  }, []);
+  const settle = useCallback(
+    (next: MapRegion) => {
+      hasSettledOnce.current = true;
+      setSettled(next);
+      void saveLastRegion(next, regionKey);
+    },
+    [regionKey],
+  );
 
   // The opening view counts as the first region.
   useEffect(() => {

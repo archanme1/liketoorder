@@ -285,6 +285,31 @@ Hidden cooks and the seller view:
 31. Open the **Restaurants** tab.
     **Expected:** restaurants only, same behaviour as before (flags, sheet, Directions, the stacked list); the sheet photos there also open the viewer.
 
+### Manual acceptance results (iOS Simulator, Archan)
+**Gate C run (Homemade map, no photos yet): passed, no failures.** Steps covered by that run:
+
+| Step | Result | Note |
+|---|---|---|
+| 1 Setup (reset, seed, build, fake location) | Done | Seed at Gate C had no photos |
+| 2 Homemade tab, flags only, location note, Oshawa | Pass | |
+| 3 Circles in/out by zoom, clusters when zoomed out | Pass | |
+| 5 Tap a cluster | Pass | |
+| 6 Tap a flag: sheet opens and stays, map does not move | Pass | |
+| 9 Tap inside a circle | Pass | Sheet closes like any bare-map tap (Decision 7) |
+| 11 Sheet content for Nonna Rosa's Table | Pass, photos part open | Disclaimer visible at half, CAD menu, area note, no address/Directions/Request/Report; cover, gallery and menu photos not yet seeded |
+| 19 Places in this area | Pass | |
+| 20 Pick from the list | Pass | |
+| 21 Back to list (X and swipe) | Pass | |
+| 22 World view | Pass | "Zoom in to see homemade cooks" |
+| 23 Empty area | Pass | "No homemade cooks here yet" |
+| 24 Locate me | Pass | |
+| 25 Settings round trip | Pass | |
+| 27 Hidden cooks absent (map and list) | Pass | Stale Samosas, Gone Place, Unlisted Kitchen |
+| 31 Restaurants tab unchanged | Pass, viewer part open | Flags, sheet, Directions, list as before |
+
+Not separately reported in the Gate C run, so still open: 4 (Studio compare of exact and shown points), 7, 8 (rapid pan), 10 (overlapping circles, tap picks the right cook), 12-14 (sheets with fewer photos, snaps, scroll to the last row), 26 (largest text).
+**Open because they need Gate D (photo viewer, seller status line, seller Photos screen, seed photos):** 15, 16, 17, 18, 28, 29, 30, and the viewer part of 11 and 31.
+
 Not covered by this script (tracked in `docs/product/v1.md` §16): a real iPhone, Android, VoiceOver and TalkBack, Android font scale 2.0, `customMapStyle` on Android, the services-off state.
 
 ## Seed data
@@ -370,7 +395,7 @@ No test file defines its own map or sheet mock.
 4. **Homemade status line in Manage Business:** the same three `map_status` words and the existing `MapStatusLine`, with homemade wording. (Archan, answer to open question 4)
 5. **No address and no Directions on the homemade sheet;** an "approximate area only" note instead. No area-name lookup. (Archan, answer to open question 5)
 6. **One map screen, two configs.** The Restaurants screen is refactored into a shared screen (no behaviour change); the last viewed region is stored per tab; the "Not now" location note is remembered once for both. (Claude's default, from the product spec §6 saying both tabs use the same map; not asked.)
-7. **Circle taps follow what the library can do.** Pitfall 1 sets the rule: tappable circles only if they cannot close the sheet through a bubbled press; otherwise only the flag is tappable and this Decision is edited to say so. (Claude's default.)
+7. **The circle is not tappable.** Checked in the installed react-native-maps 1.29.11: `Circle` has no `onPress`, no `tappable` and no `stopPropagation` on iOS or Android (`stopPropagation` exists only on `Marker`; Android's `overlay-press` belongs to ground overlays). A tap inside a circle is therefore a plain map press (iOS: no `action`; Android: `action: 'press'`) and clears the selection like any bare-map tap; only the flag opens the sheet. The jest `Circle` fake has no press either, and tests assert the real element gets no `onPress`. (Claude's default; confirmed in the Gate C simulator run, step 9.)
 8. **Own rate-limit kinds** (`homemade_pins`, `homemade_details`), same numbers as restaurants, so one tab cannot use up the other's quota. (Claude's default.)
 9. **"View larger" on the seller Photos screen.** The existing photo options gain a "View larger" action that opens the photo viewer; tiles still open the options as before, so editing is not disturbed. (Archan, answer to open question 1)
 10. **No pinch-to-zoom in v1 of the viewer.** Swipe between photos and show each whole on screen. (Archan, answer to open question 2)

@@ -58,6 +58,24 @@ export const mapArea = {
   strokeWidth: 2,
 };
 
-export const theme = { colors, space, radius, type, weight, size, opacity, stroke, mapArea };
+// The full-screen photo viewer: a dark backdrop with light text and controls on top of it.
+export const viewer = {
+  backdrop: 'rgba(0, 0, 0, 0.94)',
+  text: '#FFFFFF',
+  control: 'rgba(255, 255, 255, 0.16)',
+};
+
+export const theme = {
+  colors,
+  space,
+  radius,
+  type,
+  weight,
+  size,
+  opacity,
+  stroke,
+  mapArea,
+  viewer,
+};
 
 export type Theme = typeof theme;

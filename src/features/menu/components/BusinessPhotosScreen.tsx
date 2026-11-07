@@ -1,10 +1,20 @@
 import { useLocalSearchParams } from 'expo-router';
-import { memo, useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Alert, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 
 import { Banner, ErrorState, Text } from '@/components/ui';
 import { AddPhotoButton } from '@/features/media/components/AddPhotoButton';
 import { PhotoTile } from '@/features/media/components/PhotoTile';
+import { PhotoViewer, type ViewerPhoto } from '@/features/media/components/PhotoViewer';
+import { usePhotoViewer } from '@/features/media/hooks/usePhotoViewer';
 import { useSignedUrls } from '@/features/media/hooks/useSignedUrls';
 import { SellerLoading } from '@/features/sellers/components/SellerLoading';
 import { SellerScreenFrame } from '@/features/sellers/components/SellerScreenFrame';
@@ -80,6 +90,34 @@ function PhotosEditor({ business, menu, scrollRef }: PhotosBodyProps & { menu: M
   );
   const { renew, urlFor } = useSignedUrls(MEDIA_BUCKET, paths);
   const cover = slotPhoto(sections.cover, urlFor);
+
+  // "View larger": the photos that can be shown (they have a link), in page order: cover, gallery,
+  // menu pages. Editing is untouched; this only adds an option to the existing photo options.
+  const viewer = usePhotoViewer();
+  const viewable = useMemo(() => {
+    const list: ViewerPhoto[] = [];
+    if (cover && typeof urlFor(cover.path) === 'string') {
+      list.push({ path: cover.path, label: photoNames.cover(business.name) });
+    }
+    sections.gallery.forEach((photo, i) => {
+      if (typeof urlFor(photo.path) === 'string') {
+        list.push({
+          path: photo.path,
+          label: photoNames.gallery(i + 1, sections.gallery.length, business.name),
+        });
+      }
+    });
+    sections.menu.forEach((photo, i) => {
+      if (typeof urlFor(photo.path) === 'string') {
+        list.push({
+          path: photo.path,
+          label: photoNames.menu(i + 1, sections.menu.length, business.name),
+        });
+      }
+    });
+    return list;
+  }, [cover, sections.gallery, sections.menu, urlFor, business.name]);
+  const { open: openViewer } = viewer;
   const onExpired = useCallback((path: string) => void renew(path), [renew]);
   const uploadingKind = upload.isPending ? upload.variables?.kind : undefined;
 
@@ -127,7 +165,9 @@ function PhotosEditor({ business, menu, scrollRef }: PhotosBodyProps & { menu: M
   // Photo options: the cover can be replaced; gallery and menu photos are removed and re-added.
   const openOptions = useCallback(
     (photo: BusinessPhoto, name: string) => {
+      const viewIndex = viewable.findIndex((entry) => entry.path === photo.path);
       const buttons = [
+        ...(viewIndex >= 0 ? [{ text: 'View larger', onPress: () => openViewer(viewIndex) }] : []),
         ...(photo.kind === 'cover' ? [{ text: 'Replace', onPress: () => add('cover') }] : []),
         {
           text: 'Remove',
@@ -138,7 +178,7 @@ function PhotosEditor({ business, menu, scrollRef }: PhotosBodyProps & { menu: M
       ];
       Alert.alert(name, undefined, buttons);
     },
-    [add, confirmRemove],
+    [add, confirmRemove, viewable, openViewer],
   );
 
   const empty =
@@ -232,6 +272,15 @@ function PhotosEditor({ business, menu, scrollRef }: PhotosBodyProps & { menu: M
           />
         </Section>
       </View>
+      <PhotoViewer
+        visible={viewer.visible}
+        photos={viewable}
+        index={viewer.index}
+        onIndexChange={viewer.setIndex}
+        onClose={viewer.close}
+        urlFor={urlFor}
+        onExpired={onExpired}
+      />
     </View>
   );
 }

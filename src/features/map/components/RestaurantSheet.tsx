@@ -136,6 +136,12 @@ export function RestaurantSheet({
   const backMode = detailsMode && fromList;
   const dismiss = backMode ? onBackToList : onClose;
   const dismissLabel = backMode ? BACK_TO_LIST : CLOSE_LABEL;
+  const contentStyle = {
+    paddingHorizontal: space.lg,
+    paddingTop: space.lg,
+    paddingBottom: scrollBottomSpace(snaps, snapIndex, space.xxl),
+    gap: space.lg,
+  };
   const title = detailsMode ? selected.name : PLACES_TITLE;
 
   return (
@@ -197,26 +203,23 @@ export function RestaurantSheet({
               <Ionicons name="close" size={size.tabIcon} color={colors.text} />
             </Pressable>
           </View>
-          <BottomSheetScrollView
-            testID="sheet-scroll"
-            contentContainerStyle={{
-              paddingHorizontal: space.lg,
-              paddingTop: space.lg,
-              paddingBottom: scrollBottomSpace(snaps, snapIndex, space.xxl),
-              gap: space.lg,
-            }}
-          >
-            {selected ? (
+          {selected ? (
+            <BottomSheetScrollView testID="sheet-scroll" contentContainerStyle={contentStyle}>
               <SheetDetails
                 key={selected.id}
                 id={selected.id}
                 onClose={dismiss}
                 closeLabel={dismissLabel}
               />
-            ) : (
-              <PlacesList pins={pins} cuisineByCode={cuisineByCode} onSelect={onSelect} />
-            )}
-          </BottomSheetScrollView>
+            </BottomSheetScrollView>
+          ) : (
+            <PlacesList
+              pins={pins}
+              cuisineByCode={cuisineByCode}
+              onSelect={onSelect}
+              contentContainerStyle={{ ...contentStyle, gap: space.xs }}
+            />
+          )}
         </View>
       ) : null}
     </BottomSheet>

@@ -62,4 +62,4 @@ Every data screen: `Skeleton` while loading → `EmptyState` (friendly line + ac
 Short (150–250 ms) and purposeful. Only looping animation in the app is the promoted marker float. Respect reduce-motion everywhere.
 
 ## Copy
-Short, friendly, plain. Buttons are verbs ("Request pickup", "Send table request"). Homemade sheets always show the food-safety & allergy disclaimer above the request button.
+Short, friendly, plain. Buttons are verbs ("Request pickup", "Send table request"). Homemade sheets always show the food-safety & allergy note as a small disclosure row (title + info icon, whole row is the button, collapsed by default at every text size, full text inline on tap, a screen reader hears the whole warning); it sits above the menu and, once requests exist, above the request button. Sheet content order (both tabs): fixed header, 88 pt cover banner, (homemade) safety row, menu-page thumbnails, menu items, gallery, address + Directions or the approximate-area note.

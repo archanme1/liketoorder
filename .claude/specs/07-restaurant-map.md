@@ -214,6 +214,7 @@ When the Restaurants tab first opens:
 - When `capped` is true: banner "Zoom in to see more". When `too_large`: "Zoom in to see restaurants".
 
 ### Bottom sheet
+> **Superseded in part by spec 08, Decision 15:** the order of the sheet content below (cover and gallery first, address and Directions after the menu) was changed for both tabs to menu first: header, 88 pt cover banner, menu-page thumbnails, menu items, gallery, then address and Directions at the very bottom. Everything else in this section still holds.
 - `@gorhom/bottom-sheet`, snap points `['15%', '50%', '92%']`, swipe down closes and clears selection.
 - Shows only what exists today: name, cuisine flag + name (`CuisineLabel`), cover photo and gallery (horizontal list), menu (items with price, availability, description; menu photos), address, **Directions**.
 - **No** Request pickup, Request table or Report buttons, and no greyed-out placeholders (specs 09, 11, 17).

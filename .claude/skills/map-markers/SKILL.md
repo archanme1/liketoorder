@@ -64,6 +64,10 @@ export function useFloat() {
 - Selected marker gets a slightly darker ring (not bigger).
 - Promoted seller: sheet shows a "Sponsored" label at the top.
 
+## Sheet content order (spec 08 Decision 15, both tabs)
+- Fixed header (name, flag, cuisine) outside the scroll. Inside the scroll, top to bottom: cover banner (88 pt, `size.coverBanner`, `PhotoTile width="100%"`, nothing when there is no cover), homemade safety row (`HomemadeDisclaimer`, collapsed by default at every size), menu-page thumbnails (96 pt, `size.photoThumb`, own viewer), menu items, gallery (`useCoverAndGallery`: banner and gallery share one viewer; "No photos yet" only with neither), then the address + Directions (restaurant) or the approximate-area note (homemade).
+- At the half snap the menu items start at or below the fold: that is expected; check the real layout in the Simulator.
+
 ## Accessibility
 - Marker `accessibilityLabel`: "<Business name>, <Cuisine> cuisine" + ", sponsored" for ads.
 - Cluster: "<n> places, double tap to zoom in".

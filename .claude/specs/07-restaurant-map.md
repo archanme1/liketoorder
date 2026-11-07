@@ -346,20 +346,20 @@ Feature-specific:
 - [x] The response and logs contain no Google body, key or secret.
 
 **App (PR 2)**
-- [ ] The Restaurants tab shows a Google map with `PROVIDER_GOOGLE` on iOS and Android; guests see it without signing in.
-- [ ] Pins load only for the visible area, after the person stops moving the map (400 ms); a late answer for an old area is ignored; old pins stay while new ones load (no flicker).
+- [ ] The Restaurants tab shows a Google map with `PROVIDER_GOOGLE` on iOS and Android; guests see it without signing in. *(Manual run: iOS tiles with the iOS key ✓. Not manually checked: Android and the Android Maps key; browsing as a guest.)*
+- [ ] Pins load only for the visible area, after the person stops moving the map (400 ms); a late answer for an old area is ignored; old pins stay while new ones load (no flicker). *(Manual run: pins load on pan ✓. The ordering and no-flicker parts are jest-only: not manually checked.)*
 - [ ] A `rate_limited` answer keeps the old pins, shows "Try again in a moment", and is never retried automatically.
 - [ ] 500 pins → "Zoom in to see more"; `too_large` → "Zoom in to see restaurants" with no pin request loop.
-- [ ] Tap a flag → the sheet opens at half, the map doesn't move; swipe down closes it; tapping a cluster zooms in.
-- [ ] The sheet shows exactly: name, flag + cuisine name, cover and gallery, menu items with price and availability in the business's currency, menu photos, address, Directions. No Request or Report buttons or placeholders.
-- [ ] Directions opens a `google.com/maps/search/?api=1&query=…&query_place_id=…` URL, with no coordinates and no Apple Maps link.
-- [ ] A photo that fails shows "Photo unavailable" once (no loop); expired signed URLs renew once per path per mount.
+- [x] Tap a flag → the sheet opens at half, the map doesn't move; swipe down closes it; tapping a cluster zooms in. *(Manual run, iOS Simulator, 2026-11-06.)*
+- [ ] The sheet shows exactly: name, flag + cuisine name, cover and gallery, menu items with price and availability in the business's currency, menu photos, address, Directions. No Request or Report buttons or placeholders. *(Manual run: name, flag, cuisine, menu items, prices and currency formatting, "Sold out", "Price not listed", address and Directions ✓. Not manually checked: photos (cover, gallery, menu pages, item photos): none are seeded.)*
+- [x] Directions opens a `google.com/maps/search/?api=1&query=…&query_place_id=…` URL, with no coordinates and no Apple Maps link. *(Manual run, iOS Simulator, 2026-11-06: opens a Google Maps search; the seeded place IDs are fake, so a real place was not checked. The URL itself is asserted in jest.)*
+- [ ] A photo that fails shows "Photo unavailable" once (no loop); expired signed URLs renew once per path per mount. *(Not manually checked: no photos are seeded.)*
 - [ ] Every entry of the bundled country table has a valid centre and `latDelta`, `lngDelta` of at most 40° (and more than 0), so none can reach the 90° limit; an unmapped region falls through to the world map.
-- [ ] Opening view order: allowed → centred on me; otherwise last region → phone country → plain world map with "Zoom in to see restaurants". Slow GPS (no fix in 5 s) doesn't block the map.
-- [ ] Denied-forever, services-off and empty-region states each show their message; "Open Settings" works.
+- [ ] Opening view order: allowed → centred on me; otherwise last region → phone country → plain world map with "Zoom in to see restaurants". Slow GPS (no fix in 5 s) doesn't block the map. *(Manual run: allowed → centred on a faked location ✓. Not manually checked: the last-region and phone-country fallbacks, the world map, slow GPS.)*
+- [ ] Denied-forever, services-off and empty-region states each show their message; "Open Settings" works. *(Not manually checked: the denied, denied-forever and services-off states.)*
 - [ ] No request to Supabase (or anywhere) ever contains the person's latitude/longitude: only the map box (jest asserts the exact request arguments).
-- [ ] Manage Business shows the status line for a restaurant: "Showing on the map" when fresh, the two hidden messages otherwise, nothing for a restaurant with no saved address (pgTAP: `get_my_business` returns `visible` / `place_not_found` / `needs_refresh` for each fixture and null for homemade and for a restaurant with no saved address; jest: each message and the button to the address screen).
-- [ ] All screens handle loading, empty, error (with retry) and success; every touchable has a role and label with ≥ 44 pt target; the "Places in this area" list works; large text isn't clipped.
+- [ ] Manage Business shows the status line for a restaurant: "Showing on the map" when fresh, the two hidden messages otherwise, nothing for a restaurant with no saved address (pgTAP: `get_my_business` returns `visible` / `place_not_found` / `needs_refresh` for each fixture and null for homemade and for a restaurant with no saved address; jest: each message and the button to the address screen). *(Manual run: "Showing on the map" and the needs_refresh message with its button ✓. Not manually checked: the place_not_found message.)*
+- [ ] All screens handle loading, empty, error (with retry) and success; every touchable has a role and label with ≥ 44 pt target; the "Places in this area" list works; large text isn't clipped. *(Manual run: the Places list ✓ (map centres on a picked place; stacked back with the X and by swiping); large text at the largest iOS size for the sheet, list and tab bar ✓. Not manually checked: the empty and error states on a device, VoiceOver, TalkBack, Android font scale 2.0.)*
 - [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` and the Deno tests pass; CI green.
 
 ## Test plan
@@ -408,6 +408,29 @@ Manual checks on a real build, kept here so the final manual run knows what is s
 - Passed: the sheet works and nothing in it is clipped.
 - Found and fixed: the sheet's big titles grew so large that one list row fit (the titles are now capped at 1.6×; rows, prices and addresses still scale fully, Decision 29), and the tab bar labels were cut off ("Rest", "Hom"). The tab bar belongs to spec 03; its labels are now capped at 1.3× in a separate commit.
 - **Not yet checked:** VoiceOver and TalkBack on markers, clusters, the sheet and the list; Android font scale 2.0; the map notices and the location screens at the largest size.
+
+**Manual run, iOS Simulator (iPhone 18 Pro, iOS 27.2), 2026-11-06 (Archan): complete for the iOS Simulator, with the local demo seed.**
+- **Passed:**
+  - Map tiles with the iOS Maps key; the faked location (centres on it) and the permission note.
+  - Pins load on pan; flags and clusters render; a cluster tap zooms in.
+  - Tapping a flag opens the sheet without moving the map.
+  - The sheet's three snaps, swipe down, and scrolling (Directions reachable at half and full).
+  - "Places in this area": the map centres on a picked place; the list and the restaurant stack (the X and a swipe go back to the list).
+  - Google's business labels are hidden (`customMapStyle`).
+  - Large text at the largest iOS size, for the sheet, the list and the tab bar.
+  - Menus, "Sold out", "Price not listed" and currency formatting; Directions opens a Google Maps search.
+  - The Manage Business status line for "visible" and "needs_refresh".
+- **Not manually checked:**
+  - A real iPhone (GPS, touch).
+  - An Android build and the Android Maps key.
+  - VoiceOver and TalkBack.
+  - Android font scale 2.0.
+  - The denied, denied-forever and services-off location states.
+  - The slow-GPS and phone-country fallbacks.
+  - The place_not_found status line.
+  - Photos (none are seeded).
+  - Directions to a real place (the seeded place IDs are fake).
+  - `customMapStyle` on Android.
 
 ## Decisions
 1. **Two PRs** as above; PR 1 keeps the status 🚧, only PR 2 marks ✅ Shipped. (Archan, 2026-11-04)

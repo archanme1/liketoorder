@@ -1,5 +1,6 @@
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { readLocationPromptDismissed, saveLocationPromptDismissed } from '../lastRegion';
 
@@ -50,6 +51,18 @@ export function useLocationPermission() {
     return () => {
       mounted.current = false;
     };
+  }, []);
+
+  // Coming back from Settings: pick up whatever the person changed there.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        void readState().then((value) => {
+          if (mounted.current) setState(value);
+        });
+      }
+    });
+    return () => subscription.remove();
   }, []);
 
   const refresh = useCallback(async (): Promise<LocationState> => {

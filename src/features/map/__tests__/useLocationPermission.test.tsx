@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import * as Location from 'expo-location';
+import { AppState, type AppStateStatus } from 'react-native';
 
 import { POSITION_TIMEOUT_MS, useLocationPermission } from '../hooks/useLocationPermission';
 
@@ -18,6 +19,32 @@ function permission(status: string, canAskAgain = true) {
 
 afterEach(() => {
   jest.useRealTimers();
+});
+
+describe('useLocationPermission: coming back from Settings', () => {
+  it('re-reads the system state when the app becomes active again', async () => {
+    let listener: ((status: AppStateStatus) => void) | undefined;
+    const remove = jest.fn();
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, handler) => {
+      listener = handler;
+      return { remove };
+    });
+    permission('denied', false);
+    const { result, unmount } = await renderHook(() => useLocationPermission());
+    await waitFor(() => expect(result.current.state).toBe('denied_forever'));
+
+    permission('granted');
+    await act(async () => listener?.('active'));
+    await waitFor(() => expect(result.current.state).toBe('granted'));
+
+    // Going to the background does not re-read.
+    getPermission.mockClear();
+    await act(async () => listener?.('background'));
+    expect(getPermission).not.toHaveBeenCalled();
+
+    await unmount();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('useLocationPermission state', () => {

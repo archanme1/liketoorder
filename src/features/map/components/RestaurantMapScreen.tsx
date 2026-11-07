@@ -169,8 +169,8 @@ function ConfiguredMap() {
 
   const onLocateMe = useCallback(async () => {
     setNotice(null);
-    let state = permission.state;
-    if (state === 'unknown') state = await permission.refresh();
+    // Always ask the system again: the person may have changed it in Settings since the last look.
+    let state = await permission.refresh();
     if (state === 'undetermined') state = await permission.request();
     if (state === 'granted') {
       const position = await permission.getPosition();

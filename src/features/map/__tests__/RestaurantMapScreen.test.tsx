@@ -243,6 +243,24 @@ describe('RestaurantMapScreen: location flow', () => {
     expect(screen.queryByText(/Location is off for LikeToOrder/)).not.toBeOnTheScreen();
   });
 
+  it('locate-me reads the permission fresh: back from Settings with location on, it moves', async () => {
+    permission('denied', false);
+    await renderScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Locate me' }));
+    expect(await screen.findByRole('button', { name: 'Open Settings' })).toBeOnTheScreen();
+    animateToRegion.mockClear();
+
+    // The person turned location on in Settings and came back.
+    permission('granted');
+    getPosition.mockResolvedValue({
+      coords: { latitude: 7, longitude: 6 },
+    } as Location.LocationObject);
+    await fireEvent.press(screen.getByRole('button', { name: 'Locate me' }));
+    await waitFor(() => expect(animateToRegion).toHaveBeenCalled());
+    expect(animateToRegion.mock.calls.at(-1)?.[0]).toMatchObject({ latitude: 7, longitude: 6 });
+    expect(screen.queryByRole('button', { name: 'Open Settings' })).not.toBeOnTheScreen();
+  });
+
   it('services off: says to turn on Location Services', async () => {
     services.mockResolvedValue(false);
     await renderScreen();

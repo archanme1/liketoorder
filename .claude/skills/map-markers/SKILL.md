@@ -8,7 +8,7 @@ description: How LikeToOrder renders map markers — country-flag markers, clust
 Product rules live in `docs/product/v1.md` §6–7. This skill is the *how*.
 
 ## Libraries
-- `react-native-maps` (Apple Maps iOS / Google Maps Android) — not supported on web.
+- `react-native-maps` with `PROVIDER_GOOGLE` on **both** iOS and Android (Places content must be shown on a Google map; never Apple Maps). Needs a development build, not Expo Go. Not supported on web. With no Maps key the screen shows "Map isn't configured" and never mounts the map.
 - `supercluster` for clustering (pure JS, run in a `useMemo` keyed on data + region zoom).
 - `react-native-reanimated` for animation. `@gorhom/bottom-sheet` for the sheet.
 

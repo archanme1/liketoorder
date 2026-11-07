@@ -111,3 +111,137 @@ jest.mock('expo-image', () => {
   const Image = (props: object) => createElement(View, { testID: 'expo-image', ...props });
   return { Image };
 });
+
+// ── Spec 07 map modules: native under jest, so each gets a small controllable fake. ──
+
+// MapView renders a plain View (testID "map-view") that keeps every prop, so tests can read
+// provider / initialRegion / customMapStyle and call onRegionChangeComplete. The ref exposes
+// animateToRegion, which is the shared jest.fn `__animateToRegion` so tests can assert the camera
+// moved (or didn't).
+//
+// Marker presses BUBBLE to the map's onPress, like the real library on iOS (both are bubbling
+// events there): the fake calls the marker's onPress, then the map's onPress with the same event,
+// unless propagation was stopped. The marker's `stopPropagation` prop does what the library's does.
+// `__setIgnoreStopPropagation(true)` models a platform where stopPropagation has no effect.
+jest.mock('react-native-maps', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const React = require('react');
+  const { View } = require('react-native');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const animateToRegion = jest.fn();
+  const behaviour = { ignoreStopPropagation: false };
+  const MapPressContext = React.createContext(undefined);
+  const MapView = React.forwardRef(function MockMapView(
+    props: { onPress?: (pressed: unknown) => void; onMapReady?: () => void },
+    ref: unknown,
+  ) {
+    React.useImperativeHandle(ref, () => ({ animateToRegion }));
+    // The real map reports when it can take camera moves; the fake is ready once mounted.
+    const { onMapReady } = props;
+    React.useEffect(() => {
+      onMapReady?.();
+    }, [onMapReady]);
+    return React.createElement(
+      MapPressContext.Provider,
+      { value: props.onPress },
+      React.createElement(View, { testID: 'map-view', ...props }),
+    );
+  });
+  const Marker = function MockMarker(props: {
+    coordinate?: unknown;
+    stopPropagation?: boolean;
+    onPress?: (pressed: unknown) => void;
+  }) {
+    const mapPress = React.useContext(MapPressContext);
+    const onPress = () => {
+      let stopped = false;
+      const pressEvent = {
+        nativeEvent: { action: 'marker-press', id: 'unknown', coordinate: props.coordinate },
+        stopPropagation() {
+          if (!behaviour.ignoreStopPropagation) stopped = true;
+        },
+      };
+      if (props.stopPropagation) pressEvent.stopPropagation();
+      props.onPress?.(pressEvent);
+      if (!stopped) mapPress?.(pressEvent);
+    };
+    return React.createElement(View, { testID: 'marker', ...props, onPress });
+  };
+  return {
+    __esModule: true,
+    default: MapView,
+    Marker,
+    PROVIDER_GOOGLE: 'google',
+    __animateToRegion: animateToRegion,
+    __setIgnoreStopPropagation: (value: boolean) => {
+      behaviour.ignoreStopPropagation = value;
+    },
+  };
+});
+
+// Foreground location only. Default: services on, never asked, and a fix near Paris. Tests
+// override with jest.mocked(Location.x).mockResolvedValue(...).
+jest.mock('expo-location', () => ({
+  PermissionStatus: { GRANTED: 'granted', DENIED: 'denied', UNDETERMINED: 'undetermined' },
+  Accuracy: { Balanced: 3 },
+  hasServicesEnabledAsync: jest.fn(async () => true),
+  getForegroundPermissionsAsync: jest.fn(async () => ({
+    status: 'undetermined',
+    canAskAgain: true,
+    granted: false,
+  })),
+  requestForegroundPermissionsAsync: jest.fn(async () => ({
+    status: 'granted',
+    canAskAgain: true,
+    granted: true,
+  })),
+  getCurrentPositionAsync: jest.fn(async () => ({
+    coords: { latitude: 48.8566, longitude: 2.3522 },
+  })),
+}));
+
+// The bottom sheet needs reanimated + gesture-handler natively. The fake renders a View
+// (testID "bottom-sheet") that keeps every prop (snapPoints, index, enablePanDownToClose,
+// onChange, onClose), so tests can read them and call the handlers, and its ref exposes the
+// shared jest.fns __snapToIndex / __close so tests can assert the sheet was told to open or close.
+jest.mock('@gorhom/bottom-sheet', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const React = require('react');
+  const { View, ScrollView, FlatList } = require('react-native');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const snapToIndex = jest.fn();
+  const close = jest.fn();
+  // useBottomSheetScrollableCreator() gives a scroll component for a plain virtualised list
+  // (renderScrollComponent). The fake is a ScrollView; `__scrollableCreator` counts the calls and
+  // `__flatListRenders` counts renders of the library's own BottomSheetFlatList.
+  const scrollableCreator = jest.fn();
+  const flatListRenders = jest.fn();
+  const creatorScroll = ({ data: _data, ...props }: { data?: unknown }) =>
+    React.createElement(ScrollView, props);
+  const BottomSheetFlatList = React.forwardRef(function MockFlatList(props: object, ref: unknown) {
+    flatListRenders();
+    return React.createElement(FlatList, { ...props, ref });
+  });
+  const BottomSheet = React.forwardRef(function MockBottomSheet(
+    props: { children?: unknown },
+    ref: unknown,
+  ) {
+    React.useImperativeHandle(ref, () => ({ snapToIndex, close }));
+    return React.createElement(View, { testID: 'bottom-sheet', ...props }, props.children);
+  });
+  return {
+    __esModule: true,
+    default: BottomSheet,
+    BottomSheetScrollView: ScrollView,
+    BottomSheetFlatList,
+    useBottomSheetScrollableCreator: () => {
+      scrollableCreator();
+      return creatorScroll;
+    },
+    __scrollableCreator: scrollableCreator,
+    __flatListRenders: flatListRenders,
+    useBottomSheetTimingConfigs: (config: object) => config,
+    __snapToIndex: snapToIndex,
+    __close: close,
+  };
+});

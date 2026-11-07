@@ -5,7 +5,7 @@
 - PR 2 (the app: libraries, map, markers, clustering, location flow, sheet, Directions, jest tests): `feature/restaurant-map-app`, created from `main` after PR 1 is merged. **Blocked on Archan's development-build decision (see "Development build").**
 **Product spec:** `docs/product/v1.md` §6 Map, §5 (Sellers & listings, Homemade specifics), §4 (guests can browse), §3 (out of scope), §14 row 07, §16 (Google map provider, Places coordinate refresh, Photo viewer, Google terms review)
 **Plan mode:** required — adds a migration (functions, index, tables, three cron jobs), RLS and grants; adds an Edge Function; adds several dependencies and native config; adds a route and navigation changes; touches well over ~5 files.
-**Status:** 🚧 In progress (PR 1 started; only PR 2 sets ✅ Shipped)
+**Status:** ✅ Shipped
 
 ## Overview
 After this ships, anyone, signed in or not, can open the **Restaurants** tab and see a full-screen **Google map** of restaurants, each as its country flag (or a neutral cuisine icon). Pins group into clusters when zoomed out. The map loads only the restaurants in the visible area. Tapping a pin opens a draggable bottom sheet (collapsed / half / full) with the restaurant's name, flag, cover photo and gallery, menu (items, prices, availability, menu photos), address and a **Directions** link that opens Google Maps.
@@ -35,7 +35,7 @@ Google's rules shape the backend. Google lets us cache a Places coordinate for a
 - As a user, I can zoom out and see nearby restaurants grouped into clusters, and tap a cluster to zoom in.
 - As a user, I can tap a flag and read the restaurant's photos, menu, prices and address in a bottom sheet, while the map stays where it was.
 - As a user, I can tap Directions and get walking or driving directions in Google Maps.
-- As a user, I can optionally let the app centre the map on me, and the app works fully if I say no. My location never leaves my phone.
+- As a user, I can optionally let the app centre the map on me, and the app works fully if I say no. My exact location never leaves my phone; the server only sees the map area I am looking at, rounded outward to a coarse grid (Decision 30).
 - As a screen-reader user, I hear each place's name and cuisine, and I can reach every action without the map.
 - As a restaurant owner, my pin never silently breaks the Google caching rule: it is refreshed before 30 days and hidden if it can't be.
 - As a homemade seller, my exact address is never used on this map. (Homemade pins are spec 08. This spec only guarantees they never appear here.)
@@ -193,7 +193,7 @@ None added. Photos in the sheet use the existing private `business-media` bucket
 
 ### Opening view and location (Decision 3)
 When the Restaurants tab first opens:
-1. If location permission is **undetermined** and the person hasn't tapped "Not now" before: show `LocationPrompt` ("LikeToOrder can centre the map on you to show restaurants nearby. Your location stays on your phone and is never sent to us. You can say no."). Buttons "Use my location" (→ system prompt) and "Not now" (remembered on the phone; the note is not shown again, but "locate me" still works).
+1. If location permission is **undetermined** and the person hasn't tapped "Not now" before: show `LocationPrompt` ("LikeToOrder can centre the map on you to show restaurants nearby. Your exact location stays on your phone. We only receive the map area you're looking at. You can say no."). Buttons "Use my location" (→ system prompt) and "Not now" (remembered on the phone; the note is not shown again, but "locate me" still works).
 2. **Allowed:** open centred on the person at neighbourhood zoom (latitudeDelta ≈ 0.02). Request one position with a **5 s timeout**; the map is shown immediately using the fallback below and moves to the person if the position arrives in time. A slow or failing GPS never blocks the map.
 3. **Denied, not asked, services off or position failed**, use the first that exists:
    1. the last viewed region (saved on the phone only, saved when the person stops moving the map);
@@ -203,7 +203,7 @@ When the Restaurants tab first opens:
 5. **Denied forever:** the button opens a small notice "Location is off for LikeToOrder. You can turn it on in Settings." with an "Open Settings" button (`Linking.openSettings()`).
 6. **Location services off:** same notice wording adapted ("Turn on Location Services in Settings").
 7. **A region with no restaurants:** the empty-state card, not a blank map.
-8. **The person's location is never sent anywhere.** It is used only to set the map's camera. The server receives only the map box. No analytics, no storage of the position, no logging. The only thing stored is the last viewed *region*, on the phone.
+8. **The person's exact location is never sent anywhere.** It is used only to set the map's camera. The server receives only the map box, snapped outward to a 0.05° (about 5 km) grid so the box's middle is never the person's position and every view inside the same grid cells sends identical numbers (Decision 30). The pins may therefore include some area outside the screen; the app draws what it receives. No analytics, no storage of the position, no logging. The only thing stored is the last viewed *region*, on the phone.
 
 ### Pins, clustering and markers
 - Markers: flag emoji (from `cuisines.flag`) in a rounded pill, 32×24 flag, 40 pt hit area (touch target ≥ 44 via `hitSlop`); neutral cuisines show their Ionicons icon. Colour comes from tokens. The Taiwan flag quirk is accepted (spec 04).
@@ -230,7 +230,7 @@ When the Restaurants tab first opens:
 ### Accessibility and large text
 - Every marker: `accessibilityRole="button"`, `accessibilityLabel` "<Name>, <Cuisine> cuisine". Cluster: "<n> places, double tap to zoom in". The flag is never the only way the cuisine is shown (the label always names it).
 - **Map alternative:** a "Places in this area" button (≥ 44 pt) opens the sheet in list mode with the current pins as rows (name + cuisine), so a screen-reader user never has to find a pin on the map. Selecting a row opens its details. (See Decision 15.)
-- Sheet: `accessibilityViewIsModal` while expanded, focus moves to the sheet title on open and back to the marker on close. Every touchable has a label and role: Close, Directions ("Directions to <name> in Google Maps"), Locate me, Retry, photo tiles ("<Name>, photo n of m"), list rows. Availability is written ("Available" / "Sold out"), never colour alone.
+- Sheet: `accessibilityViewIsModal` while expanded, focus moves to the sheet title on open and back to the marker on close (the move back on close is a known gap, not built: Decision 31). Every touchable has a label and role: Close, Directions ("Directions to <name> in Google Maps"), Locate me, Retry, photo tiles ("<Name>, photo n of m"), list rows. Availability is written ("Available" / "Sold out"), never colour alone.
 - Large text: all sheet text uses `Text` from `ui/` (scales with the system size); the sheet content is in a scroll view so nothing is clipped at the largest sizes; rows grow instead of truncating names (up to 3 lines, then ellipsis); the 15% collapsed snap shows at least name + flag at large sizes by increasing the snap height from font scale. Verified in the manual run at the largest iOS "Larger Accessibility Sizes" and Android font scale 2.0.
 - Reduce motion: no looping animation exists in this spec; sheet and camera animations follow the system setting (`useReducedMotion`).
 
@@ -247,7 +247,7 @@ When the Restaurants tab first opens:
 **PR 2**
 - `src/features/map/{api,schema,clustering,directions,lastRegion,countryViews}.ts` (`countryViews.ts` is the bundled table: ISO region code → centre + `latDelta`/`lngDelta`, each at most 40°)
 - `src/features/map/hooks/{usePinsInBounds,useRestaurantDetails,useMapRegion,useInitialRegion,useLocationPermission}.ts`
-- `src/features/map/components/{RestaurantMapScreen,FlagMarker,ClusterMarker,RestaurantSheet,SheetMenu,SheetPhotos,LocationPrompt,MapNotices}.tsx`
+- `src/features/map/components/{RestaurantMapScreen,FlagMarker,ClusterMarker,RestaurantSheet,SheetDetails,SheetMenu,SheetPhotos,PlacesList,LocationPrompt,MapNotices}.tsx` (`SheetDetails` = the sheet body for one restaurant; `PlacesList` = the "Places in this area" rows; both added at Gate E), `src/features/map/{region,messages}.ts`, `src/features/map/hooks/{useReduceMotion,useTracksViewChanges}.ts`
 - `src/features/map/__tests__/*` (see Test plan)
 
 ## Files to change
@@ -272,7 +272,7 @@ When the Restaurants tab first opens:
 
 ### App config (PR 2)
 - `ios.config.googleMapsApiKey` ← `process.env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY`; `android.config.googleMaps.apiKey` ← `process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY`. Exact plugin/key names are checked against the current `react-native-maps` and Expo docs at implementation time.
-- `expo-location` plugin: `locationWhenInUsePermission: "LikeToOrder uses your location while you have the app open, only to show restaurants near you on the map. Your location stays on your phone."`, `isIosBackgroundLocationEnabled: false`, `isAndroidBackgroundLocationEnabled: false`. No background modes, no `NSLocationAlways…` strings.
+- `expo-location` plugin: `locationWhenInUsePermission: "LikeToOrder uses your location while you have the app open, only to show restaurants near you on the map. Your exact location stays on your phone. We only receive the map area you're looking at."`, `isIosBackgroundLocationEnabled: false`, `isAndroidBackgroundLocationEnabled: false`. No background modes, no `NSLocationAlways…` strings.
 - **Keys read from `EXPO_PUBLIC_*` variables listed in `.env.example`. Claude never reads or edits `.env`. No real keys are needed for code, jest or pgTAP.** Missing keys must not crash the app: the map screen shows a clear "Map isn't configured" error state in development.
 
 ## New dependencies
@@ -280,7 +280,8 @@ All with `npx expo install` (PR 2). None in PR 1.
 | Package | Why |
 |---|---|
 | `react-native-maps` | The map (Google provider on iOS and Android). |
-| `supercluster` (+ `@types/supercluster`) | Clustering. |
+| `supercluster` 7.1.5 (+ `@types/supercluster`) | Clustering. Pinned to 7.1.x: 8.x and 9.x are ES-module-only and need a jest `transformIgnorePatterns` change; 7.1.5 works under jest with no special config (checked at Gate C). |
+| `expo-dev-client` | The development-build launcher; `npx expo start --dev-client` needs it (added at Gate C, Decision 23). |
 | `@gorhom/bottom-sheet` | The sheet. |
 | `react-native-reanimated` (+ `react-native-worklets` if the installed Expo SDK requires it) | Required by the bottom sheet; also used for spec 16 later. |
 | `react-native-gesture-handler` | Required by the bottom sheet. |
@@ -345,21 +346,21 @@ Feature-specific:
 - [x] The response and logs contain no Google body, key or secret.
 
 **App (PR 2)**
-- [ ] The Restaurants tab shows a Google map with `PROVIDER_GOOGLE` on iOS and Android; guests see it without signing in.
-- [ ] Pins load only for the visible area, after the person stops moving the map (400 ms); a late answer for an old area is ignored; old pins stay while new ones load (no flicker).
-- [ ] A `rate_limited` answer keeps the old pins, shows "Try again in a moment", and is never retried automatically.
-- [ ] 500 pins → "Zoom in to see more"; `too_large` → "Zoom in to see restaurants" with no pin request loop.
-- [ ] Tap a flag → the sheet opens at half, the map doesn't move; swipe down closes it; tapping a cluster zooms in.
-- [ ] The sheet shows exactly: name, flag + cuisine name, cover and gallery, menu items with price and availability in the business's currency, menu photos, address, Directions. No Request or Report buttons or placeholders.
-- [ ] Directions opens a `google.com/maps/search/?api=1&query=…&query_place_id=…` URL, with no coordinates and no Apple Maps link.
-- [ ] A photo that fails shows "Photo unavailable" once (no loop); expired signed URLs renew once per path per mount.
-- [ ] Every entry of the bundled country table has a valid centre and `latDelta`, `lngDelta` of at most 40° (and more than 0), so none can reach the 90° limit; an unmapped region falls through to the world map.
-- [ ] Opening view order: allowed → centred on me; otherwise last region → phone country → plain world map with "Zoom in to see restaurants". Slow GPS (no fix in 5 s) doesn't block the map.
-- [ ] Denied-forever, services-off and empty-region states each show their message; "Open Settings" works.
-- [ ] No request to Supabase (or anywhere) ever contains the person's latitude/longitude: only the map box (jest asserts the exact request arguments).
-- [ ] Manage Business shows the status line for a restaurant: "Showing on the map" when fresh, the two hidden messages otherwise, nothing for a restaurant with no saved address (pgTAP: `get_my_business` returns `visible` / `place_not_found` / `needs_refresh` for each fixture and null for homemade and for a restaurant with no saved address; jest: each message and the button to the address screen).
-- [ ] All screens handle loading, empty, error (with retry) and success; every touchable has a role and label with ≥ 44 pt target; the "Places in this area" list works; large text isn't clipped.
-- [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` and the Deno tests pass; CI green.
+- [ ] The Restaurants tab shows a Google map with `PROVIDER_GOOGLE` on iOS and Android; guests see it without signing in. *(Manual run: iOS tiles with the iOS key ✓. Not manually checked: Android and the Android Maps key; browsing as a guest.)*
+- [x] Pins load only for the visible area, after the person stops moving the map (400 ms); a late answer for an old area is ignored; old pins stay while new ones load (no flicker). *(Manual run: pins load on pan ✓. The 400 ms wait, the late-answer drop and keeping old pins are asserted in jest (`useMapRegion`, `usePinsInBounds`, `RestaurantMapPins`). Re-checked after the review fixes, iOS Simulator, 2026-11-06: panning shows no flicker.)*
+- [x] A `rate_limited` answer keeps the old pins, shows "Try again in a moment", and is never retried automatically. *(Jest only: `usePinsInBounds`, `RestaurantMapPins`, `RestaurantSheet`; not manually checked on a device.)*
+- [x] 500 pins → "Zoom in to see more"; `too_large` → "Zoom in to see restaurants" with no pin request loop. *(Jest only: `RestaurantMapPins`; not manually checked on a device.)*
+- [x] Tap a flag → the sheet opens at half, the map doesn't move; swipe down closes it; tapping a cluster zooms in. *(Manual run, iOS Simulator, 2026-11-06.)*
+- [ ] The sheet shows exactly: name, flag + cuisine name, cover and gallery, menu items with price and availability in the business's currency, menu photos, address, Directions. No Request or Report buttons or placeholders. *(Manual run: name, flag, cuisine, menu items, prices and currency formatting, "Sold out", "Price not listed", address and Directions ✓. Not manually checked: photos (cover, gallery, menu pages, item photos): none are seeded.)*
+- [x] Directions opens a `google.com/maps/search/?api=1&query=…&query_place_id=…` URL, with no coordinates and no Apple Maps link. *(Manual run, iOS Simulator, 2026-11-06: opens a Google Maps search; the seeded place IDs are fake, so a real place was not checked. The URL itself is asserted in jest.)*
+- [ ] A photo that fails shows "Photo unavailable" once (no loop); expired signed URLs renew once per path per mount. *(Not manually checked: no photos are seeded.)*
+- [x] Every entry of the bundled country table has a valid centre and `latDelta`, `lngDelta` of at most 40° (and more than 0), so none can reach the 90° limit; an unmapped region falls through to the world map. *(Jest: `countryViews`, `RestaurantMapScreen`.)*
+- [ ] Opening view order: allowed → centred on me; otherwise last region → phone country → plain world map with "Zoom in to see restaurants". Slow GPS (no fix in 5 s) doesn't block the map. *(Manual run: allowed → centred on a faked location ✓. Re-checked after the review fixes, iOS Simulator, 2026-11-06: centre on me. Not manually checked: the last-region and phone-country fallbacks, the world map, slow GPS.)*
+- [ ] Denied-forever, services-off and empty-region states each show their message; "Open Settings" works. *(Re-checked after the review fixes, iOS Simulator, 2026-11-06: the new permission wording and the Settings round trip for location. Not manually checked: the services-off state.)*
+- [x] No request to Supabase (or anywhere) ever contains the person's latitude/longitude: only the map box (jest asserts the exact request arguments: `RestaurantMapScreen`, `region`, `api`). The request box is snapped outward to a 0.05° grid, so two positions in one cell send the same box.
+- [ ] Manage Business shows the status line for a restaurant: "Showing on the map" when fresh, the two hidden messages otherwise, nothing for a restaurant with no saved address (pgTAP: `get_my_business` returns `visible` / `place_not_found` / `needs_refresh` for each fixture and null for homemade and for a restaurant with no saved address; jest: each message and the button to the address screen). *(Manual run: "Showing on the map" and the needs_refresh message with its button ✓. Not manually checked: the place_not_found message.)*
+- [ ] All screens handle loading, empty, error (with retry) and success; every touchable has a role and label with ≥ 44 pt target; the "Places in this area" list works; large text isn't clipped. *(Manual run: the Places list ✓ (map centres on a picked place; stacked back with the X and by swiping); large text at the largest iOS size for the sheet, list and tab bar ✓. Not manually checked: the empty and error states on a device, VoiceOver, TalkBack, Android font scale 2.0.)*
+- [x] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` and the Deno tests pass; CI green. *(Run locally 2026-11-06; CI green on PR #11. The first local pgTAP run failed 2 spec 06 tests because of leftover local demo seed data; they passed after `supabase db reset`.)*
 
 ## Test plan
 - **pgTAP (`07-restaurant-map.test.sql`):** every PR 1 item above, with impersonation as `anon`, a signed-in outsider, the owner and `service_role`. Fixtures: restaurants at 1, 29, 31 days; homemade; unlisted; hidden place; 501 rows in a box; a box crossing the date line. Privilege allowlist and `column_privs_are` for the new columns.
@@ -370,7 +371,7 @@ Feature-specific:
   - `useInitialRegion`: the fallback order in each permission state, slow GPS, services off, no country in locale.
   - `countryViews`: **every entry** in the table has lat in ±90, lng in ±180, and `latDelta` and `lngDelta` each > 0 and ≤ 40; every country code in the cuisine catalog seed has an entry; an unknown or null region returns nothing.
   - `rate_limited`: the query is not retried (react-query `retry` check and a call count of 1), the previous pins stay on screen, the "Try again in a moment" note shows with no error styling, and no further request is sent until the box changes or "Try again" is tapped.
-  - "Location never sent": with permission granted and a known position, no request argument contains it.
+  - "Location never sent": with permission granted and a known position, no request argument contains it, two positions in the same grid cell send identical arguments, the sent box always contains the visible box (also across the date line), and a view is called too wide by its snapped box.
   - `clustering`: grouping, zoom-to-cluster bounds, 500-pin performance bound.
   - `directions`: exact URL, encoding, no coordinates, no `maps.apple.com`.
   - Components: marker labels and roles, cluster label, sheet states (loading, null, error, success), price per business currency, no Request/Report buttons, photo fallback, list-mode, 4 screen states.
@@ -390,7 +391,70 @@ Feature-specific:
 
 **What you'd do differently:** install Xcode (option 1/2) or Android Studio (option 3); run one build command the first time (about 10–20 minutes); then start the app with `npx expo start --dev-client` instead of scanning the Expo Go QR code; rebuild whenever Claude tells you a native package was added. The two Google Maps SDK keys (below) are needed on whichever build shows real map tiles.
 
-**Decision needed:** which option for PR 2? Recorded in "Decisions" below once answered.
+**Decided (Decision 23): option 1, the iOS Simulator on Archan's Mac first; a real iPhone later.** Archan runs every build command himself; Claude only changes project files.
+
+## Device-run notes
+Manual checks on a real build, kept here so the final manual run knows what is still open.
+
+**Gate C: partial manual run, 2026-11-05 (Archan).** iOS Simulator only (iPhone 18 Pro, iOS 27.2).
+- Passed: the app builds and launches; Google map tiles show with the iOS key; the location note and the system permission prompt work; with a faked location (`xcrun simctl location`: Oshawa, then Cambridge, Ontario) the map centres on it.
+- **Not yet checked:** a real iPhone; Android; VoiceOver / TalkBack; large text; the denied, denied-forever and services-off states; the slow-GPS and phone-country fallbacks.
+
+**Gate D: partial manual run, 2026-11-05 (Archan).** iOS Simulator only, with the local demo seed (`scripts/seed/restaurants.ts`).
+- Passed: pins load on pan; flags and clusters render; tapping a flag does **not** move the map (correct per this spec; no workaround to be built).
+- **Not yet checked:** a real iPhone; Android (including `moveOnMarkerPress={false}`, which is an Android-only prop); VoiceOver / TalkBack on markers and clusters; large text; clustering and pan performance with the 500-pin cap; the rate-limited, error and empty-area notices on a device.
+
+**Large text on the iOS Simulator, 2026-11-06 (Archan).** Largest "Larger Accessibility Sizes" setting, checked for the **sheet and the list** only.
+- Passed: the sheet works and nothing in it is clipped.
+- Found and fixed: the sheet's big titles grew so large that one list row fit (the titles are now capped at 1.6×; rows, prices and addresses still scale fully, Decision 29), and the tab bar labels were cut off ("Rest", "Hom"). The tab bar belongs to spec 03; its labels are now capped at 1.3× in a separate commit.
+- **Known gap (Decision 31):** focus does not return to the marker when the sheet closes; check it in the VoiceOver / TalkBack run.
+- **Not yet checked:** VoiceOver and TalkBack on markers, clusters, the sheet and the list; Android font scale 2.0; the map notices and the location screens at the largest size.
+
+**Manual run, iOS Simulator (iPhone 18 Pro, iOS 27.2), 2026-11-06 (Archan): complete for the iOS Simulator, with the local demo seed.**
+- **Passed:**
+  - Map tiles with the iOS Maps key; the faked location (centres on it) and the permission note.
+  - Pins load on pan; flags and clusters render; a cluster tap zooms in.
+  - Tapping a flag opens the sheet without moving the map.
+  - The sheet's three snaps, swipe down, and scrolling (Directions reachable at half and full).
+  - "Places in this area": the map centres on a picked place; the list and the restaurant stack (the X and a swipe go back to the list).
+  - Google's business labels are hidden (`customMapStyle`).
+  - Large text at the largest iOS size, for the sheet, the list and the tab bar.
+  - Menus, "Sold out", "Price not listed" and currency formatting; Directions opens a Google Maps search.
+  - The Manage Business status line for "visible" and "needs_refresh".
+- **Not manually checked:**
+  - A real iPhone (GPS, touch).
+  - An Android build and the Android Maps key.
+  - VoiceOver and TalkBack.
+  - Android font scale 2.0.
+  - The denied, denied-forever and services-off location states.
+  - The slow-GPS and phone-country fallbacks.
+  - The place_not_found status line.
+  - Photos (none are seeded).
+  - Directions to a real place (the seeded place IDs are fake).
+  - `customMapStyle` on Android.
+
+**After the review fixes (2026-11-06, Archan):** the "Places in this area" list did not scroll at the half snap once it became the library's `BottomSheetFlatList`, while the details (a `BottomSheetScrollView`) did. The list is now a plain virtualised `FlatList` that renders the library's own `BottomSheetScrollView` (`useBottomSheetScrollableCreator`), so the list and the details share one scroll path and one bottom-space rule. The cause is not proven from the code (the library's lock logic treats both the same); the fix follows the library's own pattern for virtualised lists and needs the simulator re-check (list scrolls at half and full, last row above the tab bar, large text).
+
+**Re-check after the review fixes, iOS Simulator (iPhone 18 Pro, iOS 27.2), 2026-11-06 (Archan): partial, iOS Simulator only.**
+- **Passed:**
+  - The new permission wording (the note says the request is sent as a coarse, grid-snapped box).
+  - Centre on me.
+  - The Settings round trip for location.
+  - "Places in this area" scrolls at half and at full (the earlier list-scroll fix is confirmed).
+  - A swipe back from a restaurant to the list.
+  - Panning shows no flicker.
+- **Not manually checked (all still open, tracked in `docs/product/v1.md` §16):**
+  - A real iPhone.
+  - An Android build and the Android Maps key.
+  - VoiceOver and TalkBack.
+  - Android font scale 2.0.
+  - The services-off state.
+  - The slow-GPS and phone-country fallbacks.
+  - The place_not_found status line.
+  - Photos (none are seeded).
+  - Directions to a real place.
+  - `customMapStyle` on Android.
+  - Focus returning to the marker when the sheet closes.
 
 ## Decisions
 1. **Two PRs** as above; PR 1 keeps the status 🚧, only PR 2 marks ✅ Shipped. (Archan, 2026-11-04)
@@ -414,7 +478,7 @@ Feature-specific:
    - Flag emoji may render differently per Android device: covered by the existing §16 device check, no change.
    - Refresh cap stays at 100 calls/day for launch; raise with a one-line migration as listings approach 2,500 businesses (restaurants and homemade together).
    - Pre-permission note wording and the shown-once "Not now" behaviour are accepted as written in "Opening view and location".
-15. **"Places in this area" list for screen readers:** kept in this spec. (Recommended default; Archan's explicit answer to this one is not recorded in the conversation, so confirm in review.)
+15. **"Places in this area" list for screen readers:** kept in this spec. (Confirmed by Archan, 2026-11-05.)
 16. **Extensions:** `pg_cron`, `pg_net` and `supabase_vault` are enabled in the migration; availability on the local stack is checked at Gate A (see "Refresh job").
 
 17. **Hourly rate-limit cleanup:** `map_rate_limits` rows are deleted hourly (older than 1 hour); `places_refresh_quota` stays on the daily job. (Archan, 2026-11-05)
@@ -423,6 +487,16 @@ Feature-specific:
 20. **No direct reads of the Google columns:** `select` on `businesses.map_lat`, `map_lng` and `public_address` is revoked from `anon` and `authenticated` in a new migration, so the 30-day guard and the rate limit cannot be skipped. Spec 08 adds its own homemade read function. (Archan, 2026-11-05)
 21. **Guest address in one function:** the `x-forwarded-for` reading lives in `private.caller_ip()` only. The key logic is unchanged; once the trustworthy header is chosen at launch (§16, before-launch blocker), the fix is a one-function migration. Until then guests are protected only by the guest ceiling, which a forger can fill to block other guests. (Archan, 2026-11-05)
 22. **What bounds the call time:** `statement_timeout = '3s'` on the two public functions applies to the statements inside them; the timer for the call itself starts before the function runs. The role-level timeouts (Supabase defaults: anon 3 s, authenticated 8 s) bound the call today. Role settings are not changed. `apply_places_refresh` clears the claim after any applied outcome, so a result applies once. (Archan, 2026-11-05)
+
+23. **Development build:** the iOS Simulator on Archan's Mac first (Xcode 27.2, iOS 27.2 simulator), a real iPhone later (needs the paid Apple account for an EAS build). Archan runs `npx expo run:ios` and any `brew install` himself; Claude never runs `expo run:ios`, `expo prebuild` or a global install. `expo-dev-client` is added to the dependencies so the app starts with `npx expo start --dev-client`. (Archan, 2026-11-05)
+24. **Maps config via the `react-native-maps` plugin:** the Google keys go in through that plugin's props (`iosGoogleMapsApiKey`, `androidGoogleMapsApiKey`, read from `EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY` / `…_ANDROID_KEY`), not `ios.config.googleMapsApiKey`, because the plugin also links the Google Maps pod only when the iOS key is set. With no key the map screen renders "Map isn't configured" and never mounts a Google map (an empty key can crash the native SDK); the variable name is shown only in development. (Gate C, 2026-11-05)
+25. **List picks centre the map; flag taps never do; the sheet behaves like stacked screens:** picking a restaurant from the "Places in this area" list makes one short camera move that puts the pin in the middle of the part of the map the half-open sheet leaves free, at neighbourhood zoom (a view already closer than 0.05° keeps its zoom, so picking never zooms out). Tapping a flag on the map never moves the map. A restaurant opened **from the list** sits on top of the list: swiping the sheet down past the lowest snap and tapping its X both go **back to the list**, with the map and the list where they were; that X is labelled "Back to list" for screen readers (and the "Close" button beside a "not available" message is relabelled the same way). From the list itself, the X and a swipe down close everything. A restaurant opened **from a flag** just closes. There is no separate "Back to list" button. Tapping the bare map clears the whole stack. (Archan, 2026-11-06)
+26. **A marker press must not reach the map's press:** on iOS a marker's `onPress` and the MapView's `onPress` are both bubbling events, so a flag tap also fired "tap the bare map" and closed the sheet at once (found in the Gate E simulator run; jest's fake map did not bubble). Fixed twice over: both marker types set `stopPropagation`, and the map's `onPress` ignores events whose `nativeEvent.action` is `marker-press`. The jest fake now bubbles like the real library, and a switch makes it ignore `stopPropagation` to test the second layer alone. (Archan, 2026-11-06)
+27. **Sheet scroll space:** the library makes the sheet as tall as its highest snap, so at a lower snap the bottom of its scroll view is off screen and the last rows (Directions) could not be scrolled into view. The scrolling content gets bottom space equal to (highest snap − current snap) plus a gap, and the snap heights are computed from the measured screen area rather than the window. The content already scrolls in the library's own `BottomSheetScrollView`. jest checks the arithmetic only; the real layout is checked in the simulator. (Archan, 2026-11-06)
+28. **Hide Google's business labels:** `customMapStyle` with the single rule `{ featureType: 'poi.business', stylers: [{ visibility: 'off' }] }` on both platforms, so our flags are the only restaurant pins. Roads, place names, parks and transit are untouched. Legal read and an Android device check are added to `docs/product/v1.md` §16. (Archan, 2026-11-06)
+29. **Large text:** at the largest system size only the sheet's big title (restaurant name, "Places in this area") is capped, at `maxFontSizeMultiplier` 1.6; everything else in the sheet keeps scaling fully. The collapsed snap height still grows with the font scale. (Archan, 2026-11-06)
+30. **Position-independent map request (review fix):** the box sent to `map_restaurants_in_bounds` is snapped outward to a 0.05° (about 5 km) grid (`snapBox`). Before this, centring the map on the person made the box's middle their position (to about 50 m), which contradicted "never sent". Now the request reveals only a grid cell. Consequences: (a) the pins can include some area outside the screen; (b) the 500-pin cap applies to the larger box, so a very dense area may show "Zoom in to see more" sooner; (c) "Zoom in to see restaurants" is decided on the snapped box, so the app never asks for a box the server would refuse; (d) one cache entry per cell. The wording was made accurate at the same time: the prompt and the iOS permission string say "Your exact location stays on your phone. We only receive the map area you're looking at." The permission string is native config, so it needs a rebuild (`npx expo run:ios`). (Archan, 2026-11-06, from the code review)
+31. **Known gap, recorded not built (review Q5):** when the sheet closes, a screen reader's focus does not move back to the marker (it only moves to the sheet title on open). To be looked at in the VoiceOver / TalkBack run; also in `docs/product/v1.md` §16. (Archan, 2026-11-06)
 
 ## Open questions
 1. **Google Maps terms text** could not be loaded in full here. Please have the §16 "Google terms review" item cover: Places content only on a Google map, the 30-day lat/lng cache limit, and linking out by place ID.

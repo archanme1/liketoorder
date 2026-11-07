@@ -6,7 +6,20 @@ import { myProfileKey } from '@/features/profile/hooks/useMyProfile';
 import { queryClient } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
 
+import { TAB_LABEL_MAX_FONT_MULTIPLIER } from '../components/TabLabel';
+
 // Renders the real app/ routes (root layout + tab bar) with supabase mocked.
+
+// These tests cover routing and the tab bar, not the map (spec 07 has its own tests). Keep the
+// Restaurants tab on a stand-in screen so they don't depend on native map modules or keys.
+jest.mock('@/features/map/components/RestaurantMapScreen', () => ({
+  RestaurantMapScreen: () => {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const { ComingSoon } = require('@/features/navigation/components/ComingSoon');
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    return <ComingSoon title="Restaurants" message="The restaurant map is coming soon." />;
+  },
+}));
 
 jest.mock('@/lib/supabase', () => ({
   supabase: {
@@ -80,6 +93,15 @@ describe('tab bar', () => {
       // Scoped to each tab: "Restaurants" is also the open screen's h1.
       for (const label of TAB_LABELS) {
         expect(within(screen.getByLabelText(`${label} tab`)).getByText(label)).toBeTruthy();
+      }
+    });
+
+    it('caps how far each tab label grows with the system text size, so none is cut off', async () => {
+      await renderRouter('./app', { initialUrl: '/restaurants' });
+      await screen.findByLabelText('Restaurants tab');
+      for (const label of TAB_LABELS) {
+        const text = within(screen.getByLabelText(`${label} tab`)).getByText(label);
+        expect(text.props.maxFontSizeMultiplier).toBe(TAB_LABEL_MAX_FONT_MULTIPLIER);
       }
     });
 

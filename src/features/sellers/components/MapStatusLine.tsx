@@ -14,17 +14,33 @@ export const MAP_STATUS_MESSAGE: Record<MapStatus, string> = {
     'Hidden from the map for now while we re-check your address. Choosing your address again puts it back at once.',
 };
 
+// A home cook's point is shown as an approximate area, so the words say that. The restaurant
+// strings above are untouched.
+export const HOMEMADE_MAP_STATUS_MESSAGE: Record<MapStatus, string> = {
+  visible: 'Showing on the map as an approximate area',
+  place_not_found:
+    "Hidden from the map: Google can't find your address any more. Choose your address again to put your approximate area back.",
+  needs_refresh:
+    'Hidden from the map for now while we re-check your address. Choosing your address again puts your approximate area back at once.',
+};
+
 export const CHOOSE_ADDRESS_LABEL = 'Choose your address again';
 
 type MapStatusLineProps = {
-  /** Null when there is nothing to say: no saved address yet, or not a restaurant. */
+  /** Null when there is nothing to say: no saved address yet. */
   status: MapStatus | null | undefined;
+  /** Which wording to use. Defaults to the restaurant wording. */
+  kind?: 'restaurant' | 'homemade';
   onChooseAddress: () => void;
 };
 
-// Spec 07 / Decision 13: whether the owner's restaurant is on the map right now. Text and an
+// Spec 07 / Decision 13 (and spec 08 Decision 4): whether the owner's listing is on the map now. Text and an
 // icon carry the meaning, never colour alone. A hidden pin always offers the way back.
-export function MapStatusLine({ status, onChooseAddress }: MapStatusLineProps) {
+export function MapStatusLine({
+  status,
+  kind = 'restaurant',
+  onChooseAddress,
+}: MapStatusLineProps) {
   const { colors, space, size } = useTheme();
   if (!status) return null;
   const visible = status === 'visible';
@@ -38,7 +54,7 @@ export function MapStatusLine({ status, onChooseAddress }: MapStatusLineProps) {
           color={visible ? colors.success : colors.warning}
         />
         <Text style={styles.message} accessibilityRole="text">
-          {MAP_STATUS_MESSAGE[status]}
+          {(kind === 'homemade' ? HOMEMADE_MAP_STATUS_MESSAGE : MAP_STATUS_MESSAGE)[status]}
         </Text>
       </View>
       {visible ? null : <Button title={CHOOSE_ADDRESS_LABEL} onPress={onChooseAddress} />}

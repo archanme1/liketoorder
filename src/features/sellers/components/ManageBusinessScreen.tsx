@@ -77,10 +77,11 @@ function BusinessSummary({ business }: { business: MyBusiness }) {
   return (
     <View style={{ gap: space.lg }}>
       <StatusChip status={status} />
-      {/* Restaurants with a saved address and the listing on: is the pin on the map? */}
-      {business.type === 'restaurant' && business.is_listed && business.location ? (
+      {/* A saved address and the listing on: is the listing on the map? (Both business types.) */}
+      {business.is_listed && business.location ? (
         <MapStatusLine
           status={business.map_status}
+          kind={business.type === 'homemade' ? 'homemade' : 'restaurant'}
           onChooseAddress={() => router.push('/seller/address')}
         />
       ) : null}

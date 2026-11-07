@@ -219,6 +219,16 @@ afterEach(() => {
   alertSpy.mockRestore();
 });
 
+// "View larger" is only offered for a photo whose link has arrived. The tiles appear before their
+// links do, so wait for the links (one image per photo) before opening the options; otherwise a
+// slow run presses a tile too early and the option is not there yet.
+async function waitForLinks(count: number) {
+  await waitFor(() => expect(screen.getAllByTestId('expo-image')).toHaveLength(count));
+}
+async function waitForMissingLinks(count: number) {
+  await waitFor(() => expect(screen.getAllByText('Photo unavailable')).toHaveLength(count));
+}
+
 function chooseOption(label: string) {
   const button = lastAlertButtons().find((b) => b.text === label);
   if (!button?.onPress) throw new Error(`No "${label}" option in the photo options`);
@@ -231,6 +241,7 @@ describe('BusinessPhotosScreen: "View larger" (spec 08)', () => {
   it('adds "View larger" as the first option of the existing photo options, keeping Remove and Cancel', async () => {
     mockedMenu.mockResolvedValue(withPhotos(gallery2()));
     await renderScreen();
+    await waitForLinks(3);
     await fireEvent.press(
       await screen.findByRole('button', { name: 'Gallery photo 2 of 3. Opens photo options.' }),
     );
@@ -243,6 +254,7 @@ describe('BusinessPhotosScreen: "View larger" (spec 08)', () => {
   it('a tile press still opens the options, not the viewer', async () => {
     mockedMenu.mockResolvedValue(withPhotos(gallery2()));
     await renderScreen();
+    await waitForLinks(3);
     await fireEvent.press(
       await screen.findByRole('button', { name: 'Gallery photo 2 of 3. Opens photo options.' }),
     );
@@ -255,6 +267,7 @@ describe('BusinessPhotosScreen: "View larger" (spec 08)', () => {
       withPhotos([photo('c1', 'cover', null), ...gallery2(), ...menuPages(2)]),
     );
     await renderScreen();
+    await waitForLinks(6);
     await fireEvent.press(
       await screen.findByRole('button', { name: 'Gallery photo 2 of 3. Opens photo options.' }),
     );
@@ -266,6 +279,7 @@ describe('BusinessPhotosScreen: "View larger" (spec 08)', () => {
   it('the cover offers "View larger" next to Replace and Remove', async () => {
     mockedMenu.mockResolvedValue(withPhotos([photo('c1', 'cover', null)]));
     await renderScreen();
+    await waitForLinks(1);
     await fireEvent.press(await screen.findByRole('button', { name: /^cover photo.*options/i }));
     const texts = lastAlertButtons().map((b) => b.text);
     expect(texts).toEqual(expect.arrayContaining(['View larger', 'Replace', 'Remove']));
@@ -276,6 +290,7 @@ describe('BusinessPhotosScreen: "View larger" (spec 08)', () => {
   it('closing the viewer leaves the Photos screen as it was', async () => {
     mockedMenu.mockResolvedValue(withPhotos(gallery2()));
     await renderScreen();
+    await waitForLinks(3);
     await fireEvent.press(
       await screen.findByRole('button', { name: 'Gallery photo 2 of 3. Opens photo options.' }),
     );
@@ -292,6 +307,7 @@ describe('BusinessPhotosScreen: "View larger" (spec 08)', () => {
     );
     mockedMenu.mockResolvedValue(withPhotos(gallery2()));
     await renderScreen();
+    await waitForMissingLinks(3);
     await fireEvent.press(
       await screen.findByRole('button', { name: /Gallery photo 2 of 3. Opens photo options./ }),
     );
@@ -301,6 +317,7 @@ describe('BusinessPhotosScreen: "View larger" (spec 08)', () => {
   it('removing still works from the same options (editing is not lost)', async () => {
     mockedMenu.mockResolvedValue(withPhotos(gallery2()));
     await renderScreen();
+    await waitForLinks(3);
     await fireEvent.press(
       await screen.findByRole('button', { name: 'Gallery photo 2 of 3. Opens photo options.' }),
     );

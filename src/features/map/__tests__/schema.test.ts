@@ -1,4 +1,4 @@
-import { MAX_PINS, pinsResponseSchema, pinSchema } from '../schema';
+import { MAX_PINS, pinsResponseSchema, pinSchema, restaurantDetailsSchema } from '../schema';
 
 const pin = { id: 'p1', name: "Joe's", cuisine_code: 'IT', lat: 43.5, lng: -79.4 };
 const response = { pins: [pin], capped: false, too_large: false };
@@ -51,5 +51,74 @@ describe('map schema', () => {
     expect(
       pinsResponseSchema.safeParse({ ...response, pins: pins.slice(0, MAX_PINS) }).success,
     ).toBe(true);
+  });
+});
+
+const details = {
+  id: 'b1',
+  name: "Joe's",
+  cuisine_code: 'IT',
+  accepts_table_requests: true,
+  public_address: '1 King St, Oshawa',
+  place_id: 'FAKE_PLACE_1',
+  currency_code: 'CAD',
+  photos: [{ id: 'ph1', kind: 'cover', path: 'b1/cover.jpg', position: null, menu_item_id: null }],
+  items: [
+    {
+      id: 'i1',
+      name: 'Pizza',
+      description: null,
+      price_minor: 1695,
+      is_available: true,
+      position: 1,
+    },
+  ],
+};
+
+describe('restaurant details schema', () => {
+  it('accepts the details answer, including no address, currency or items', () => {
+    expect(restaurantDetailsSchema.safeParse(details).success).toBe(true);
+    expect(
+      restaurantDetailsSchema.safeParse({
+        ...details,
+        public_address: null,
+        currency_code: null,
+        photos: [],
+        items: [],
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each(['lat', 'lng', 'map_lat', 'map_lng', 'resolved_at', 'place_status', 'owner_id', 'extra'])(
+    'rejects an extra top-level "%s" field',
+    (field) => {
+      expect(restaurantDetailsSchema.safeParse({ ...details, [field]: 1 }).success).toBe(false);
+    },
+  );
+
+  it('rejects extra fields on photos and items', () => {
+    expect(
+      restaurantDetailsSchema.safeParse({
+        ...details,
+        photos: [{ ...details.photos[0], status: 'ready' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      restaurantDetailsSchema.safeParse({
+        ...details,
+        items: [{ ...details.items[0], business_id: 'b1' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ['no place_id', { ...details, place_id: undefined }],
+    ['empty place_id', { ...details, place_id: '' }],
+    ['unknown photo kind', { ...details, photos: [{ ...details.photos[0], kind: 'logo' }] }],
+    ['price as a string', { ...details, items: [{ ...details.items[0], price_minor: '1695' }] }],
+    ['fractional price', { ...details, items: [{ ...details.items[0], price_minor: 16.95 }] }],
+    ['not an object', 'x'],
+  ])('rejects malformed details: %s', (_label, value) => {
+    expect(restaurantDetailsSchema.safeParse(value).success).toBe(false);
   });
 });

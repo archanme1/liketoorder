@@ -35,6 +35,7 @@ export const size = {
   avatarLg: 96,
   tabIcon: 24,
   photoThumb: 96,
+  photoLarge: 160,
   // Map markers (spec 07): flag pill, and cluster circles that grow with the count.
   flagWidth: 32,
   flagHeight: 24,

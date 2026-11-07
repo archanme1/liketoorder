@@ -48,6 +48,9 @@ export const editFormSchema = z.object({
 
 export type EditFormValues = z.infer<typeof editFormSchema>;
 
+export const mapStatusSchema = z.enum(['visible', 'place_not_found', 'needs_refresh']);
+export type MapStatus = z.infer<typeof mapStatusSchema>;
+
 /** The owner view returned by get_my_business() and places-resolve. */
 export const myBusinessSchema = z.object({
   id: z.string(),
@@ -66,6 +69,11 @@ export const myBusinessSchema = z.object({
   location: z
     .object({ formatted_address: z.string(), lat: z.number(), lng: z.number() })
     .nullable(),
+  /**
+   * Restaurants only (spec 07): is the pin on the map? Null for homemade and for a restaurant
+   * with no saved address. Optional so a payload from before this field existed still parses.
+   */
+  map_status: mapStatusSchema.nullable().optional(),
 });
 
 export type MyBusiness = z.infer<typeof myBusinessSchema>;

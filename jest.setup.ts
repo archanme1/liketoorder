@@ -161,3 +161,32 @@ jest.mock('expo-location', () => ({
     coords: { latitude: 48.8566, longitude: 2.3522 },
   })),
 }));
+
+// The bottom sheet needs reanimated + gesture-handler natively. The fake renders a View
+// (testID "bottom-sheet") that keeps every prop (snapPoints, index, enablePanDownToClose,
+// onChange, onClose), so tests can read them and call the handlers, and its ref exposes the
+// shared jest.fns __snapToIndex / __close so tests can assert the sheet was told to open or close.
+jest.mock('@gorhom/bottom-sheet', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const React = require('react');
+  const { View, ScrollView, FlatList } = require('react-native');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const snapToIndex = jest.fn();
+  const close = jest.fn();
+  const BottomSheet = React.forwardRef(function MockBottomSheet(
+    props: { children?: unknown },
+    ref: unknown,
+  ) {
+    React.useImperativeHandle(ref, () => ({ snapToIndex, close }));
+    return React.createElement(View, { testID: 'bottom-sheet', ...props }, props.children);
+  });
+  return {
+    __esModule: true,
+    default: BottomSheet,
+    BottomSheetScrollView: ScrollView,
+    BottomSheetFlatList: FlatList,
+    useBottomSheetTimingConfigs: (config: object) => config,
+    __snapToIndex: snapToIndex,
+    __close: close,
+  };
+});

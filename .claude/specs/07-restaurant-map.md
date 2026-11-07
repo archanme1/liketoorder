@@ -247,7 +247,7 @@ When the Restaurants tab first opens:
 **PR 2**
 - `src/features/map/{api,schema,clustering,directions,lastRegion,countryViews}.ts` (`countryViews.ts` is the bundled table: ISO region code → centre + `latDelta`/`lngDelta`, each at most 40°)
 - `src/features/map/hooks/{usePinsInBounds,useRestaurantDetails,useMapRegion,useInitialRegion,useLocationPermission}.ts`
-- `src/features/map/components/{RestaurantMapScreen,FlagMarker,ClusterMarker,RestaurantSheet,SheetMenu,SheetPhotos,LocationPrompt,MapNotices}.tsx`
+- `src/features/map/components/{RestaurantMapScreen,FlagMarker,ClusterMarker,RestaurantSheet,SheetDetails,SheetMenu,SheetPhotos,PlacesList,LocationPrompt,MapNotices}.tsx` (`SheetDetails` = the sheet body for one restaurant; `PlacesList` = the "Places in this area" rows; both added at Gate E), `src/features/map/{region,messages}.ts`, `src/features/map/hooks/{useReduceMotion,useTracksViewChanges}.ts`
 - `src/features/map/__tests__/*` (see Test plan)
 
 ## Files to change
@@ -399,6 +399,10 @@ Manual checks on a real build, kept here so the final manual run knows what is s
 **Gate C: partial manual run, 2026-11-05 (Archan).** iOS Simulator only (iPhone 18 Pro, iOS 27.2).
 - Passed: the app builds and launches; Google map tiles show with the iOS key; the location note and the system permission prompt work; with a faked location (`xcrun simctl location`: Oshawa, then Cambridge, Ontario) the map centres on it.
 - **Not yet checked:** a real iPhone; Android; VoiceOver / TalkBack; large text; the denied, denied-forever and services-off states; the slow-GPS and phone-country fallbacks.
+
+**Gate D: partial manual run, 2026-11-05 (Archan).** iOS Simulator only, with the local demo seed (`scripts/seed/restaurants.ts`).
+- Passed: pins load on pan; flags and clusters render; tapping a flag does **not** move the map (correct per this spec; no workaround to be built).
+- **Not yet checked:** a real iPhone; Android (including `moveOnMarkerPress={false}`, which is an Android-only prop); VoiceOver / TalkBack on markers and clusters; large text; clustering and pan performance with the 500-pin cap; the rate-limited, error and empty-area notices on a device.
 
 ## Decisions
 1. **Two PRs** as above; PR 1 keeps the status 🚧, only PR 2 marks ✅ Shipped. (Archan, 2026-11-04)

@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useCuisines } from '@/features/cuisines/hooks/useCuisines';
 import type { Cuisine } from '@/features/cuisines/schema';
+import { Text } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
 
 import { createClusterIndex } from '../clustering';
@@ -16,6 +17,7 @@ import { usePinsInBounds } from '../hooks/usePinsInBounds';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { mapKeyName, useMapConfigured } from '../mapConfig';
 import { isOverServerLimit, regionAround, type MapRegion } from '../region';
+import type { Pin } from '../schema';
 
 import { mapErrorMessage } from '../messages';
 
@@ -32,10 +34,12 @@ import {
   ZoomInMoreNotice,
   ZoomInNotice,
 } from './MapNotices';
+import { RestaurantSheet } from './RestaurantSheet';
 
 type LocationNoticeReason = 'denied' | 'denied_forever' | 'services_off' | 'no_fix';
 
 const CAMERA_MS = 600;
+const NO_PINS: Pin[] = [];
 
 // The Restaurants tab. Public: guests see the map too. The Google map, the opening view, the
 // location flow, and the restaurants in the visible area as flags and clusters. The details
@@ -88,7 +92,10 @@ function ConfiguredMap() {
     () => (region && !wideView ? clusterIndex.itemsFor(region) : []),
     [clusterIndex, region, wideView],
   );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The open restaurant (kept as the whole pin so the sheet can show its name at once), and
+  // whether the "Places in this area" list is open. Neither moves the map.
+  const [selected, setSelected] = useState<Pin | null>(null);
+  const [listOpen, setListOpen] = useState(false);
 
   const moveTo = useCallback(
     (target: MapRegion) => {
@@ -103,8 +110,18 @@ function ConfiguredMap() {
   }, [myRegion, moveTo]);
 
   // Selecting a flag does not move the map.
-  const onSelectPin = useCallback((id: string) => setSelectedId(id), []);
-  const onClearSelection = useCallback(() => setSelectedId(null), []);
+  const onSelectPin = useCallback((pin: Pin) => {
+    setListOpen(false);
+    setSelected(pin);
+  }, []);
+  const onClearSelection = useCallback(() => {
+    setSelected(null);
+    setListOpen(false);
+  }, []);
+  const onOpenList = useCallback(() => {
+    setSelected(null);
+    setListOpen(true);
+  }, []);
   const onClusterPress = useCallback(
     (clusterId: number) => {
       const target = clusterIndex.regionForCluster(clusterId);
@@ -176,7 +193,7 @@ function ConfiguredMap() {
               key={item.key}
               pin={item.pin}
               cuisine={cuisineByCode.get(item.pin.cuisine_code)}
-              selected={item.pin.id === selectedId}
+              selected={item.pin.id === selected?.id}
               onSelect={onSelectPin}
             />
           ),
@@ -229,6 +246,39 @@ function ConfiguredMap() {
       >
         <Ionicons name="locate" size={size.tabIcon} color={colors.primary} />
       </Pressable>
+      {wideView ? null : (
+        <Pressable
+          onPress={onOpenList}
+          accessibilityRole="button"
+          accessibilityLabel="Places in this area"
+          accessibilityHint="Opens a list of the restaurants on the map"
+          style={({ pressed }) => [
+            styles.places,
+            {
+              left: space.lg,
+              bottom: space.lg,
+              minHeight: size.touch,
+              gap: space.sm,
+              paddingHorizontal: space.lg,
+              borderRadius: radius.pill,
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              opacity: pressed ? opacity.pressed : 1,
+            },
+          ]}
+        >
+          <Ionicons name="list" size={size.tabIcon} color={colors.primary} />
+          <Text>Places in this area</Text>
+        </Pressable>
+      )}
+      <RestaurantSheet
+        selected={selected}
+        listOpen={listOpen}
+        pins={wideView ? NO_PINS : pins.pins}
+        cuisineByCode={cuisineByCode}
+        onSelect={onSelectPin}
+        onClose={onClearSelection}
+      />
     </View>
   );
 }
@@ -237,6 +287,12 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center' },
   overlay: { position: 'absolute' },
+  places: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   locate: {
     position: 'absolute',
     alignItems: 'center',

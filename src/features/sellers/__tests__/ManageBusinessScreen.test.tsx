@@ -372,3 +372,76 @@ describe('ManageBusinessScreen actions', () => {
     expectPushedOnly('/seller/address');
   });
 });
+
+describe('ManageBusinessScreen map status (spec 07)', () => {
+  const VISIBLE = 'Showing on the map';
+  const NOT_FOUND =
+    "Hidden from the map: Google can't find your address any more. Choose your address again to put it back.";
+  const REFRESH =
+    'Hidden from the map for now while we re-check your address. Choosing your address again puts it back at once.';
+
+  it('says "Showing on the map" for a visible restaurant, with no button', async () => {
+    mockedGetBusiness.mockResolvedValue({ ...restaurant, map_status: 'visible' });
+    await renderScreen();
+    expect(await screen.findByText(VISIBLE)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Choose your address again' })).toBeNull();
+  });
+
+  it('explains a place Google can no longer find, and the button opens the address screen', async () => {
+    mockedGetBusiness.mockResolvedValue({ ...restaurant, map_status: 'place_not_found' });
+    await renderScreen();
+    expect(await screen.findByText(NOT_FOUND)).toBeTruthy();
+    expect(screen.queryByText(VISIBLE)).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose your address again' }));
+    expectPushedOnly('/seller/address');
+  });
+
+  it('explains a pin hidden while the address is re-checked, and the button opens the address screen', async () => {
+    mockedGetBusiness.mockResolvedValue({ ...restaurant, map_status: 'needs_refresh' });
+    await renderScreen();
+    expect(await screen.findByText(REFRESH)).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose your address again' }));
+    expectPushedOnly('/seller/address');
+  });
+
+  it.each([
+    ['is null (no saved address on the server)', { map_status: null }],
+    ['is missing (an older payload)', {}],
+  ])('shows no map status line when it %s', async (_label, extra) => {
+    mockedGetBusiness.mockResolvedValue({ ...restaurant, ...extra });
+    await renderScreen();
+    expect(await screen.findByText("Joe's Pizza")).toBeTruthy();
+    expect(screen.queryByText(VISIBLE)).toBeNull();
+    expect(screen.queryByText(NOT_FOUND)).toBeNull();
+    expect(screen.queryByText(REFRESH)).toBeNull();
+  });
+
+  it('shows no map status line before an address is saved; "Add address" still shows', async () => {
+    mockedGetBusiness.mockResolvedValue({
+      ...restaurant,
+      location: null,
+      map_lat: null,
+      map_lng: null,
+      public_address: null,
+      map_status: null,
+    });
+    await renderScreen();
+    expect(await screen.findByRole('button', { name: 'Add address' })).toBeTruthy();
+    expect(screen.queryByText(VISIBLE)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Choose your address again' })).toBeNull();
+  });
+
+  it('shows no map status line for a homemade business', async () => {
+    mockedGetBusiness.mockResolvedValue({ ...homemade, map_status: 'visible' });
+    await renderScreen();
+    expect(await screen.findByText("Gran's Kitchen")).toBeTruthy();
+    expect(screen.queryByText(VISIBLE)).toBeNull();
+  });
+
+  it('shows no map status line while seller mode is off (the listing is hidden anyway)', async () => {
+    mockedGetBusiness.mockResolvedValue({ ...restaurant, is_listed: false, map_status: 'visible' });
+    await renderScreen();
+    expect(await screen.findByText('Hidden — seller mode is off')).toBeTruthy();
+    expect(screen.queryByText(VISIBLE)).toBeNull();
+  });
+});

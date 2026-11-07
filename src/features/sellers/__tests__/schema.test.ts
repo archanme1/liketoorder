@@ -233,3 +233,25 @@ describe('placeSuggestionSchema', () => {
     ).toBe(false);
   });
 });
+
+describe('myBusinessSchema map_status (spec 07)', () => {
+  it.each(['visible', 'place_not_found', 'needs_refresh'])('accepts %s', (status) => {
+    const result = myBusinessSchema.safeParse({ ...view, map_status: status });
+    expect(result.success).toBe(true);
+    expect(result.data?.map_status).toBe(status);
+  });
+
+  it('accepts null (homemade, or a restaurant with no saved address)', () => {
+    expect(myBusinessSchema.safeParse({ ...view, map_status: null }).data?.map_status).toBeNull();
+  });
+
+  it('accepts a payload from before the field existed', () => {
+    const result = myBusinessSchema.safeParse(view);
+    expect(result.success).toBe(true);
+    expect(result.data?.map_status).toBeUndefined();
+  });
+
+  it.each(['hidden', 'closed', '', 1, true])('rejects %p', (status) => {
+    expect(myBusinessSchema.safeParse({ ...view, map_status: status }).success).toBe(false);
+  });
+});

@@ -14,7 +14,7 @@ type FlagMarkerProps = {
   /** Undefined while the catalog loads or for an unknown code: a neutral icon is shown. */
   cuisine: Cuisine | undefined;
   selected: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (pin: Pin) => void;
 };
 
 export function markerLabel(name: string, cuisine: Cuisine | undefined): string {
@@ -31,7 +31,7 @@ function FlagMarkerBase({ pin, cuisine, selected, onSelect }: FlagMarkerProps) {
   return (
     <Marker
       coordinate={{ latitude: pin.lat, longitude: pin.lng }}
-      onPress={() => onSelect(pin.id)}
+      onPress={() => onSelect(pin)}
       tracksViewChanges={tracksViewChanges}
       accessible
       accessibilityRole="button"

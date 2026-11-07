@@ -7,7 +7,12 @@ import {
 import { supabase } from '@/lib/supabase';
 
 import type { MapBox } from './region';
-import { pinsResponseSchema, type PinsResponse } from './schema';
+import {
+  pinsResponseSchema,
+  restaurantDetailsSchema,
+  type PinsResponse,
+  type RestaurantDetails,
+} from './schema';
 
 export type MapErrorCode = 'invalid_bounds' | 'rate_limited' | 'network' | 'unknown';
 
@@ -60,6 +65,19 @@ export async function fetchPinsInBounds(box: MapBox): Promise<PinsResponse> {
   });
   if (error) throw mapMapError(error);
   const parsed = pinsResponseSchema.safeParse(data);
+  if (!parsed.success) throw new MapAppError('unknown');
+  return parsed.data;
+}
+
+/**
+ * One restaurant's public details, or `null` when it is not available (hidden, unlisted,
+ * homemade, stale or no such id: the server answers the same for all of them). Sends only the id.
+ */
+export async function fetchRestaurantDetails(id: string): Promise<RestaurantDetails | null> {
+  const { data, error } = await supabase.rpc('get_restaurant_details', { p_business_id: id });
+  if (error) throw mapMapError(error);
+  if (data === null) return null;
+  const parsed = restaurantDetailsSchema.safeParse(data);
   if (!parsed.success) throw new MapAppError('unknown');
   return parsed.data;
 }

@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 
-import { fetchPinsInBounds, MapAppError, mapMapError } from '../api';
+import { fetchPinsInBounds, fetchRestaurantDetails, MapAppError, mapMapError } from '../api';
 
 jest.mock('@/lib/supabase', () => ({
   supabase: { rpc: jest.fn(), from: jest.fn(), functions: { invoke: jest.fn() } },
@@ -83,5 +83,52 @@ describe('mapMapError', () => {
     const mapped = mapMapError({ code: 'P0001', message: 'rate_limited', details: 'secret' });
     expect(mapped.message).toBe('rate_limited');
     expect(JSON.stringify(mapped)).not.toContain('secret');
+  });
+});
+
+const detailsRow = {
+  id: 'b1',
+  name: "Joe's",
+  cuisine_code: 'IT',
+  accepts_table_requests: false,
+  public_address: '1 King St',
+  place_id: 'FAKE_PLACE_1',
+  currency_code: 'CAD',
+  photos: [],
+  items: [],
+};
+
+describe('fetchRestaurantDetails', () => {
+  it('sends the restaurant id and nothing else', async () => {
+    db.rpc.mockResolvedValue({ data: detailsRow, error: null });
+    await fetchRestaurantDetails('b1');
+    expect(db.rpc).toHaveBeenCalledTimes(1);
+    expect(db.rpc).toHaveBeenCalledWith('get_restaurant_details', { p_business_id: 'b1' });
+    expect(db.from).not.toHaveBeenCalled();
+  });
+
+  it('returns the parsed details', async () => {
+    db.rpc.mockResolvedValue({ data: detailsRow, error: null });
+    await expect(fetchRestaurantDetails('b1')).resolves.toEqual(detailsRow);
+  });
+
+  it('returns null for "not available" (the same answer for every cause)', async () => {
+    db.rpc.mockResolvedValue({ data: null, error: null });
+    await expect(fetchRestaurantDetails('b1')).resolves.toBeNull();
+  });
+
+  it('refuses details carrying an unexpected field', async () => {
+    db.rpc.mockResolvedValue({ data: { ...detailsRow, resolved_at: '2026-01-01' }, error: null });
+    await expect(fetchRestaurantDetails('b1')).rejects.toMatchObject({ code: 'unknown' });
+  });
+
+  it('refuses malformed details', async () => {
+    db.rpc.mockResolvedValue({ data: 'oops', error: null });
+    await expect(fetchRestaurantDetails('b1')).rejects.toMatchObject({ code: 'unknown' });
+  });
+
+  it('throws a coded error for a database error', async () => {
+    db.rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message: 'rate_limited' } });
+    await expect(fetchRestaurantDetails('b1')).rejects.toMatchObject({ code: 'rate_limited' });
   });
 });

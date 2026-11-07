@@ -61,12 +61,12 @@ describe('FlagMarker', () => {
     expect(icons.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('reports the pin id when pressed', async () => {
+  it('reports the pressed pin', async () => {
     const onSelect = jest.fn();
     await render(<FlagMarker pin={pin} cuisine={italy} selected={false} onSelect={onSelect} />);
     await fireEvent.press(screen.getByRole('button', { name: /Joe's Pizza/ }));
     expect(onSelect).toHaveBeenCalledTimes(1);
-    expect(onSelect).toHaveBeenCalledWith('p1');
+    expect(onSelect).toHaveBeenCalledWith(pin);
   });
 
   it('puts the marker at the pin', async () => {

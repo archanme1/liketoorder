@@ -22,6 +22,7 @@ import { getListingStatus, LISTING_STATUS_LABEL, typeLabel, type ListingStatus }
 import { sellerErrorMessage } from '../messages';
 import type { MyBusiness } from '../schema';
 
+import { MapStatusLine } from './MapStatusLine';
 import { SellerLoading } from './SellerLoading';
 
 // The Manage tab. Seller only (the tab layout's Tabs.Protected); the owner sees their own
@@ -76,6 +77,13 @@ function BusinessSummary({ business }: { business: MyBusiness }) {
   return (
     <View style={{ gap: space.lg }}>
       <StatusChip status={status} />
+      {/* Restaurants with a saved address and the listing on: is the pin on the map? */}
+      {business.type === 'restaurant' && business.is_listed && business.location ? (
+        <MapStatusLine
+          status={business.map_status}
+          onChooseAddress={() => router.push('/seller/address')}
+        />
+      ) : null}
       {status === 'no_location' ? (
         <Card style={{ gap: space.md }}>
           <Text>Your listing isn’t on the map yet. Add your address to go live.</Text>

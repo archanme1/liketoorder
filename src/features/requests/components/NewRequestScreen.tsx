@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { Button, ErrorState, Screen, Skeleton, Text } from '@/components/ui';
+import { useKeyboardVisible } from '@/lib/useKeyboardVisible';
 import { useTheme } from '@/theme/useTheme';
 
 import { useRequestMenu } from '../hooks/useRequestMenu';
@@ -17,16 +18,20 @@ type NewRequestScreenProps = {
 // The form screen's four states: loading the menu, the calm "not available" answer (one message
 // for every cause, including a bad link), an error with Retry, and the form itself.
 export function NewRequestScreen({ businessId, onClose }: NewRequestScreenProps) {
+  // While typing, the Back row steps aside too, leaving the Send bar and the field the room.
+  const keyboardVisible = useKeyboardVisible();
   return (
     <Screen>
-      <View style={styles.back}>
-        <Button
-          title="Back"
-          variant="ghost"
-          accessibilityLabel="Back to the map"
-          onPress={onClose}
-        />
-      </View>
+      {keyboardVisible ? null : (
+        <View style={styles.back}>
+          <Button
+            title="Back"
+            variant="ghost"
+            accessibilityLabel="Back to the map"
+            onPress={onClose}
+          />
+        </View>
+      )}
       {businessId ? (
         <MenuGate businessId={businessId} onClose={onClose} />
       ) : (

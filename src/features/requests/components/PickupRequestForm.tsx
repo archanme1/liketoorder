@@ -1,4 +1,3 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -10,20 +9,15 @@ import {
   type ScrollViewInstance,
 } from 'react-native';
 
-import { Banner, Button, Card, Text, TextField } from '@/components/ui';
+import { Button, Card, Text, TextField } from '@/components/ui';
 import { clearReturnTo } from '@/features/auth/returnTo';
 import { deviceLocale, useCurrencies } from '@/features/menu/hooks/useCurrencies';
+import { useKeyboardVisible } from '@/lib/useKeyboardVisible';
 import { useTheme } from '@/theme/useTheme';
 
 import { useSubmitPickupRequest } from '../hooks/useSubmitPickupRequest';
 import type { RequestMenu } from '../hooks/useRequestMenu';
-import {
-  NO_MENU_NOTE,
-  NO_PRICE_NOTE,
-  PAY_NOTE,
-  requestErrorMessage,
-  sentMessage,
-} from '../messages';
+import { NO_MENU_NOTE, PAY_NOTE, requestErrorMessage, sentMessage } from '../messages';
 import {
   MAX_NOTE,
   MAX_ORDER_TEXT,
@@ -39,6 +33,7 @@ import { formatDateTime } from '../time';
 import { PickupTimePicker } from './PickupTimePicker';
 import { QuantityStepper } from './QuantityStepper';
 import { RequestStatusChip } from './RequestStatusChip';
+import { SendBar } from './SendBar';
 
 export const TITLE_MAX_FONT_MULTIPLIER = 1.6;
 export const LATER_TIME_MESSAGE = 'Pick a later time';
@@ -75,6 +70,9 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
   const [problem, setProblem] = useState<string | null>(null);
   const [timeProblem, setTimeProblem] = useState<string | null>(null);
   const [sent, setSent] = useState<PickupRequest | null>(null);
+  const keyboardVisible = useKeyboardVisible();
+  // Height of the scrolling area, so any field can be scrolled up to its top edge.
+  const [viewportHeight, setViewportHeight] = useState(0);
 
   // Opening the form uses up the sign-in return, so it can't fire again later.
   useEffect(() => {
@@ -105,13 +103,20 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
     const fresh = new Date();
     setNow(fresh);
     setProblem(null);
+    const showTimeSection = () =>
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, (fieldY.current.time ?? 0) - space.lg),
+        animated: true,
+      });
     if (!pickupAt) {
       setTimeProblem(CHOOSE_TIME_MESSAGE);
+      showTimeSection();
       return;
     }
     const timeIssue = pickupTimeProblem(pickupAt, fresh);
     if (timeIssue) {
       setTimeProblem(timeIssue === 'too_soon' ? LATER_TIME_MESSAGE : FAR_TIME_MESSAGE);
+      showTimeSection();
       return;
     }
     setTimeProblem(null);
@@ -163,18 +168,18 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
 
   const serverError = submit.error ? requestErrorMessage(submit.error.code) : null;
   const sending = submit.isPending;
+  // One message at a time, in the bar, right under Send.
+  const barError = timeProblem ?? problem ?? serverError;
 
   return (
     <KeyboardAvoidingView
+      testID="keyboard-avoiding"
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView
-        ref={scrollRef}
-        testID="request-form-scroll"
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ gap: space.lg, paddingBottom: space.xxl }}
-      >
+      {/* Fixed: title, then the Send bar. While the keyboard is up the title steps aside so the
+          bar and the focused field have the room. */}
+      {keyboardVisible ? null : (
         <View style={{ gap: space.xs }}>
           <Text
             variant="title"
@@ -185,7 +190,29 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
           </Text>
           <Text color="textMuted">{`From ${menu.name}`}</Text>
         </View>
+      )}
+      <SendBar
+        businessName={menu.name}
+        total={summary.total}
+        excludesUnpriced={summary.excludesUnpriced}
+        error={barError}
+        sending={sending}
+        onSend={onSubmit}
+      />
 
+      <ScrollView
+        ref={scrollRef}
+        testID="request-form-scroll"
+        style={styles.flex}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        onLayout={(event) => setViewportHeight(event.nativeEvent.layout.height)}
+        contentContainerStyle={{
+          gap: space.lg,
+          // With the keyboard up, slack as tall as the area lets the last field reach the top.
+          paddingBottom: keyboardVisible ? Math.max(space.xxl, viewportHeight) : space.xxl,
+        }}
+      >
         {available.length > 0 ? (
           <View style={{ gap: space.md }}>
             <Text variant="bodyLg" accessibilityRole="header">
@@ -219,7 +246,7 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
           <Text color="textMuted">{NO_MENU_NOTE}</Text>
         )}
 
-        {/* A focused text box scrolls above the keyboard, and so above Send, below it. */}
+        {/* A focused text box scrolls to the top of this area: just under the fixed Send bar. */}
         <View
           onLayout={(event) => {
             fieldY.current.order = event.nativeEvent.layout.y;
@@ -245,7 +272,12 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
           />
         </View>
 
-        <View style={{ gap: space.sm }}>
+        <View
+          style={{ gap: space.sm }}
+          onLayout={(event) => {
+            fieldY.current.time = event.nativeEvent.layout.y;
+          }}
+        >
           <Text variant="bodyLg" accessibilityRole="header">
             Pickup time
           </Text>
@@ -262,14 +294,6 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
               setPickupAt(value);
             }}
           />
-          {timeProblem ? (
-            <View style={[styles.row, { gap: space.xs }]}>
-              <Ionicons name="alert-circle-outline" size={space.lg} />
-              <Text color="danger" accessibilityRole="alert">
-                {timeProblem}
-              </Text>
-            </View>
-          ) : null}
         </View>
 
         <View
@@ -307,26 +331,10 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
                 {line.price ? <Text>{line.price}</Text> : null}
               </View>
             ))}
-            {summary.total ? (
-              <View style={{ gap: space.xs }}>
-                <Text accessibilityRole="header">{`Estimated total: ${summary.total}`}</Text>
-                {summary.excludesUnpriced ? <Text color="textMuted">{NO_PRICE_NOTE}</Text> : null}
-                <Text color="textMuted">{PAY_NOTE}</Text>
-              </View>
-            ) : null}
+            {summary.total ? <Text color="textMuted">{PAY_NOTE}</Text> : null}
           </Card>
         ) : null}
 
-        {problem ? <Banner message={problem} /> : null}
-        {serverError ? <Banner message={serverError} /> : null}
-
-        <Button
-          title="Send request"
-          accessibilityLabel={`Send pickup request to ${menu.name}`}
-          onPress={onSubmit}
-          loading={sending}
-          disabled={sending}
-        />
         <Text variant="caption" color="textMuted">
           The seller will answer this request.
         </Text>
@@ -338,5 +346,4 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   itemRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
-  row: { flexDirection: 'row', alignItems: 'center' },
 });

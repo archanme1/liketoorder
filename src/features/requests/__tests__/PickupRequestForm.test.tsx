@@ -1,5 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react-native';
+import { Keyboard } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -8,6 +17,7 @@ import { fetchHomemadeDetails, fetchRestaurantDetails } from '@/features/map/api
 import type { DetailsItem } from '@/features/map/schema';
 import { peekReturnTo, requestFormHref, setReturnTo } from '@/features/auth/returnTo';
 
+import { dump } from '../__fixtures__/dump';
 import { BUSINESS_ID, makeRequest } from '../__fixtures__/requests';
 import { RequestAppError, submitPickupRequest } from '../api';
 import { NewRequestScreen } from '../components/NewRequestScreen';
@@ -464,5 +474,150 @@ describe('sending', () => {
     expect(mockRouter.replace).toHaveBeenCalledWith('/requests');
     await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('the fixed Send bar', () => {
+  const sendName = "Send pickup request to Joe's Pizza";
+
+  it('sits above the scrolling form, not inside it', async () => {
+    await renderScreen();
+    await formReady();
+    const scroll = screen.getByTestId('request-form-scroll');
+    expect(within(scroll).queryByRole('button', { name: sendName })).not.toBeOnTheScreen();
+    expect(
+      within(screen.getByTestId('send-bar')).getByRole('button', { name: sendName }),
+    ).toBeOnTheScreen();
+    const tree = dump();
+    expect(tree.indexOf('"testID":"send-bar"')).toBeGreaterThan(-1);
+    expect(tree.indexOf('"testID":"send-bar"')).toBeLessThan(
+      tree.indexOf('"testID":"request-form-scroll"'),
+    );
+    // Right under the title, close to the business name.
+    expect(tree.indexOf('From Joe')).toBeLessThan(tree.indexOf('"testID":"send-bar"'));
+  });
+
+  it('shows the estimated total beside Send, and the unpriced rule under it', async () => {
+    await renderScreen();
+    await formReady();
+    const bar = () => within(screen.getByTestId('send-bar'));
+    expect(bar().queryByText(/Estimated total/)).not.toBeOnTheScreen();
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Increase Margherita quantity, now 0' }),
+    );
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Increase Margherita quantity, now 1' }),
+    );
+    expect(await bar().findByText('Estimated total: CA$25.00')).toBeOnTheScreen();
+    expect(bar().queryByText('Total excludes items without a price')).not.toBeOnTheScreen();
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Increase House salad quantity, now 0' }),
+    );
+    expect(await bar().findByText('Total excludes items without a price')).toBeOnTheScreen();
+    // The total is said once: the order card keeps the lines and the pay-the-seller note.
+    expect(screen.getAllByText(/Estimated total:/)).toHaveLength(1);
+    expect(screen.getByText('Estimated total. Pay the seller directly.')).toBeOnTheScreen();
+  });
+
+  it('shows problems in the bar, right under Send, and scrolls to the time section', async () => {
+    await renderScreen();
+    await formReady();
+    mockScrollTo.mockClear();
+    await fireEvent.press(send());
+    const bar = within(screen.getByTestId('send-bar'));
+    expect(await bar.findByText('Choose a pickup time')).toBeOnTheScreen();
+    expect(
+      within(screen.getByTestId('request-form-scroll')).queryByText('Choose a pickup time'),
+    ).not.toBeOnTheScreen();
+    expect(mockScrollTo).toHaveBeenCalledWith(expect.objectContaining({ animated: true }));
+  });
+
+  it('shows a server problem in the bar too', async () => {
+    submitMock.mockRejectedValue(new RequestAppError('rate_limited'));
+    await renderScreen();
+    await formReady();
+    await fireEvent.changeText(screen.getByLabelText('Anything else'), 'two pizzas');
+    await pickFirstTime();
+    await fireEvent.press(send());
+    expect(
+      await within(screen.getByTestId('send-bar')).findByText(/Try again later/),
+    ).toBeOnTheScreen();
+  });
+
+  it('has no fixed height and wraps, so large text never clips it', async () => {
+    await renderScreen();
+    await formReady();
+    const flat = (node: { props: { style?: unknown } }) =>
+      Object.assign({}, ...[node.props.style].flat(Infinity).filter(Boolean));
+    const bar = screen.getByTestId('send-bar');
+    expect(flat(bar).height).toBeUndefined();
+    expect(flat(bar).maxHeight).toBeUndefined();
+    const row = bar.children[0] as unknown as { props: { style?: unknown } };
+    expect(flat(row).flexWrap).toBe('wrap');
+    const button = screen.getByRole('button', { name: sendName });
+    expect(flat(button).minHeight).toBeGreaterThanOrEqual(44);
+    expect(flat(button).height).toBeUndefined();
+  });
+
+  it('is disabled and busy while sending, and a double tap sends one request', async () => {
+    let finish: (value: ReturnType<typeof makeRequest>) => void = () => undefined;
+    submitMock.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    await renderScreen();
+    await formReady();
+    await fireEvent.changeText(screen.getByLabelText('Anything else'), 'two pizzas');
+    await pickFirstTime();
+    await fireEvent.press(send());
+    await fireEvent.press(send());
+    expect(submitMock).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('send-bar')).getByRole('button', { name: sendName }),
+      ).toHaveProp('accessibilityState', { disabled: true, busy: true }),
+    );
+    finish(makeRequest());
+    expect(await screen.findByText('Request sent')).toBeOnTheScreen();
+    expect(screen.queryByTestId('send-bar')).not.toBeOnTheScreen();
+  });
+});
+
+describe('the title steps aside while the keyboard is up', () => {
+  function captureKeyboard() {
+    // Both the screen (Back row) and the form (title) listen, so keep every listener.
+    const listeners: Record<string, (() => void)[]> = {};
+    jest.spyOn(Keyboard, 'addListener').mockImplementation(((event: string, cb: () => void) => {
+      (listeners[event] ??= []).push(cb);
+      return { remove: jest.fn() };
+    }) as unknown as typeof Keyboard.addListener);
+    return {
+      keyboardWillShow: () => listeners.keyboardWillShow?.forEach((cb) => cb()),
+      keyboardWillHide: () => listeners.keyboardWillHide?.forEach((cb) => cb()),
+    };
+  }
+  afterEach(() => jest.restoreAllMocks());
+
+  it('hides the title, the business line and Back, keeps the Send bar, and gives the area slack', async () => {
+    const handlers = captureKeyboard();
+    await renderScreen();
+    await formReady();
+    const scroll = screen.getByTestId('request-form-scroll');
+    await fireEvent(scroll, 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 420 } },
+    });
+    expect(screen.getByRole('header', { name: 'Request pickup' })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Back to the map' })).toBeOnTheScreen();
+
+    await act(async () => handlers.keyboardWillShow());
+    expect(screen.queryByRole('header', { name: 'Request pickup' })).not.toBeOnTheScreen();
+    expect(screen.queryByText("From Joe's Pizza")).not.toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'Back to the map' })).not.toBeOnTheScreen();
+    expect(screen.getByTestId('send-bar')).toBeOnTheScreen();
+    const style = Object.assign(
+      {},
+      ...[screen.getByTestId('request-form-scroll').props.contentContainerStyle].flat(Infinity),
+    );
+    expect(style.paddingBottom).toBeGreaterThanOrEqual(420);
+
+    await act(async () => handlers.keyboardWillHide());
+    expect(screen.getByRole('header', { name: 'Request pickup' })).toBeOnTheScreen();
   });
 });

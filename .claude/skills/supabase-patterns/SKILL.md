@@ -15,14 +15,14 @@ After editing anything in `supabase/templates/`, run `npx supabase stop` then `n
 - `profiles` (id = auth.users.id, username unique, display_name, bio, avatar_path, city, is_seller, is_admin)
 - `cuisines` (code PK — permanent: ISO alpha-2 `IT` or kebab slug `street-food`; kind `country|neutral`; name (`en-x-icu`); generated `flag`; icon (neutral only); sort_order) — read-only to clients (spec 04)
 - `businesses` (id, owner_id → profiles unique, type `restaurant|homemade` fixed after creation, name, cuisine_code → cuisines, accepts_table_requests (restaurant only), map_lat/map_lng = public point (restaurant exact, homemade shifted), public_address (restaurant only), is_listed mirrors profiles.is_seller) — spec 05. Clients select only the public columns (not owner_id / is_listed) and update only name, cuisine_code, accepts_table_requests; everything else goes through functions.
-- `business_locations` (business_id PK, place_id, formatted_address, lat, lng, resolved_at) — exact location for every business; no client grants, read via `get_my_business()` (owner) and, from specs 09/10, an accepted-request function.
+- `business_locations` (business_id PK, place_id, formatted_address, lat, lng, resolved_at) — exact location for every business; no client grants, read via `get_my_business()` (owner) and `get_my_pickup_address(request_id)` (spec 09: only the requesting customer, only at `accepted`/`completed`, homemade only).
 - `places_rate_limits` (user_id, kind, window_kind, window_start, count) — per-user Places quota; only `consume_places_quota()` touches it.
 - `currencies` (code PK ISO 4217, name, minor_units 0|2|3) — read-only catalog like `cuisines` (spec 06). `businesses.currency_code` → currencies, one per business, written only by `set_menu_currency()`; locked once any item has a price (`prices_exist`).
 - `menu_items` (id, business_id, name, description, price_minor integer in the currency's minor unit (never floats), is_available, position 1..n, deferred unique per business) — one ordered list per business, max 100 (spec 06).
 - `business_photos` (id, business_id, kind `cover|gallery|menu|item`, menu_item_id (item only), path, status `pending|ready`, position (gallery/menu), created_at) — limits 1 cover / 6 gallery / 10 menu / 1 per item (spec 06).
 - `storage_cleanup_queue` (path PK, business_id, queued_at) — outbox of files whose row is gone; no client grants (spec 06).
 - Menu/photo writes: only via functions (`create_menu_item`, `update_menu_item`, `move_menu_item`, `delete_menu_item`, `begin_photo_upload`, `finish_photo_upload`, `delete_business_photo`, `claim_photo_cleanup`) that lock the caller's business row (`select … where owner_id = auth.uid() for update`), so limits hold under concurrent calls.
-- `requests` (id, business_id, customer_id, kind `pickup|table`, status, pickup_at / reserved_at, party_size, items jsonb, note, idempotency_key unique, expires_at, arrived_at)
+- `pickup_requests` (spec 09: id, business_id, customer_id, status `pending|accepted|declined|expired|cancelled|completed|no_show`, pickup_at, items jsonb snapshot `[{item_id,name,unit_price_minor,quantity}]` read from `menu_items` in SQL, order_text, note, currency_code, `unique (customer_id, idempotency_key)`, expires_at, responded_at). RLS on, **no grants and no policies**: customers use `submit_pickup_request`, `list_my_pickup_requests`, `get_my_pickup_request`, `cancel_pickup_request`, `get_my_pickup_address`; the cron job `pickup-requests-expire` runs `private.expire_pickup_requests()` every minute. Reads return `server_now` and a server-computed `display_status`. Spec 10 adds the seller's functions; table requests (spec 11) decide between a second table and a `kind` column.
 - `food_logs` (id, author_id, photo_path, description, cuisine_code, is_public, created_at default now(), local_date date not null)
 - `promotions` (business_id, starts_at, ends_at, status `draft|active|ended`, activated_by)
 - `reports` (business_id, reporter_id, reason, note, status `open|confirmed|rejected`, reviewed_by)
@@ -78,18 +78,19 @@ end $$;
 revoke all on function public.respond_to_request from public, anon;
 grant execute on function public.respond_to_request to authenticated;
 ```
-Allowed transitions: `pending → accepted | declined | expired | cancelled`; `accepted → completed | no_show | cancelled`.
-Expiry: a `pg_cron` job (or check-on-read) sets `expired` where `status='pending' and expires_at < now()`.
+Allowed transitions (pickup requests): `pending → cancelled` (customer, pending only, spec 09), `pending → expired` (cron), `pending → accepted | declined` and `accepted → completed | no_show` (seller, spec 10). There is no `accepted → cancelled` in v1.
+Expiry: the `pg_cron` job sets `expired` where `status='pending' and expires_at <= now()`, **and** the read functions compute `display_status` in SQL (`pending` past `expires_at` shows `expired`), so a request is never shown live after it expired. Every transition function refuses a request at or past `expires_at` (`<=`, the same line as the job).
 
 ## Server-owned values
 - `created_at timestamptz not null default now()`; clients never send it (exclude from insert grants or overwrite in a `before insert` trigger).
 - `food_logs.local_date`: computed in a `before insert` trigger from `now()` and the client-supplied IANA timezone validated against `pg_timezone_names` — so no backdating.
-- Idempotency: `requests.idempotency_key uuid unique` generated client-side per submit attempt; insert with `on conflict do nothing` and return the existing row.
+- Idempotency: `idempotency_key uuid`, unique **per customer** (`unique (customer_id, idempotency_key)`), generated client-side once per form session. The submit function looks the key up first and returns that row unchanged, before any other check; it also takes a per-customer `pg_advisory_xact_lock` so concurrent calls serialise, and still inserts with `on conflict do nothing` and re-selects.
+- Per-customer limits that count rows (spec 09: 5 pending, 1 pending per business, 10 submits an hour) read the customer's own table rows under that lock. A pending row past `expires_at` does not count. This needs no counter table or cleanup job.
 
 ## Homemade approximate location
 Computed in SQL inside `set_business_location()` (spec 05, Decisions 3 and 10): a random bearing and a random distance of 200–500 m (uniform over the ring's area), stored in `businesses.map_lat/map_lng`. The offset and random inputs are never stored. Re-rolled **only when `place_id` changes**: saving the same place again, or a Places coordinate refresh, keeps the point (re-rolling would let an observer average points back to the real one). Never compute, round or display an offset in the app.
 
-Exact address: the owner reads it through `get_my_business()`. Specs 09/10 add a function (e.g. `get_pickup_address(request_id)`) that returns it only to the customer on an **accepted** request.
+Exact address: the owner reads it through `get_my_business()`. `get_my_pickup_address(request_id)` (spec 09) returns it only to the requesting customer while the request is `accepted` or `completed`, for homemade businesses that are still listed, and `null` for every other cause; it is not behind the 30-day map guard (spec 09 Decision 5). Spec 10 adds the seller's accept function.
 
 ## Storage
 | Bucket | Public? | Path | Notes |

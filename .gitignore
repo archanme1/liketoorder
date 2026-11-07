@@ -47,3 +47,6 @@ CLAUDE.local.md
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Supabase Studio SQL editor snippets (local only)
+supabase/snippets/

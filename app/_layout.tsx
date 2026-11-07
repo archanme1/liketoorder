@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+import { Stack, type Href } from 'expo-router';
 import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
@@ -17,6 +17,7 @@ import {
   getRouteAccess,
   type RouteAccess,
 } from '@/features/auth/routeAccess';
+import { peekReturnTo } from '@/features/auth/returnTo';
 import { useMyProfile } from '@/features/profile/hooks/useMyProfile';
 import { profileErrorMessage } from '@/features/profile/messages';
 import { useAppFocus } from '@/lib/appFocus';
@@ -90,8 +91,9 @@ function RootNavigator() {
   // Explicit redirects: the (auth) group has no index, so the default "first accessible route"
   // redirect would resolve to "/" and show Unmatched Route.
   const home = getHomeRoute(access);
-  // Signing in, finishing setup and saving a new password all land on the Profile tab.
-  const postAuth = getPostAuthRoute(access);
+  // Signing in, finishing setup and saving a new password all land on the Profile tab, except a
+  // guest who tapped Request pickup: they go on to that request form (an allow-listed path only).
+  const postAuth: Href = (access.app ? peekReturnTo() : null) ?? getPostAuthRoute(access);
 
   // After sign-in or a password reset the profile loads with the Stack still mounted, under an
   // overlay: unmounting it would drop the navigation state and skip the post-auth redirect.
@@ -116,7 +118,7 @@ function RootNavigator() {
 type RootStackProps = {
   access: RouteAccess;
   home: ReturnType<typeof getHomeRoute>;
-  postAuth: ReturnType<typeof getPostAuthRoute>;
+  postAuth: Href;
 };
 
 function RootStack({ access, home, postAuth }: RootStackProps) {
@@ -137,6 +139,7 @@ function RootStack({ access, home, postAuth }: RootStackProps) {
       </Stack.Protected>
       <Stack.Protected guard={access.app} redirectTo={home}>
         <Stack.Screen name="profile/edit" />
+        <Stack.Screen name="requests" />
         {/* No business-based guard: the seller screens redirect after their own data loads. */}
         <Stack.Screen name="seller" />
       </Stack.Protected>

@@ -1,20 +1,13 @@
-import type { RequestStatus } from './schema';
+import type { StatusChipIcon, StatusChipTone } from '@/components/ui/StatusChip';
 
-export type StatusTone = 'warning' | 'success' | 'danger' | 'muted' | 'info';
+import type { RequestStatus } from './schema';
 
 export type StatusInfo = {
   /** The word shown on the chip and spoken by screen readers. */
   label: string;
-  tone: StatusTone;
-  /** An Ionicons name; the chip always shows the word too, never the icon or colour alone. */
-  icon:
-    | 'time-outline'
-    | 'checkmark-circle-outline'
-    | 'close-circle-outline'
-    | 'hourglass-outline'
-    | 'ban-outline'
-    | 'bag-check-outline'
-    | 'alert-circle-outline';
+  tone: StatusChipTone;
+  /** The chip always shows the word too, never the icon or colour alone. */
+  icon: StatusChipIcon;
 };
 
 // Wording for each status. A pending request is "Waiting", never anything that reads as booked,

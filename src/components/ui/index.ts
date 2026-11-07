@@ -7,5 +7,6 @@ export { ErrorState } from './ErrorState';
 export { NavRow } from './NavRow';
 export { Screen } from './Screen';
 export { Skeleton } from './Skeleton';
+export { StatusChip } from './StatusChip';
 export { Text } from './Text';
 export { TextField } from './TextField';

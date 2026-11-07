@@ -33,15 +33,17 @@ Provide a dark variant later; always read colors through a `useTheme()` hook so 
 `Screen` (safe area + bg) · `Text` (variants) · `Button` (primary/secondary/ghost, loading state) · `Card` · `Chip` · `StatusChip` · `Avatar` · `FlagIcon` (ISO code → bundled asset) · `EmptyState` · `ErrorState` (with Retry) · `Skeleton` · `TextField` (react-hook-form compatible) · `Sheet` (wraps @gorhom/bottom-sheet).
 
 ## Request status chips — never ambiguous
+Use `StatusChip` (`src/components/ui`), fed by `STATUS_INFO` in `src/features/requests/status.ts`. The status shown is always the server's `display_status`.
 | Status | Label | Color | Icon |
 |---|---|---|---|
-| pending | "Waiting for <business>" | warning | clock |
+| pending | "Waiting" (sentence: "Waiting for <business> to respond") | warning | clock |
 | accepted | "Accepted" | success | check |
 | declined | "Declined" | danger | x |
-| expired | "No response — expired" | textMuted | hourglass |
-| cancelled | "Cancelled" | textMuted | slash |
+| expired | "Expired" | textMuted | hourglass |
+| cancelled | "Cancelled" | textMuted | ban |
 | completed | "Completed" | info | bag |
-Always icon + text, never color alone. Pending screens must say the request is **not confirmed yet**.
+| no_show | "No-show" | danger | alert |
+Always icon + text, never color alone. A pending request is never described as confirmed, booked or on its way: no "confirmed" wording anywhere, including screen-reader labels (spec 09).
 
 ## Activity grid visuals
 - Square 12–14pt with 3pt gap, radius 3. Week columns, Sun→Sat rows; month labels above.

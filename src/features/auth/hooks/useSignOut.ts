@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 
 import { signOut, type AuthAppError } from '../api';
+import { clearReturnTo } from '../returnTo';
 
 import { useSession } from './useSession';
 
@@ -12,6 +13,7 @@ export function useSignOut({ onSuccess }: { onSuccess?: () => void } = {}) {
   return useMutation<void, AuthAppError, void>({
     mutationFn: async () => {
       await signOut();
+      clearReturnTo();
       await clearRecovering();
     },
     onSuccess,

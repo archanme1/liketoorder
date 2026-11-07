@@ -203,7 +203,7 @@ Each item points to "Lessons from spec 07" in `.claude/skills/map-markers/SKILL.
 - [x] **Business labels hidden.** Same `MAP_STYLE` on both tabs; Android still unchecked (tracked in §16). *(manual 2.)*
 - [x] **Location privacy.** Request box snapped outward to the coarse grid; permission string and note say exactly that and now also say "homemade cooks"; the string change needs a rebuild. Jest asserts that no request argument contains the person's position and that two positions in one grid cell send identical boxes, for the homemade call too. *(jest: HomemadeMapPrivacy.)*
 - [x] **Permission re-read.** "Locate me" and returning from Settings re-read the permission (shared hook; not copied). *(manual 25.)*
-- [ ] **Stable callbacks and memoised markers.** `HomemadeMarker` is `React.memo`; the circle layer does not re-render every marker on a pan; callbacks are `useCallback`. Manual step 8 pans a 100-cook area.
+- [x] **Stable callbacks and memoised markers.** `HomemadeMarker` is `React.memo`; the circle layer does not re-render every marker on a pan; callbacks are `useCallback`. Manual step 8 pans a 100-cook area. *(jest render-count tests at marker and screen level; manual step 8 passed.)*
 - [x] **Dev client.** Expo Go cannot run this tab. Archan runs `npx expo run:ios` (the permission string changes).
 - [ ] **Local seed vs pgTAP.** After seeding, count-based pgTAP tests fail until `npx supabase db reset`. The manual script starts with a reset and seed, and the Definition of done runs pgTAP **before** seeding.
 - [x] **Homemade-only traps.** (a) Circle radius 500 m, never smaller than the maximum shift; (b) the circle's centre is the stored public point, never anything computed in the app; (c) no Directions, no address, no `place_id` in any payload, schema, log or accessibility label; (d) the sheet must not look like a restaurant sheet that is missing a field: it states "approximate area" on purpose; (e) the `Circle` must not be drawn for clustered pins. *(jest: radius, centre, no address/Directions/place ID, label, no circle for clusters.)*
@@ -313,13 +313,30 @@ Hidden cooks and the seller view:
 |---|---|---|
 | 11 Sheet content (now menu first) | Pass | Order, safety row, area note, no address/Directions/Request/Report |
 | 12 Cooks with fewer photos | Pass | Items only, menu pages only, cover only |
-| 13 Drag between the snaps | Partly | Half snap seen; dragging through all three snaps not reported separately |
+| 13 Drag between the snaps | Pass | Half snap seen in the Gate E run; the full drag in the final run |
 | 14 Scroll to the last row | Pass | Last row reachable |
 | 15 Open the cover viewer, swipe, counter | Pass | Banner opens at photo 1, swipe reaches the gallery |
-| 16 Close methods | Partly | Close with the X seen; backdrop tap and back gesture not reported |
+| 16 Close methods | Pass | X in the Gate E run; the other methods in the final run |
 | 26 Largest text | Pass | Safety row complete, title wraps, nothing cut off |
 
-**Still unrecorded (need a Simulator run):** 4, 7, 8, 10, the rest of 13 and 16, 17, 18, 28, 29, 30, and the viewer part of 31 (restaurants have no seeded photos, so use a restaurant owner who uploads one, or rely on the jest tests `SheetPhotoViewer` and `SheetOrder`, which run the Restaurants tab).
+**Final run (Archan, iOS Simulator, seeded data): the remaining steps all passed.**
+
+| Step | Result | Note |
+|---|---|---|
+| 4 Exact vs shown point (Studio) | Pass | 200-500 m apart, exact point inside the circle |
+| 7 Swipe the sheet down, tap the bare map | Pass | |
+| 8 Rapid pan and zoom, Toronto group | Pass | No flicker, stutter or error note |
+| 10 Overlapping circles, tap a flag | Pass | The tapped cook's sheet opens |
+| 13 Drag through the three snaps | Pass | |
+| 16 Close methods (X, beside the photo, back gesture) | Pass | |
+| 17 Reduce Motion | Pass | No fade |
+| 18 Broken photo (Little Seoul Banchan) | Pass | "Photo unavailable" once, no loop |
+| 28 Status line, homemade and restaurant owner | Pass | Homemade wording; restaurant wording unchanged |
+| 29 Status line, stale address | Pass | Hidden message with the button |
+| 30 Seller Photos screen "View larger" | Pass | Editing unchanged |
+| 31 Restaurants tab, viewer part | Pass | |
+
+**All 31 steps of the manual script are recorded as passed, on the iOS Simulator only (run by Archan).** Not run on a real iPhone or on Android, and not run with VoiceOver or TalkBack; those stay in `docs/product/v1.md` §16 as before-launch items.
 
 Not covered by this script (tracked in `docs/product/v1.md` §16): a real iPhone, Android, VoiceOver and TalkBack, Android font scale 2.0, `customMapStyle` on Android, the services-off state.
 
@@ -364,7 +381,7 @@ No test file defines its own map or sheet mock.
 **App (PR 2)**
 - [x] The Homemade tab shows a Google map (`PROVIDER_GOOGLE`) for guests, with homemade flags only. *(jest + manual 2.)*
 - [x] Circles: 500 m radius around each stored point while zoomed in (`latitudeDelta ≤ 0.05`), none when zoomed out or for clustered pins; no exact or computed point is ever drawn (jest on the fake `Circle` props). *(jest + manual 3.)*
-- [ ] Pins load by visible area after the person stops moving (400 ms); late answers are dropped; old pins stay (jest, same as spec 07, against the homemade hooks).
+- [x] Pins load by visible area after the person stops moving (400 ms); late answers are dropped; old pins stay (jest, same as spec 07, against the homemade hooks). *(jest: HomemadePinsLoading, with deliberate breaks for the debounce, the old pins and the area key.)*
 - [x] `rate_limited` keeps old pins, shows "Try again in a moment", is not retried; 500 pins → "Zoom in to see more"; `too_large` → "Zoom in to see homemade cooks".
 - [x] Tapping a flag opens the sheet at half, the sheet is **not** closed by the bubbled map press (fake with stop-propagation ignored: the map handler alone keeps it open), and the map does not move; tapping a cluster zooms in. *(jest + manual 6.)*
 - [x] The sheet shows exactly, in this order (Decision 15): the fixed header (name, flag + cuisine name); a short cover banner (88 pt; nothing and no placeholder without a cover); the small safety row; menu-page thumbnails (96 pt); menu items with price and availability in the cook's own currency; the gallery ("No photos yet" only with neither cover nor gallery); the area note. **No** address, Directions, place ID, coordinates, Request or Report buttons or placeholders (jest asserts their absence and the order). *(jest SheetOrder/HomemadeSheet + Gate E manual run.)*
@@ -375,7 +392,7 @@ No test file defines its own map or sheet mock.
 - [x] Manage Business shows the status line for homemade in each of its three states with homemade wording, nothing without a saved address; restaurants unchanged. *(jest; manual 28-29 still to record.)*
 - [x] Every spec 07 jest test passes unchanged after the shared-screen refactor. *(only jest.setup.ts and the two spec 03 stand-ins differ from main.)*
 - [x] All screens handle loading, empty, error (with retry) and success; every touchable has a role and label with ≥ 44 pt target.
-- [ ] The Known pitfalls checklist is fully ticked, and the manual acceptance script was run on the iOS Simulator with the result of each step recorded in this spec.
+- [x] The Known pitfalls checklist is fully ticked, and the manual acceptance script was run on the iOS Simulator with the result of each step recorded in this spec. *(All 31 steps recorded as passed on the iOS Simulator, run by Archan; no real iPhone or Android run.)*
 - [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` pass; CI green.
 
 ## Test plan

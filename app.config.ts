@@ -43,7 +43,7 @@ const config: ExpoConfig = {
       'expo-location',
       {
         locationWhenInUsePermission:
-          'LikeToOrder uses your location while you have the app open, only to show restaurants near you on the map. Your location stays on your phone.',
+          "LikeToOrder uses your location while you have the app open, only to show restaurants near you on the map. Your exact location stays on your phone. We only receive the map area you're looking at.",
         locationAlwaysAndWhenInUsePermission: false,
         locationAlwaysPermission: false,
         isIosBackgroundLocationEnabled: false,

@@ -141,10 +141,10 @@ describe('RestaurantMapScreen: not configured', () => {
 describe('RestaurantMapScreen: location flow', () => {
   it('shows the plain-language note first, and "Not now" hides it for good', async () => {
     await renderScreen();
-    expect(await screen.findByText(/Your location stays on your phone/)).toBeOnTheScreen();
+    expect(await screen.findByText(/Your exact location stays on your phone/)).toBeOnTheScreen();
     expect(requestPermission).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByRole('button', { name: 'Not now' }));
-    expect(screen.queryByText(/Your location stays on your phone/)).not.toBeOnTheScreen();
+    expect(screen.queryByText(/Your exact location stays on your phone/)).not.toBeOnTheScreen();
     expect(requestPermission).not.toHaveBeenCalled();
     expect(await AsyncStorage.getItem('map.locationPromptDismissed')).toBe('1');
   });
@@ -153,13 +153,13 @@ describe('RestaurantMapScreen: location flow', () => {
     await AsyncStorage.setItem('map.locationPromptDismissed', '1');
     await renderScreen();
     await act(async () => undefined);
-    expect(screen.queryByText(/Your location stays on your phone/)).not.toBeOnTheScreen();
+    expect(screen.queryByText(/Your exact location stays on your phone/)).not.toBeOnTheScreen();
     expect(screen.getByRole('button', { name: 'Locate me' })).toBeOnTheScreen();
   });
 
   it('"Use my location" shows the system prompt, then centres on the person', async () => {
     await renderScreen();
-    await screen.findByText(/Your location stays on your phone/);
+    await screen.findByText(/Your exact location stays on your phone/);
     requestPermission.mockImplementationOnce(async () => {
       permission('granted');
       return { status: 'granted', canAskAgain: true, granted: true } as never;
@@ -185,7 +185,7 @@ describe('RestaurantMapScreen: location flow', () => {
     await waitFor(() => expect(animateToRegion).toHaveBeenCalled());
     expect(animateToRegion.mock.calls[0][0]).toMatchObject({ latitude: 1.5, longitude: 2.5 });
     // No permission note when already allowed.
-    expect(screen.queryByText(/Your location stays on your phone/)).not.toBeOnTheScreen();
+    expect(screen.queryByText(/Your exact location stays on your phone/)).not.toBeOnTheScreen();
   });
 
   it('is not blocked by a slow position: the map is on screen and does not move', async () => {

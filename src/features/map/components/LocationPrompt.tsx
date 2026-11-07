@@ -17,8 +17,8 @@ export function LocationPrompt({ onAllow, onNotNow }: LocationPromptProps) {
         Show restaurants near you?
       </Text>
       <Text>
-        LikeToOrder can centre the map on you to show restaurants nearby. Your location stays on
-        your phone and is never sent to us. You can say no.
+        LikeToOrder can centre the map on you to show restaurants nearby. Your exact location stays
+        on your phone. We only receive the map area you&apos;re looking at. You can say no.
       </Text>
       <View style={[styles.actions, { gap: space.sm }]}>
         <Button title="Use my location" onPress={onAllow} />

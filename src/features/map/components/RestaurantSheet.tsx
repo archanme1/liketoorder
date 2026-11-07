@@ -25,11 +25,15 @@ type RestaurantSheetProps = {
   pins: readonly Pin[];
   cuisineByCode: ReadonlyMap<string, Cuisine>;
   onSelect: (pin: Pin) => void;
+  /** The open restaurant was picked from the list: offer a way back to it. */
+  showBackToList: boolean;
+  onBackToList: () => void;
   onClose: () => void;
 };
 
 // Index 0 = collapsed, 1 = half, 2 = full.
 export const HALF_INDEX = 1;
+export const BACK_TO_LIST = 'Back to list';
 export const COLLAPSED_FRACTION = 0.15;
 
 // Fixed-height rows need room: at large text sizes the collapsed snap grows so the name and
@@ -47,6 +51,8 @@ export function RestaurantSheet({
   pins,
   cuisineByCode,
   onSelect,
+  showBackToList,
+  onBackToList,
   onClose,
 }: RestaurantSheetProps) {
   const { colors, space, radius, size } = useTheme();
@@ -136,6 +142,17 @@ export function RestaurantSheet({
               gap: space.lg,
             }}
           >
+            {selected && showBackToList ? (
+              <Pressable
+                onPress={onBackToList}
+                accessibilityRole="button"
+                accessibilityLabel={BACK_TO_LIST}
+                style={[styles.back, { minHeight: size.touch, gap: space.xs }]}
+              >
+                <Ionicons name="chevron-back" size={size.tabIcon} color={colors.primary} />
+                <Text color="primary">{BACK_TO_LIST}</Text>
+              </Pressable>
+            ) : null}
             {selected ? (
               <SheetDetails key={selected.id} id={selected.id} onClose={onClose} />
             ) : (
@@ -152,4 +169,5 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'flex-start' },
   close: { alignItems: 'center', justifyContent: 'center' },
+  back: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start' },
 });

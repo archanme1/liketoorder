@@ -16,7 +16,7 @@ import { useMapRegion } from '../hooks/useMapRegion';
 import { usePinsInBounds } from '../hooks/usePinsInBounds';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { mapKeyName, useMapConfigured } from '../mapConfig';
-import { isOverServerLimit, regionAround, type MapRegion } from '../region';
+import { isOverServerLimit, regionAround, regionForPick, type MapRegion } from '../region';
 import type { Pin } from '../schema';
 
 import { mapErrorMessage } from '../messages';
@@ -96,6 +96,8 @@ function ConfiguredMap() {
   // whether the "Places in this area" list is open. Neither moves the map.
   const [selected, setSelected] = useState<Pin | null>(null);
   const [listOpen, setListOpen] = useState(false);
+  // True when the open restaurant was picked from the list, so "Back to list" is offered.
+  const [openedFromList, setOpenedFromList] = useState(false);
 
   const moveTo = useCallback(
     (target: MapRegion) => {
@@ -109,17 +111,36 @@ function ConfiguredMap() {
     if (myRegion) moveTo(myRegion);
   }, [myRegion, moveTo]);
 
-  // Selecting a flag does not move the map.
+  // Tapping a flag on the map does not move the map.
   const onSelectPin = useCallback((pin: Pin) => {
     setListOpen(false);
+    setOpenedFromList(false);
     setSelected(pin);
   }, []);
+  // Picking from the list does: a short move that centres the pin above the sheet.
+  const onSelectFromList = useCallback(
+    (pin: Pin) => {
+      setListOpen(false);
+      setOpenedFromList(true);
+      setSelected(pin);
+      moveTo(regionForPick(pin, region));
+    },
+    [moveTo, region],
+  );
   const onClearSelection = useCallback(() => {
     setSelected(null);
     setListOpen(false);
+    setOpenedFromList(false);
   }, []);
   const onOpenList = useCallback(() => {
     setSelected(null);
+    setOpenedFromList(false);
+    setListOpen(true);
+  }, []);
+  // "Back to list" leaves the map where it is.
+  const onBackToList = useCallback(() => {
+    setSelected(null);
+    setOpenedFromList(false);
     setListOpen(true);
   }, []);
   const onClusterPress = useCallback(
@@ -276,7 +297,9 @@ function ConfiguredMap() {
         listOpen={listOpen}
         pins={wideView ? NO_PINS : pins.pins}
         cuisineByCode={cuisineByCode}
-        onSelect={onSelectPin}
+        onSelect={onSelectFromList}
+        showBackToList={openedFromList}
+        onBackToList={onBackToList}
         onClose={onClearSelection}
       />
     </View>

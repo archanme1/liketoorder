@@ -485,7 +485,7 @@ describe('RestaurantSheet: Places in this area', () => {
     expect(rows).toEqual(['Chez Anne, France cuisine', "Joe's Pizza, Italy cuisine"]);
   });
 
-  it('selecting a row opens that restaurant, without moving the map', async () => {
+  it('selecting a row opens that restaurant and centres the map on it with a short move', async () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: 'Places in this area' }));
     snapToIndex.mockClear();
@@ -496,6 +496,40 @@ describe('RestaurantSheet: Places in this area', () => {
     expect(
       within(screen.getByTestId('sheet-title')).queryByText('Places in this area'),
     ).not.toBeOnTheScreen();
+    expect(snapToIndex).toHaveBeenCalledWith(1);
+    // One camera move, to the pin at neighbourhood zoom, a quarter-view south of it so the
+    // pin is not hidden behind the half-open sheet.
+    expect(animateToRegion).toHaveBeenCalledTimes(1);
+    const [target, duration] = animateToRegion.mock.calls[0];
+    expect(target.longitude).toBe(2.0);
+    expect(target.latitudeDelta).toBe(0.02);
+    expect(target.longitudeDelta).toBe(0.02);
+    expect(target.latitude).toBeCloseTo(46.0 - 0.02 * 0.25, 10);
+    expect(duration).toBeGreaterThan(0);
+    expect(duration).toBeLessThanOrEqual(1000);
+  });
+
+  it('keeps a zoom that is already close when picking from the list', async () => {
+    await renderScreen();
+    await act(async () => {
+      screen.getByTestId('map-view').props.onRegionChangeComplete({
+        latitude: 46,
+        longitude: 2,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+    });
+    await fireEvent.press(await screen.findByRole('button', { name: 'Places in this area' }));
+    const sheet = within(screen.getByTestId('bottom-sheet'));
+    await fireEvent.press(sheet.getByRole('button', { name: 'Chez Anne, France cuisine' }));
+    const [target] = animateToRegion.mock.calls[0];
+    expect(target.latitudeDelta).toBe(0.01);
+    expect(target.longitude).toBe(4.0);
+  });
+
+  it('does NOT move the map when a flag is tapped on the map', async () => {
+    await renderScreen();
+    await openJoes();
     expect(snapToIndex).toHaveBeenCalledWith(1);
     expect(animateToRegion).not.toHaveBeenCalled();
   });
@@ -528,5 +562,81 @@ describe('RestaurantSheet: Places in this area', () => {
     await fireEvent.press(await screen.findByRole('button', { name: 'Places in this area' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByTestId('sheet-title')).not.toBeOnTheScreen();
+  });
+});
+
+describe('RestaurantSheet: Back to list', () => {
+  const backToList = () => screen.queryByRole('button', { name: 'Back to list' });
+
+  async function openFromList() {
+    await fireEvent.press(await screen.findByRole('button', { name: 'Places in this area' }));
+    const sheet = within(screen.getByTestId('bottom-sheet'));
+    await fireEvent.press(sheet.getByRole('button', { name: "Joe's Pizza, Italy cuisine" }));
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
+  }
+
+  it('is offered, with Close, when the restaurant was picked from the list', async () => {
+    await renderScreen();
+    await openFromList();
+    const button = backToList();
+    expect(button).toBeOnTheScreen();
+    expect(StyleSheet.flatten(button?.props.style).minHeight).toBeGreaterThanOrEqual(44);
+    expect(screen.getByRole('button', { name: 'Close' })).toBeOnTheScreen();
+  });
+
+  it('is not offered when a flag was tapped on the map: only Close', async () => {
+    await renderScreen();
+    await openJoes();
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
+    expect(backToList()).not.toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeOnTheScreen();
+  });
+
+  it('returns to the list, keeps the sheet open and leaves the map where it is', async () => {
+    await renderScreen();
+    await openFromList();
+    animateToRegion.mockClear();
+    closeSheet.mockClear();
+    await fireEvent.press(backToList() as never);
+    expect(
+      within(screen.getByTestId('sheet-title')).getByText('Places in this area'),
+    ).toBeOnTheScreen();
+    expect(
+      within(screen.getByTestId('bottom-sheet')).getByRole('button', {
+        name: 'Chez Anne, France cuisine',
+      }),
+    ).toBeOnTheScreen();
+    expect(backToList()).not.toBeOnTheScreen();
+    expect(animateToRegion).not.toHaveBeenCalled();
+    expect(closeSheet).not.toHaveBeenCalled();
+    expect(screen.queryByText('100 King St, Oshawa, ON, Canada')).not.toBeOnTheScreen();
+  });
+
+  it('can pick another place from the list afterwards, and centres on it', async () => {
+    fetchDetails.mockImplementation(async (id) =>
+      id === 'b2'
+        ? details({ id: 'b2', name: 'Chez Anne', cuisine_code: 'FR', items: [], photos: [] })
+        : details(),
+    );
+    await renderScreen();
+    await openFromList();
+    await fireEvent.press(backToList() as never);
+    animateToRegion.mockClear();
+    const sheet = within(screen.getByTestId('bottom-sheet'));
+    await fireEvent.press(sheet.getByRole('button', { name: 'Chez Anne, France cuisine' }));
+    expect(within(screen.getByTestId('sheet-title')).getByText('Chez Anne')).toBeOnTheScreen();
+    expect(animateToRegion).toHaveBeenCalledTimes(1);
+    expect(animateToRegion.mock.calls[0][0].longitude).toBe(4.0);
+    expect(backToList()).toBeOnTheScreen();
+  });
+
+  it('is forgotten once the sheet is closed: a later flag tap shows only Close', async () => {
+    await renderScreen();
+    await openFromList();
+    await act(async () => screen.getByTestId('bottom-sheet').props.onClose());
+    expect(backToList()).not.toBeOnTheScreen();
+    await openJoes();
+    await screen.findByText('100 King St, Oshawa, ON, Canada');
+    expect(backToList()).not.toBeOnTheScreen();
   });
 });

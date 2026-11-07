@@ -83,3 +83,33 @@ export function roundBox(box: MapBox, decimals = 3): MapBox {
     maxLng: round(box.maxLng),
   };
 }
+
+/** A pick from the list keeps the person's zoom if they are already this close (degrees). */
+export const PICK_MAX_DELTA = 0.05;
+
+/** Share of the view height the sheet's half snap takes from the top of the pin's centre. */
+const SHEET_OFFSET = 0.25;
+
+/**
+ * Where the camera goes when a restaurant is picked from the "Places in this area" list: a short
+ * move that puts the pin in the middle of the part of the map the half-open sheet leaves
+ * uncovered (the upper half), at neighbourhood zoom. A view that is already closer than that
+ * keeps its zoom, so picking never zooms the person out.
+ */
+export function regionForPick(
+  point: { lat: number; lng: number },
+  current: MapRegion | null,
+): MapRegion {
+  const keepZoom =
+    current !== null &&
+    current.latitudeDelta <= PICK_MAX_DELTA &&
+    current.longitudeDelta <= PICK_MAX_DELTA;
+  const latitudeDelta = keepZoom ? current.latitudeDelta : NEIGHBOURHOOD_DELTA;
+  const longitudeDelta = keepZoom ? current.longitudeDelta : NEIGHBOURHOOD_DELTA;
+  return {
+    latitude: Math.min(90, Math.max(-90, point.lat - latitudeDelta * SHEET_OFFSET)),
+    longitude: point.lng,
+    latitudeDelta,
+    longitudeDelta,
+  };
+}

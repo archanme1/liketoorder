@@ -155,6 +155,15 @@ describe('usePinsInBounds', () => {
       expect(fetchPins).toHaveBeenCalledTimes(2);
     });
 
+    it('retry stays the same function across renders', async () => {
+      fetchPins.mockResolvedValue(answer('a'));
+      const { result, rerender } = await setup(boxA);
+      await waitFor(() => expect(ids(result)).toEqual(['a']));
+      const first = result.current.retry;
+      await rerender({ box: boxA });
+      expect(result.current.retry).toBe(first);
+    });
+
     it('is sent again when the box changes', async () => {
       fetchPins
         .mockRejectedValueOnce(new MapAppError('rate_limited'))

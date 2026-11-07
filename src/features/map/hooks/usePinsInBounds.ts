@@ -21,15 +21,15 @@ const unlessFailed = (query: Query<PinsResponse, MapAppError>) => query.state.st
  * area loads, and after a failure.
  */
 export function usePinsInBounds(box: MapBox | null) {
-  const rounded = useMemo(() => (box ? snapBox(box) : null), [box]);
+  const snapped = useMemo(() => (box ? snapBox(box) : null), [box]);
 
   const query = useQuery<PinsResponse, MapAppError>({
-    queryKey: rounded ? pinsKey(rounded) : ['map', 'pins', 'none'],
+    queryKey: snapped ? pinsKey(snapped) : ['map', 'pins', 'none'],
     queryFn: () => {
-      if (!rounded) throw new MapAppError('unknown');
-      return fetchPinsInBounds(rounded);
+      if (!snapped) throw new MapAppError('unknown');
+      return fetchPinsInBounds(snapped);
     },
-    enabled: rounded !== null,
+    enabled: snapped !== null,
     placeholderData: keepPreviousData,
     staleTime: 60_000,
     retry: (failureCount, error) => !NO_RETRY.has(error.code) && failureCount < 1,
@@ -47,9 +47,11 @@ export function usePinsInBounds(box: MapBox | null) {
   // While loading, keepPreviousData supplies the old pins; after a failure, the last good answer.
   const shown = query.data ?? (query.isError ? lastGood : null);
 
+  const { refetch } = query;
+
   const retry = useCallback(() => {
-    void query.refetch();
-  }, [query]);
+    void refetch();
+  }, [refetch]);
 
   return {
     pins: shown?.pins ?? EMPTY_PINS,

@@ -173,11 +173,12 @@ select is(
     where n.nspname = 'public'
       and has_function_privilege('authenticated', p.oid, 'execute')
       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')),
-  array['begin_photo_upload', 'claim_photo_cleanup', 'create_menu_item', 'create_my_business',
+  array['begin_photo_upload', 'cancel_pickup_request', 'claim_photo_cleanup', 'create_menu_item', 'create_my_business',
         'delete_business_photo', 'delete_menu_item', 'finish_photo_upload',
-        'get_homemade_details', 'get_my_business', 'get_restaurant_details', 'map_homemade_in_bounds', 'map_restaurants_in_bounds', 'move_menu_item',
-        'set_menu_currency', 'set_seller_mode', 'update_menu_item'],
-  'only the allowlisted public functions (specs 05, 06, 07, 08) are executable by authenticated'
+        'get_homemade_details', 'get_my_business', 'get_my_pickup_address', 'get_my_pickup_request',
+        'get_restaurant_details', 'list_my_pickup_requests', 'map_homemade_in_bounds', 'map_restaurants_in_bounds', 'move_menu_item',
+        'set_menu_currency', 'set_seller_mode', 'submit_pickup_request', 'update_menu_item'],
+  'only the allowlisted public functions (specs 05, 06, 07, 08, 09) are executable by authenticated'
 );
 select is(
   (select coalesce(array_agg(distinct p.proname::text order by p.proname::text), array[]::text[])
@@ -196,9 +197,9 @@ select is(
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'private'),
   array['business_is_public', 'caller_ip', 'cleanup_map_rate_limits', 'cleanup_places_refresh_quota', 'consume_map_quota',
-        'homemade_is_fresh', 'invoke_places_refresh', 'owns_business', 'photo_is_live', 'photo_is_public', 'photo_upload_allowed',
-        'restaurant_is_fresh'],
-  'the private schema holds exactly the five RLS helpers, the six spec 07 map helpers and the spec 08 homemade_is_fresh'
+        'expire_pickup_requests', 'homemade_is_fresh', 'invoke_places_refresh', 'owns_business', 'photo_is_live', 'photo_is_public',
+        'photo_upload_allowed', 'pickup_request_expiry', 'restaurant_is_fresh'],
+  'the private schema holds exactly the five RLS helpers, the six spec 07 map helpers, the spec 08 homemade_is_fresh and the two spec 09 pickup helpers'
 );
 select is_empty(
   $$ select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace

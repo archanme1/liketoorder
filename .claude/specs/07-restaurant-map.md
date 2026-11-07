@@ -433,6 +433,8 @@ Manual checks on a real build, kept here so the final manual run knows what is s
   - Directions to a real place (the seeded place IDs are fake).
   - `customMapStyle` on Android.
 
+**After the review fixes (2026-11-06, Archan):** the "Places in this area" list did not scroll at the half snap once it became the library's `BottomSheetFlatList`, while the details (a `BottomSheetScrollView`) did. The list is now a plain virtualised `FlatList` that renders the library's own `BottomSheetScrollView` (`useBottomSheetScrollableCreator`), so the list and the details share one scroll path and one bottom-space rule. The cause is not proven from the code (the library's lock logic treats both the same); the fix follows the library's own pattern for virtualised lists and needs the simulator re-check (list scrolls at half and full, last row above the tab bar, large text).
+
 ## Decisions
 1. **Two PRs** as above; PR 1 keeps the status 🚧, only PR 2 marks ✅ Shipped. (Archan, 2026-11-04)
 2. **Option A for the 30-day rule:** this spec builds the refresh job and the 30-day hide guard. The guard is the real protection; the job is the normal path. For the guard to hold, nothing else may hand out the coordinates, so direct reads of `businesses.map_lat`, `map_lng` and `public_address` are revoked from `anon` and `authenticated` (Decision 20). (Archan, 2026-11-04; extended 2026-11-05)

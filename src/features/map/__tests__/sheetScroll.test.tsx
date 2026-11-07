@@ -104,6 +104,14 @@ describe('snap heights and the space under the scrolling content', () => {
   });
 });
 
+/* eslint-disable @typescript-eslint/no-require-imports */
+const { __scrollableCreator: scrollableCreator, __flatListRenders: flatListRenders } =
+  require('@gorhom/bottom-sheet') as {
+    __scrollableCreator: jest.Mock;
+    __flatListRenders: jest.Mock;
+  };
+/* eslint-enable @typescript-eslint/no-require-imports */
+
 const joes: Pin = { id: 'b1', name: "Joe's Pizza", cuisine_code: 'IT', lat: 46.0, lng: 2.0 };
 
 async function renderScreen() {
@@ -180,5 +188,37 @@ describe('the sheet applies it', () => {
     await openSheet();
     await act(async () => screen.getByTestId('bottom-sheet').props.onAnimate(1, 2));
     expect(padding()).toBe(GAP);
+  });
+
+  describe('the "Places in this area" list follows the same rule', () => {
+    async function openList() {
+      await renderScreen();
+      await act(async () =>
+        fireEvent(screen.getByTestId('map-screen'), 'layout', {
+          nativeEvent: { layout: { x: 0, y: 0, width: 390, height: AREA } },
+        }),
+      );
+      await fireEvent.press(await screen.findByRole('button', { name: 'Places in this area' }));
+      await screen.findByTestId('sheet-scroll');
+    }
+
+    it('opens with the space for half, and follows the snap it moves to (same as the details)', async () => {
+      await openList();
+      expect(padding()).toBe(snaps[2] - snaps[1] + GAP);
+      await act(async () => screen.getByTestId('bottom-sheet').props.onChange(2));
+      expect(padding()).toBe(GAP);
+      await act(async () => screen.getByTestId('bottom-sheet').props.onChange(0));
+      expect(padding()).toBe(snaps[2] - snaps[0] + GAP);
+      await act(async () => screen.getByTestId('bottom-sheet').props.onAnimate(0, 2));
+      expect(padding()).toBe(GAP);
+    });
+
+    it("scrolls in the library's own scroll view, not its animated FlatList wrapper", async () => {
+      scrollableCreator.mockClear();
+      flatListRenders.mockClear();
+      await openList();
+      expect(scrollableCreator).toHaveBeenCalled();
+      expect(flatListRenders).not.toHaveBeenCalled();
+    });
   });
 });

@@ -211,6 +211,17 @@ jest.mock('@gorhom/bottom-sheet', () => {
   /* eslint-enable @typescript-eslint/no-require-imports */
   const snapToIndex = jest.fn();
   const close = jest.fn();
+  // useBottomSheetScrollableCreator() gives a scroll component for a plain virtualised list
+  // (renderScrollComponent). The fake is a ScrollView; `__scrollableCreator` counts the calls and
+  // `__flatListRenders` counts renders of the library's own BottomSheetFlatList.
+  const scrollableCreator = jest.fn();
+  const flatListRenders = jest.fn();
+  const creatorScroll = ({ data: _data, ...props }: { data?: unknown }) =>
+    React.createElement(ScrollView, props);
+  const BottomSheetFlatList = React.forwardRef(function MockFlatList(props: object, ref: unknown) {
+    flatListRenders();
+    return React.createElement(FlatList, { ...props, ref });
+  });
   const BottomSheet = React.forwardRef(function MockBottomSheet(
     props: { children?: unknown },
     ref: unknown,
@@ -222,7 +233,13 @@ jest.mock('@gorhom/bottom-sheet', () => {
     __esModule: true,
     default: BottomSheet,
     BottomSheetScrollView: ScrollView,
-    BottomSheetFlatList: FlatList,
+    BottomSheetFlatList,
+    useBottomSheetScrollableCreator: () => {
+      scrollableCreator();
+      return creatorScroll;
+    },
+    __scrollableCreator: scrollableCreator,
+    __flatListRenders: flatListRenders,
     useBottomSheetTimingConfigs: (config: object) => config,
     __snapToIndex: snapToIndex,
     __close: close,

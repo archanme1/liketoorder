@@ -22,6 +22,11 @@ import { BUSINESS_ID, makeRequest } from '../__fixtures__/requests';
 import { RequestAppError, submitPickupRequest } from '../api';
 import { NewRequestScreen } from '../components/NewRequestScreen';
 
+// The first test of this suite pays the cold cost of loading the whole form (react-native, the
+// query client, the native-module fakes). That takes ~0.3 s here but went past jest's 5 s default
+// on a loaded CI runner (the suite took 17 s there), so give every test in this file more room.
+jest.setTimeout(15_000);
+
 const mockRouter = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
 jest.mock('expo-router', () => ({ useRouter: () => mockRouter }));
 jest.mock('@/lib/supabase', () => ({

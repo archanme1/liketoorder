@@ -782,7 +782,7 @@ update public.business_locations set formatted_address = '99 New Rd, Newville' w
 set local role authenticated;
 select pg_temp.as_user(42);
 select is(public.get_my_pickup_address(pg_temp.r(306)) ->> 'formatted_address', '99 New Rd, Newville',
-  'current behaviour: inside the window the customer sees the cook''s current address, not the one at acceptance (spec 10 must snapshot it)');
+  'a request with no snapshot (accepted before spec 10) falls back to the cook''s current address inside the window');
 reset role;
 
 -- ── 14. Nothing private leaks ───────────────────────────────────────────────

@@ -204,3 +204,37 @@ describe('getPostAuthRoute', () => {
     );
   });
 });
+
+// Spec 09: /requests/* (the form, My requests, a request) sits in the root layout's `app` guard,
+// so it needs no code of its own here; these pin down who gets through.
+describe('getRouteAccess: the requests screens use the signed-in `app` access', () => {
+  it('a signed-in user with a complete profile can open them', () => {
+    expect(
+      getRouteAccess({ hasSession: true, isRecovering: false, profileComplete: true }).app,
+    ).toBe(true);
+  });
+
+  it('a signed-in user whose profile status is not known yet can open them (same as edit profile)', () => {
+    expect(getRouteAccess({ hasSession: true, isRecovering: false }).app).toBe(true);
+  });
+
+  it.each([
+    ['a guest', { hasSession: false, isRecovering: false }],
+    [
+      'a guest passed profileComplete',
+      { hasSession: false, isRecovering: false, profileComplete: true },
+    ],
+    ['someone mid-password-reset', { hasSession: true, isRecovering: true, profileComplete: true }],
+    [
+      'someone with no username yet',
+      { hasSession: true, isRecovering: false, profileComplete: false },
+    ],
+  ])('%s cannot', (_label, input) => {
+    expect(getRouteAccess(input).app).toBe(false);
+  });
+
+  it('a signed-in guest who tapped Request pickup lands on Profile by default after sign-in', () => {
+    const access = getRouteAccess({ hasSession: true, isRecovering: false, profileComplete: true });
+    expect(getPostAuthRoute(access)).toBe('/profile');
+  });
+});

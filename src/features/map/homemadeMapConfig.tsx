@@ -1,6 +1,7 @@
 import type { BusinessMapConfig } from './businessMapConfig';
 import { HomemadeMarker } from './components/HomemadeMarker';
 import { HomemadeSheetDetails } from './components/HomemadeSheetDetails';
+import { HomemadeSheetActions } from './components/SheetActions';
 import { HOMEMADE_THINGS } from './homemadeText';
 import { useHomemadeInBounds } from './hooks/useHomemadeInBounds';
 import { HOMEMADE_REGION_KEY } from './lastRegion';
@@ -23,4 +24,5 @@ export const homemadeMapConfig: BusinessMapConfig = {
   usePins: useHomemadeInBounds,
   renderMarker: (props) => <HomemadeMarker {...props} />,
   DetailsBody: HomemadeSheetDetails,
+  Actions: HomemadeSheetActions,
 };

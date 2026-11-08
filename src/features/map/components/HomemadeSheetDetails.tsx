@@ -23,8 +23,9 @@ import { useCoverAndGallery } from './SheetPhotos';
 
 // The body of the sheet for one home cook: loading, not available, error with Retry, or (menu
 // first, spec 08 Decision 15) the cover banner, the small food-safety row, menu pages, menu items,
-// gallery, and at the very bottom the "approximate area" note. On purpose there is no address,
-// no Directions and no Request or Report buttons (those arrive in specs 09, 11 and 17).
+// gallery, and at the very bottom the "approximate area" note. Actions (Request pickup) are not
+// here: they live in the sheet's fixed row under the header (SheetActions). On purpose there is no
+// address and no Directions here; Report arrives in spec 17.
 export function HomemadeSheetDetails({ id, onClose, closeLabel = 'Close' }: SheetBodyProps) {
   const { space, size, type } = useTheme();
   const details = useHomemadeDetails(id);

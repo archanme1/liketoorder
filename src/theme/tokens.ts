@@ -71,6 +71,9 @@ export const viewer = {
   control: 'rgba(255, 255, 255, 0.16)',
 };
 
+// The dim layer behind a modal dialog (the pickup time picker): the page stays visible but muted.
+export const scrim = 'rgba(0, 0, 0, 0.4)';
+
 export const theme = {
   colors,
   space,
@@ -82,6 +85,7 @@ export const theme = {
   stroke,
   mapArea,
   viewer,
+  scrim,
 };
 
 export type Theme = typeof theme;

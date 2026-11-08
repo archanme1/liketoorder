@@ -252,3 +252,32 @@ jest.mock('@gorhom/bottom-sheet', () => {
     __close: close,
   };
 });
+
+// ── Spec 09 idempotency keys ──
+// randomUUID returns a fresh, valid v4-shaped uuid each call (counter-based, so tests can compare
+// keys). Tests override with jest.mocked(randomUUID).mockReturnValue(...) or their own jest.mock.
+jest.mock('expo-crypto', () => {
+  let counter = 0;
+  return {
+    randomUUID: jest.fn(() => {
+      counter += 1;
+      return `00000000-0000-4000-8000-${String(counter).padStart(12, '0')}`;
+    }),
+  };
+});
+
+// ── Spec 09 pickup time: the native date and time picker ──
+// The default export renders a plain View (testID "datetimepicker-<mode>") that keeps every prop,
+// so tests can read minimumDate / maximumDate / minuteInterval / display / timeZoneName and call
+// onValueChange(event, date) themselves. DateTimePickerAndroid.open is a jest.fn: tests read its
+// argument and call onValueChange to play a dialog being answered.
+jest.mock('@react-native-community/datetimepicker', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { createElement } = require('react');
+  const { View } = require('react-native');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const DateTimePicker = (props: { mode?: string }) =>
+    createElement(View, { testID: `datetimepicker-${props.mode ?? 'date'}`, ...props });
+  const DateTimePickerAndroid = { open: jest.fn(), dismiss: jest.fn(async () => true) };
+  return { __esModule: true, default: DateTimePicker, DateTimePickerAndroid };
+});

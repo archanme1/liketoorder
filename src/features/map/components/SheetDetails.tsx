@@ -27,7 +27,8 @@ type SheetDetailsProps = {
 
 // The body of the sheet for one restaurant: loading, not available, error with Retry, or (menu
 // first, spec 08 Decision 15) the cover banner, menu pages, menu items, gallery, and at the very
-// bottom the address and Directions. Only what exists today: no Request or Report buttons.
+// bottom the address and Directions. Actions (Request pickup) are not here: they live in the
+// sheet's fixed row under the header (SheetActions), outside this scrolling content.
 export function SheetDetails({ id, onClose, closeLabel = 'Close' }: SheetDetailsProps) {
   const { space, size, type } = useTheme();
   const details = useRestaurantDetails(id);

@@ -6,6 +6,7 @@ import type { MapErrorCode } from './api';
 import { FlagMarker } from './components/FlagMarker';
 import { PLACES_TITLE, NO_PLACES_MESSAGE } from './components/PlacesList';
 import type { SheetBodyProps } from './components/RestaurantSheet';
+import { RestaurantSheetActions, type SheetActionsProps } from './components/SheetActions';
 import { SheetDetails } from './components/SheetDetails';
 import { ZOOM_IN_MESSAGE } from './components/MapNotices';
 import { REGION_KEY } from './lastRegion';
@@ -58,6 +59,8 @@ export type BusinessMapConfig = {
   usePins: (box: MapBox | null) => PinsResult;
   renderMarker: (props: MarkerProps) => ReactNode;
   DetailsBody: (props: SheetBodyProps) => ReactNode;
+  /** The sheet's fixed action row for the open business. */
+  Actions: (props: SheetActionsProps) => ReactNode;
 };
 
 export const restaurantMapConfig: BusinessMapConfig = {
@@ -78,4 +81,5 @@ export const restaurantMapConfig: BusinessMapConfig = {
     <FlagMarker pin={pin} cuisine={cuisine} selected={selected} onSelect={onSelect} />
   ),
   DetailsBody: SheetDetails,
+  Actions: RestaurantSheetActions,
 };

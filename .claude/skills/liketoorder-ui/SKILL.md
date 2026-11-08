@@ -33,15 +33,17 @@ Provide a dark variant later; always read colors through a `useTheme()` hook so 
 `Screen` (safe area + bg) · `Text` (variants) · `Button` (primary/secondary/ghost, loading state) · `Card` · `Chip` · `StatusChip` · `Avatar` · `FlagIcon` (ISO code → bundled asset) · `EmptyState` · `ErrorState` (with Retry) · `Skeleton` · `TextField` (react-hook-form compatible) · `Sheet` (wraps @gorhom/bottom-sheet).
 
 ## Request status chips — never ambiguous
+Use `StatusChip` (`src/components/ui`), fed by `STATUS_INFO` in `src/features/requests/status.ts`. The status shown is always the server's `display_status`.
 | Status | Label | Color | Icon |
 |---|---|---|---|
-| pending | "Waiting for <business>" | warning | clock |
+| pending | "Waiting" (sentence: "Waiting for <business> to respond") | warning | clock |
 | accepted | "Accepted" | success | check |
 | declined | "Declined" | danger | x |
-| expired | "No response — expired" | textMuted | hourglass |
-| cancelled | "Cancelled" | textMuted | slash |
+| expired | "Expired" | textMuted | hourglass |
+| cancelled | "Cancelled" | textMuted | ban |
 | completed | "Completed" | info | bag |
-Always icon + text, never color alone. Pending screens must say the request is **not confirmed yet**.
+| no_show | "No-show" | danger | alert |
+Always icon + text, never color alone. A pending request is never described as confirmed, booked or on its way: no "confirmed" wording anywhere, including screen-reader labels (spec 09).
 
 ## Activity grid visuals
 - Square 12–14pt with 3pt gap, radius 3. Week columns, Sun→Sat rows; month labels above.
@@ -54,6 +56,12 @@ Always icon + text, never color alone. Pending screens must say the request is *
 
 ## Screen states
 Every data screen: `Skeleton` while loading → `EmptyState` (friendly line + action) → `ErrorState` with Retry → content. Pull-to-refresh on lists.
+
+## Primary actions live in the fixed top part
+On a screen or sheet that scrolls, the primary actions sit in the **fixed** part, outside the scrolling content, where they stay on screen (the request form's Send bar under the title; the map sheet's action row under the name / flag / cuisine header). One or two buttons in a row that wraps at large text (`SheetActionRow` for sheets), no fixed heights, 44 pt targets, labels that name the business. In a bottom sheet the row is hidden at the collapsed peek snap, which has room for the header only. Never bury a primary action at the bottom of a scrolling body, and never reserve space for an action that isn't there.
+
+## Lists that can grow are infinite lists
+A list that can grow without a cap (My requests today; the seller inbox in spec 10 and table requests in spec 11 next) loads a page at a time with `useInfiniteQuery` and a `FlatList`: load the next page near the end (`onEndReached`, once at a time), a small footer spinner while it loads, and on failure an inline "Try again" in the footer that keeps the rows already loaded. A full-screen error is only for a first load that failed; a failed refresh with rows on screen is a small banner. Pull-to-refresh starts again from page 1. Show each row once (de-duplicate by id). Lists capped by the database (menu items, photos) or by a reference table (currencies, cuisines) can render all rows.
 
 ## Imagery
 `expo-image` with `contentFit="cover"`, blurhash/placeholder, fixed aspect ratios (1:1 food log, 4:3 menu photos). Never stretch.

@@ -33,7 +33,7 @@ language sql stable security definer set search_path = '' as $$
                      else '{}'::jsonb end
     from public.pickup_requests r
     join public.businesses bz on bz.id = r.business_id
-    join public.profiles p on p.id = r.customer_id
+    left join public.profiles p on p.id = r.customer_id
    cross join lateral (
      select jsonb_build_object(
               'id', r.id, 'business_id', r.business_id, 'business_name', bz.name, 'business_type', bz.type,
@@ -272,8 +272,10 @@ grant execute on function public.cancel_pickup_request(uuid) to authenticated;
 -- ── get_my_pickup_address (now returns the snapshot) ──────────────────────────
 -- Same gates as spec 09: the requesting customer, accepted or completed, homemade and listed, until
 -- 24 hours after the pickup time; null for every other reason, identically; not behind the 30-day
--- map guard. It returns the address copied when the cook accepted. A row accepted before this
--- migration has no snapshot, so it falls back to the cook's current address (Decision 16).
+-- map guard. It returns the address copied when the cook accepted. Only a row never answered through
+-- respond_to_request (responded_at is null: accepted before this migration) has no snapshot and falls
+-- back to the cook's current address (Decision 16). A request accepted through respond_to_request while
+-- the cook had no location row keeps a null snapshot and never picks up an address saved later.
 -- Known: while the cook is unlisted an accepted customer gets null (the is_listed gate stays; v1 §16).
 create or replace function public.get_my_pickup_address(p_request_id uuid) returns jsonb
 language plpgsql security definer set search_path = '' as $$
@@ -283,7 +285,7 @@ declare
 begin
   if v_uid is null then raise exception 'not_signed_in'; end if;
 
-  select coalesce(r.accepted_address, l.formatted_address) into v_addr
+  select coalesce(r.accepted_address, case when r.responded_at is null then l.formatted_address end) into v_addr
     from public.pickup_requests r
     join public.businesses b on b.id = r.business_id
     left join public.business_locations l on l.business_id = b.id
@@ -425,7 +427,9 @@ begin
            where x.business_id = v_biz
              and (v_at is null or (x.created_at, x.id) < (v_at, v_cid))
              and (v_status is null
-                  or (case when x.status = 'pending' and x.expires_at <= v_now then 'expired' else x.status end) = v_status)
+                  or (v_status = 'pending' and x.status = 'pending' and x.expires_at > v_now)
+                  or (v_status = 'expired' and (x.status = 'expired' or (x.status = 'pending' and x.expires_at <= v_now)))
+                  or (v_status not in ('pending', 'expired') and x.status = v_status))
            order by x.created_at desc, x.id desc
            limit 51) t;
 
@@ -484,3 +488,17 @@ begin
 end $$;
 revoke execute on function public.count_waiting_requests() from public, anon, authenticated;
 grant execute on function public.count_waiting_requests() to authenticated;
+
+-- ── Address snapshot retention ────────────────────────────────────────────────
+-- The exact address is only readable until 24 hours after the pickup time (get_my_pickup_address).
+-- The every-minute expiry job also clears the snapshot at that line, so a cook's home address does not
+-- stay on old rows. Same function and same cron job as spec 09 (create or replace keeps the grants;
+-- they are repeated). Cleared at pickup_at <= now() - 24 h, the line where the read window closes.
+create or replace function private.expire_pickup_requests() returns void
+language sql security definer set search_path = '' as $$
+  update public.pickup_requests set status = 'expired'
+   where status = 'pending' and expires_at <= now();
+  update public.pickup_requests set accepted_address = null
+   where accepted_address is not null and pickup_at <= now() - interval '24 hours';
+$$;
+revoke execute on function private.expire_pickup_requests() from public, anon, authenticated, service_role;

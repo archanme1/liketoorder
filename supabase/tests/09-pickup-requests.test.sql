@@ -324,7 +324,7 @@ select throws_ok($$ update public.pickup_requests set customer_id = pg_temp.u(2)
   'the customer cannot update customer_id');
 select throws_ok($$ delete from public.pickup_requests where id = pg_temp.r(1) $$, '42501', null, 'the customer cannot delete a request');
 select pg_temp.as_user(5);
-select throws_ok($$ select * from public.pickup_requests $$, '42501', null, 'the business owner cannot select requests (spec 10 adds a function)');
+select throws_ok($$ select * from public.pickup_requests $$, '42501', null, 'the business owner cannot select requests (sellers use functions only)');
 select throws_ok($$ update public.pickup_requests set status = 'accepted' where id = pg_temp.r(1) $$, '42501', null,
   'the business owner cannot update status directly');
 select throws_ok($$ delete from public.pickup_requests where id = pg_temp.r(1) $$, '42501', null, 'the business owner cannot delete a request');

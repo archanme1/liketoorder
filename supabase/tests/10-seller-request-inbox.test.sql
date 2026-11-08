@@ -5,7 +5,7 @@
 -- now() exactly. Calls that are expected to fail go through helpers that return the error text, so a
 -- broken function turns a NAMED assertion red instead of aborting the file.
 begin;
-select plan(229);
+select plan(247);
 
 -- ── Helpers (pg_temp) ───────────────────────────────────────────────────────
 -- Ids:  users 00000000-0000-0000-0010-<n>   businesses …-0410-<n>   requests …-0610-<n>   keys …-0710-<n>
@@ -113,6 +113,33 @@ language sql security definer set search_path = '' as $$
      and (disp is null or (case when r.status = 'pending' and r.expires_at <= now() then 'expired' else r.status end) = disp);
 $$;
 
+-- Customer-side wrappers: the result, or { "error": message }.
+create function pg_temp.sub_j(p_biz int, p_key int, p_text text) returns jsonb language plpgsql as $$
+begin return public.submit_pickup_request(pg_temp.b(p_biz), pg_temp.k(p_key), now() + interval '2 hours', null, p_text, null);
+exception when others then return jsonb_build_object('error', sqlerrm); end $$;
+create function pg_temp.myget_j(p_id uuid) returns jsonb language plpgsql as $$
+begin return public.get_my_pickup_request(p_id) -> 'request';
+exception when others then return jsonb_build_object('error', sqlerrm); end $$;
+create function pg_temp.mylist_j() returns jsonb language plpgsql as $$
+begin return public.list_my_pickup_requests();
+exception when others then return jsonb_build_object('error', sqlerrm); end $$;
+create function pg_temp.mycancel_j(p_id uuid) returns jsonb language plpgsql as $$
+begin return public.cancel_pickup_request(p_id);
+exception when others then return jsonb_build_object('error', sqlerrm); end $$;
+
+-- The lock clause for real: comments are stripped, then the row select must end in `for update`
+-- and come before the first update of the table.
+create function pg_temp.locks_first(p_fn regprocedure, p_filter text) returns boolean language sql as $$
+  with d as (select regexp_replace(regexp_replace(pg_get_functiondef(p_fn), '/\*.*?\*/', '', 'g'), '--[^\n]*', '', 'g') as t),
+       m as (select t, (regexp_match(t, '(' || p_filter || '\s+for update)'))[1] as clause from d)
+  select coalesce(clause is not null
+                  and position(clause in t) < position('update public.pickup_requests' in t), false)
+    from m;
+$$;
+
+create function pg_temp.rowsig(n int) returns jsonb language sql security definer set search_path = '' as $$
+  select to_jsonb(r) - 'accepted_address' from public.pickup_requests r where r.id = pg_temp.r(n); $$;
+
 create temp table res (label text primary key, j jsonb);
 grant all on res to public;
 
@@ -127,6 +154,9 @@ insert into auth.users (id, email)
 select pg_temp.u(n), 'p10_' || n || '@example.test' from generate_series(1, 14) n;
 update public.profiles set username = 'p10_' || right(id::text, 3) where id::text like '00000000-0000-0000-0010-%';
 update public.profiles set display_name = 'Cust One' where id = pg_temp.u(1);
+-- Seller mode: off for the owners of the unlisted businesses (7 and 9), on for the others.
+update public.profiles set is_seller = (id not in (pg_temp.u(7), pg_temp.u(9)))
+ where id in (select pg_temp.u(n) from generate_series(4, 12) n);
 
 insert into public.businesses (id, owner_id, type, name, cuisine_code, map_lat, map_lng, public_address, is_listed, currency_code) values
   (pg_temp.b(1),  pg_temp.u(4),  'restaurant', 'Resto One',       'IT', 71.1, 101.1, '1 Main St, Tromso', true,  'CAD'),
@@ -228,6 +258,14 @@ select pg_temp.mk(1200 + n, 7, 1, 'cancelled', interval '1 day', interval '1 hou
 select pg_temp.mk(2000 + n, 8, 1, 'cancelled', interval '1 day', interval '1 hour', null, (select t from paging_t))
   from generate_series(1, 100) n;
 -- Cron fixtures
+-- Snapshot retention (homemade B2, snapshots set): around the 24-hour line, now() is frozen so it is exact.
+select pg_temp.mk(100, 2, 1, 'accepted',  interval '-25 hours', interval '-26 hours', '2 Secret Rd, Homeville');
+select pg_temp.mk(101, 2, 1, 'completed', interval '-25 hours', interval '-26 hours', '2 Secret Rd, Homeville');
+select pg_temp.mk(102, 2, 1, 'no_show',   interval '-25 hours', interval '-26 hours', '2 Secret Rd, Homeville');
+select pg_temp.mk(103, 2, 1, 'accepted',  interval '-23 hours', interval '-24 hours', '2 Secret Rd, Homeville');
+select pg_temp.mk(104, 2, 1, 'accepted',  interval '-24 hours', interval '-25 hours', '2 Secret Rd, Homeville');   -- exactly 24 h
+select pg_temp.mk(105, 2, 1, 'accepted',  interval '-23 hours 59 minutes 59 seconds', interval '-25 hours', '2 Secret Rd, Homeville');
+update public.pickup_requests set responded_at = now() - interval '27 hours' where id between pg_temp.r(100) and pg_temp.r(105);
 select pg_temp.mk(90, 1, 1, 'accepted', interval '3 hours', interval '-1 hour');
 select pg_temp.mk(91, 1, 1, 'pending',  interval '3 hours', interval '-1 hour');
 
@@ -288,9 +326,18 @@ select throws_ok($$ delete from public.pickup_requests where id = pg_temp.r(10) 
 select pg_temp.as_user(1);       -- the customer
 select throws_ok($$ update public.pickup_requests set accepted_address = 'x' where id = pg_temp.r(10) $$, '42501', null, 'the customer cannot update accepted_address');
 select throws_ok($$ select accepted_address from public.pickup_requests $$, '42501', null, 'the customer cannot select accepted_address');
+select throws_ok($$ update public.pickup_requests set status = 'accepted' where id = pg_temp.r(10) $$, '42501', null, 'the customer cannot update status');
+select throws_ok($$ insert into public.pickup_requests (business_id, customer_id, pickup_at, expires_at, idempotency_key, order_text)
+                    values (pg_temp.b(1), pg_temp.u(1), now() + interval '1 hour', now() + interval '30 minutes', gen_random_uuid(), 'x') $$,
+  '42501', null, 'the customer cannot insert a request');
+select throws_ok($$ delete from public.pickup_requests where id = pg_temp.r(10) $$, '42501', null, 'the customer cannot delete a request');
 select pg_temp.as_user(3);       -- an outsider
 select throws_ok($$ select * from public.pickup_requests $$, '42501', null, 'an outsider cannot select the table');
 select throws_ok($$ update public.pickup_requests set status = 'accepted' where id = pg_temp.r(10) $$, '42501', null, 'an outsider cannot update status');
+select throws_ok($$ insert into public.pickup_requests (business_id, customer_id, pickup_at, expires_at, idempotency_key, order_text)
+                    values (pg_temp.b(1), pg_temp.u(3), now() + interval '1 hour', now() + interval '30 minutes', gen_random_uuid(), 'x') $$,
+  '42501', null, 'an outsider cannot insert a request');
+select throws_ok($$ delete from public.pickup_requests where id = pg_temp.r(10) $$, '42501', null, 'an outsider cannot delete a request');
 reset role;
 set local role anon;
 set local request.jwt.claims = '{"role":"anon"}';
@@ -465,42 +512,53 @@ select is(pg_temp.snap(40), '2 Secret Rd, Homeville', 'accepting stores the cook
 select is(pg_temp.snap(41), null, 'declining stores no address');
 set local role authenticated;
 select pg_temp.as_user(1);
-select is(public.get_my_pickup_address(pg_temp.r(40)), '{"formatted_address": "2 Secret Rd, Homeville"}'::jsonb, 'the customer reads the snapshot');
+select is(pg_temp.addr_j(40), '{"formatted_address": "2 Secret Rd, Homeville"}'::jsonb, 'the customer reads the snapshot');
 reset role;
 update public.business_locations set formatted_address = '99 New Rd, Newville' where business_id = pg_temp.b(2);
 set local role authenticated;
 select pg_temp.as_user(1);
-select is(public.get_my_pickup_address(pg_temp.r(40)) ->> 'formatted_address', '2 Secret Rd, Homeville',
+select is(pg_temp.addr_j(40) ->> 'formatted_address', '2 Secret Rd, Homeville',
   'after the cook moves, the customer still sees the address from the time of acceptance');
-select is(public.get_my_pickup_address(pg_temp.r(42)) ->> 'formatted_address', '99 New Rd, Newville',
+select is(pg_temp.addr_j(42) ->> 'formatted_address', '99 New Rd, Newville',
   'a row accepted before spec 10 (no snapshot) falls back to the current address');
-select is(public.get_my_pickup_address(pg_temp.r(44)) ->> 'formatted_address', '2 Secret Rd, Homeville', 'a completed request 23 hours after pickup still gets the snapshot');
-select is(public.get_my_pickup_address(pg_temp.r(43)), null, 'an accepted request 25 hours after pickup gets nothing');
-select is(public.get_my_pickup_address(pg_temp.r(45)), null, 'no_show gets nothing, even with a snapshot');
-select is(public.get_my_pickup_address(pg_temp.r(41)), null, 'declined gets nothing');
-select is(public.get_my_pickup_address(pg_temp.r(46)), null, 'pending gets nothing');
-select is(public.get_my_pickup_address(pg_temp.r(47)), null, 'cancelled gets nothing');
-select is(public.get_my_pickup_address(pg_temp.r(48)), null, 'expired gets nothing');
-select is(public.get_my_pickup_address(pg_temp.r(11)), null, 'an accepted restaurant request gets nothing');
-select is(pg_temp.keys(public.get_my_pickup_address(pg_temp.r(40))), array['formatted_address'], 'the address answer has only formatted_address');
+select is(pg_temp.addr_j(44) ->> 'formatted_address', '2 Secret Rd, Homeville', 'a completed request 23 hours after pickup still gets the snapshot');
+select is(pg_temp.addr_j(43), '{"none": true}'::jsonb, 'an accepted request 25 hours after pickup gets nothing');
+select is(pg_temp.addr_j(45), '{"none": true}'::jsonb, 'no_show gets nothing, even with a snapshot');
+select is(pg_temp.addr_j(41), '{"none": true}'::jsonb, 'declined gets nothing');
+select is(pg_temp.addr_j(46), '{"none": true}'::jsonb, 'pending gets nothing');
+select is(pg_temp.addr_j(47), '{"none": true}'::jsonb, 'cancelled gets nothing');
+select is(pg_temp.addr_j(48), '{"none": true}'::jsonb, 'expired gets nothing');
+select is(pg_temp.addr_j(11), '{"none": true}'::jsonb, 'an accepted restaurant request gets nothing');
+select is(pg_temp.keys(pg_temp.addr_j(40)), array['formatted_address'], 'the address answer has only formatted_address');
 select pg_temp.as_user(2);
-select is(public.get_my_pickup_address(pg_temp.r(40)), null, 'another customer gets no address');
+select is(pg_temp.addr_j(40), '{"none": true}'::jsonb, 'another customer gets no address');
 select pg_temp.as_user(6);
-select is(public.get_my_pickup_address(pg_temp.r(40)), null, 'another seller gets no address');
+select is(pg_temp.addr_j(40), '{"none": true}'::jsonb, 'another seller gets no address');
 select pg_temp.as_user(5);
-select is(public.get_my_pickup_address(pg_temp.r(40)), null, 'even the cook gets nothing from the customer''s address function');
+select is(pg_temp.addr_j(40), '{"none": true}'::jsonb, 'even the cook gets nothing from the customer''s address function');
 select pg_temp.as_user(3);
-select is(public.get_my_pickup_address(pg_temp.r(40)), null, 'an outsider gets no address');
+select is(pg_temp.addr_j(40), '{"none": true}'::jsonb, 'an outsider gets no address');
 reset role;
 
 -- ── 11. No location row, unlisted, stale, seller mode off ───────────────────
+select ok(not (select is_seller from public.profiles where id = pg_temp.u(7))
+      and not (select is_seller from public.profiles where id = pg_temp.u(9))
+      and (select is_seller from public.profiles where id = pg_temp.u(8)),
+  'seller mode is off for the unlisted sellers (7 and 9) and on for the stale seller (8)');
 set local role authenticated;
 select pg_temp.as_user(12);       -- homemade cook with no business_locations row
 select is(pg_temp.resp(51, 'accepted'), 'OK', 'accepting is not blocked when the location row is missing');
 select pg_temp.as_user(1);
-select is(public.get_my_pickup_address(pg_temp.r(51)), null, 'the customer then gets no address');
+select is(pg_temp.addr_j(51), '{"none": true}'::jsonb, 'the customer then gets no address');
 reset role;
 select is(pg_temp.snap(51), null, 'and no snapshot was stored');
+insert into public.business_locations (business_id, place_id, formatted_address, lat, lng, resolved_at, place_status)
+values (pg_temp.b(9), 'q9', '9 Late Rd, Latetown', 71.9, 101.9, now(), 'ok');
+set local role authenticated;
+select pg_temp.as_user(1);
+select is(pg_temp.addr_j(51), '{"none": true}'::jsonb,
+  'a location saved after the accept is never shown: the request was answered, so there is no fallback to the live address');
+reset role;
 set local role authenticated;
 select pg_temp.as_user(9);        -- unlisted homemade cook (seller mode off)
 select is(pg_temp.list_j() -> 'requests' -> 0 ->> 'id', pg_temp.r(50)::text, 'an unlisted cook still sees the requests already sent');
@@ -511,12 +569,12 @@ reset role;
 select is(pg_temp.snap(50), '6 Secret Rd, Hiddenville', 'the snapshot is stored for an unlisted cook');
 set local role authenticated;
 select pg_temp.as_user(1);
-select is(public.get_my_pickup_address(pg_temp.r(50)), null, 'the customer sees no address while the cook is unlisted (the is_listed gate stays)');
+select is(pg_temp.addr_j(50), '{"none": true}'::jsonb, 'the customer sees no address while the cook is unlisted (the is_listed gate stays)');
 reset role;
 update public.businesses set is_listed = true where id = pg_temp.b(6);
 set local role authenticated;
 select pg_temp.as_user(1);
-select is(public.get_my_pickup_address(pg_temp.r(50)) ->> 'formatted_address', '6 Secret Rd, Hiddenville', 'once the cook is listed again the snapshot shows');
+select is(pg_temp.addr_j(50) ->> 'formatted_address', '6 Secret Rd, Hiddenville', 'once the cook is listed again the snapshot shows');
 select pg_temp.as_user(7);        -- unlisted restaurant
 select is(pg_temp.resp(52, 'accepted'), 'OK', 'an unlisted restaurant can accept an already-sent request');
 select is(pg_temp.resp(56, 'declined'), 'OK', 'and decline one');
@@ -552,16 +610,12 @@ reset role;
 select is(pg_temp.st(60), 'cancelled', 'cancelled stays cancelled');
 select is(pg_temp.st(61), 'accepted', 'accepted stays accepted');
 select is(pg_temp.st(62), 'declined', 'declined stays declined');
-select ok(position('for update' in pg_get_functiondef('public.respond_to_request(uuid, text)'::regprocedure)) > 0
-      and position('for update' in pg_get_functiondef('public.respond_to_request(uuid, text)'::regprocedure))
-        < position('update public.pickup_requests' in pg_get_functiondef('public.respond_to_request(uuid, text)'::regprocedure)),
-  'respond_to_request locks the row before it updates');
-select ok(position('for update' in pg_get_functiondef('public.mark_request_outcome(uuid, text)'::regprocedure)) > 0
-      and position('for update' in pg_get_functiondef('public.mark_request_outcome(uuid, text)'::regprocedure))
-        < position('update public.pickup_requests' in pg_get_functiondef('public.mark_request_outcome(uuid, text)'::regprocedure)),
-  'mark_request_outcome locks the row before it updates');
-select ok(position('for update' in pg_get_functiondef('public.cancel_pickup_request(uuid)'::regprocedure)) > 0,
-  'cancel_pickup_request still locks the row (the same lock, so exactly one side wins)');
+select ok(pg_temp.locks_first('public.respond_to_request(uuid, text)'::regprocedure, 'r\.business_id = v_b\.id'),
+  'respond_to_request locks the row (the business filter is followed by for update) before it updates');
+select ok(pg_temp.locks_first('public.mark_request_outcome(uuid, text)'::regprocedure, 'r\.business_id = v_biz'),
+  'mark_request_outcome locks the row (the business filter is followed by for update) before it updates');
+select ok(pg_temp.locks_first('public.cancel_pickup_request(uuid)'::regprocedure, 'r\.customer_id = v_uid'),
+  'cancel_pickup_request locks the row (the same lock, so exactly one side wins)');
 
 -- ── 13. The list: cursor, ties, filters ─────────────────────────────────────
 set local role authenticated;
@@ -632,10 +686,10 @@ select is((select jsonb_array_length(j -> 'ids') from res where label = 'f_none'
 -- ── 14. Request objects: exact key sets ─────────────────────────────────────
 set local role authenticated;
 select pg_temp.as_user(13);       -- a customer with no fixtures
-insert into res select 'c_submit', public.submit_pickup_request(pg_temp.b(1), pg_temp.k(5000), now() + interval '2 hours', null, 'soup please', null);
-insert into res select 'c_get', public.get_my_pickup_request((select (j ->> 'id')::uuid from res where label = 'c_submit')) -> 'request';
-insert into res select 'c_list', (public.list_my_pickup_requests() -> 'requests' -> 0);
-insert into res select 'c_cancel', public.cancel_pickup_request((select (j ->> 'id')::uuid from res where label = 'c_submit'));
+insert into res select 'c_submit', pg_temp.sub_j(1, 5000, 'soup please');
+insert into res select 'c_get', pg_temp.myget_j((select (j ->> 'id')::uuid from res where label = 'c_submit'));
+insert into res select 'c_list', (pg_temp.mylist_j() -> 'requests' -> 0);
+insert into res select 'c_cancel', pg_temp.mycancel_j((select (j ->> 'id')::uuid from res where label = 'c_submit'));
 select pg_temp.as_user(4);
 insert into res select 's_get', pg_temp.get_j(10) -> 'request';
 insert into res select 's_list', (pg_temp.list_j() -> 'requests' -> 0);
@@ -666,8 +720,8 @@ insert into res select 'h_resp', pg_temp.resp_j(46, 'accepted');
 select pg_temp.as_user(4);
 insert into res select 's_c2', pg_temp.get_j(70) -> 'request';
 select pg_temp.as_user(1);
-insert into res select 'c_get40', public.get_my_pickup_request(pg_temp.r(40)) -> 'request';
-insert into res select 'c_list40', public.list_my_pickup_requests();
+insert into res select 'c_get40', pg_temp.myget_j(pg_temp.r(40));
+insert into res select 'c_list40', pg_temp.mylist_j();
 reset role;
 select is((select j ->> 'customer_name' from res where label = 's_get'), 'Cust One', 'customer_name is the display name');
 select is((select j ->> 'customer_name' from res where label = 's_c2'), 'p10_002', 'customer_name falls back to the username when there is no display name');
@@ -688,9 +742,25 @@ select is((select j -> 'customer_id' from res where label = 's_get'), null, 'the
 
 -- ── 16. The expiry job leaves answered requests alone ───────────────────────
 select is(pg_temp.cron_field('pickup-requests-expire', 'schedule'), '* * * * *', 'the expiry job is still scheduled every minute');
+insert into res select 'rs' || n, pg_temp.rowsig(n) from unnest(array[100, 101, 102, 103, 104, 105]) n;
 select private.expire_pickup_requests();
 select is(pg_temp.st(90), 'accepted', 'the expiry job leaves an accepted request alone, even past expires_at');
 select is(pg_temp.st(91), 'expired', 'and expires a pending one past expires_at');
+select is(pg_temp.snap(100), null, 'the snapshot of an accepted request is cleared more than 24 hours after pickup');
+select is(pg_temp.snap(101), null, 'and of a completed one');
+select is(pg_temp.snap(102), null, 'and of a no-show');
+select is(pg_temp.snap(104), null, 'and at exactly 24 hours, where the read window has closed');
+select is(pg_temp.snap(43), null, 'and the older accepted fixture of this file');
+select is(pg_temp.snap(103), '2 Secret Rd, Homeville', 'a snapshot 23 hours after pickup is kept');
+select is(pg_temp.snap(105), '2 Secret Rd, Homeville', 'and one second inside the window');
+select is_empty($$ select b.label from res b where b.label ~ '^rs[0-9]+$' and b.j is distinct from pg_temp.rowsig(substr(b.label, 3)::int) $$,
+  'clearing the snapshot changes no other column of any row');
+select is(pg_temp.st(100) || pg_temp.st(101) || pg_temp.st(102), 'acceptedcompletedno_show', 'and leaves the statuses alone');
+set local role authenticated;
+select pg_temp.as_user(1);
+select is(pg_temp.addr_j(100), '{"none": true}'::jsonb, 'after the window the customer''s address read is null (and the fallback cannot bring the live address back)');
+select is(pg_temp.addr_j(103) ->> 'formatted_address', '2 Secret Rd, Homeville', 'inside the window the address is still shown');
+reset role;
 select is(pg_temp.st(10), 'pending', 'the untouched pending request is still pending at the end');
 
 select * from finish();

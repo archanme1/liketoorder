@@ -30,6 +30,11 @@ export type SheetAction = {
  * Navigation uses the imperative `router`, so this hook needs no navigation context and the sheet
  * renders anywhere the auth provider is absent.
  */
+// Coupling, on purpose: the own-business query below repeats the options of `useMyBusiness`
+// (sellers) with the same query key, instead of calling that hook, because `useMyBusiness` reads
+// the session through `useSession`, which throws outside the auth provider, and the map sheets
+// must render without one. If those options change in sellers, change them here too; the
+// proper fix is an optional-provider variant of `useMyBusiness` (not worth it for one caller).
 export function useSheetActions(business: { id: string; name: string } | null): SheetAction[] {
   const auth = useContext(AuthContext);
   const signedIn = auth !== null && auth.session !== null && !auth.isRecovering;

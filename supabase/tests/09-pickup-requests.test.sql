@@ -324,7 +324,7 @@ select throws_ok($$ update public.pickup_requests set customer_id = pg_temp.u(2)
   'the customer cannot update customer_id');
 select throws_ok($$ delete from public.pickup_requests where id = pg_temp.r(1) $$, '42501', null, 'the customer cannot delete a request');
 select pg_temp.as_user(5);
-select throws_ok($$ select * from public.pickup_requests $$, '42501', null, 'the business owner cannot select requests (spec 10 adds a function)');
+select throws_ok($$ select * from public.pickup_requests $$, '42501', null, 'the business owner cannot select requests (sellers use functions only)');
 select throws_ok($$ update public.pickup_requests set status = 'accepted' where id = pg_temp.r(1) $$, '42501', null,
   'the business owner cannot update status directly');
 select throws_ok($$ delete from public.pickup_requests where id = pg_temp.r(1) $$, '42501', null, 'the business owner cannot delete a request');
@@ -782,7 +782,7 @@ update public.business_locations set formatted_address = '99 New Rd, Newville' w
 set local role authenticated;
 select pg_temp.as_user(42);
 select is(public.get_my_pickup_address(pg_temp.r(306)) ->> 'formatted_address', '99 New Rd, Newville',
-  'current behaviour: inside the window the customer sees the cook''s current address, not the one at acceptance (spec 10 must snapshot it)');
+  'a request with no snapshot (accepted before spec 10) falls back to the cook''s current address inside the window');
 reset role;
 
 -- ── 14. Nothing private leaks ───────────────────────────────────────────────

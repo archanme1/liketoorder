@@ -165,14 +165,14 @@ isOneToOne: false
                   ]
                 },"pickup_requests": {
                   Row: {
-                    "business_id": string,"created_at": string,"currency_code": string | null,"customer_id": string,"expires_at": string,"id": string,"idempotency_key": string,"items": Json | null,"note": string | null,"order_text": string | null,"pickup_at": string,"responded_at": string | null,"status": string,"updated_at": string
+                    "accepted_address": string | null,"business_id": string,"created_at": string,"currency_code": string | null,"customer_id": string,"expires_at": string,"id": string,"idempotency_key": string,"items": Json | null,"note": string | null,"order_text": string | null,"pickup_at": string,"responded_at": string | null,"status": string,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "business_id": string,"created_at"?: string,"currency_code"?: string | null,"customer_id": string,"expires_at": string,"id"?: string,"idempotency_key": string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at": string,"responded_at"?: string | null,"status"?: string,"updated_at"?: string
+                    "accepted_address"?: string | null,"business_id": string,"created_at"?: string,"currency_code"?: string | null,"customer_id": string,"expires_at": string,"id"?: string,"idempotency_key": string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at": string,"responded_at"?: string | null,"status"?: string,"updated_at"?: string
                   }
                   Update: {
-                    "business_id"?: string,"created_at"?: string,"currency_code"?: string | null,"customer_id"?: string,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at"?: string,"responded_at"?: string | null,"status"?: string,"updated_at"?: string
+                    "accepted_address"?: string | null,"business_id"?: string,"created_at"?: string,"currency_code"?: string | null,"customer_id"?: string,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at"?: string,"responded_at"?: string | null,"status"?: string,"updated_at"?: string
                   }
                   Relationships: [
                     {
@@ -280,6 +280,9 @@ isOneToOne: false
 "consume_places_quota":
 { Args: { "p_kind": string,"p_user_id": string }; Returns: boolean
                            },
+"count_waiting_requests":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "create_menu_item":
 { Args: { "p_description": string,"p_is_available"?: boolean,"p_name": string,"p_price_minor": number }; Returns: string
                            },
@@ -294,6 +297,9 @@ isOneToOne: false
                            },
 "finish_photo_upload":
 { Args: { "p_photo_id": string }; Returns: Json
+                           },
+"get_business_request":
+{ Args: { "p_request_id": string }; Returns: Json
                            },
 "get_homemade_details":
 { Args: { "p_business_id": string }; Returns: Json
@@ -310,6 +316,9 @@ isOneToOne: false
 "get_restaurant_details":
 { Args: { "p_business_id": string }; Returns: Json
                            },
+"list_business_requests":
+{ Args: { "p_before"?: string,"p_status"?: string }; Returns: Json
+                           },
 "list_my_pickup_requests":
 { Args: { "p_before"?: string }; Returns: Json
                            },
@@ -319,8 +328,14 @@ isOneToOne: false
 "map_restaurants_in_bounds":
 { Args: { "p_max_lat": number,"p_max_lng": number,"p_min_lat": number,"p_min_lng": number }; Returns: Json
                            },
+"mark_request_outcome":
+{ Args: { "p_outcome": string,"p_request_id": string }; Returns: Json
+                           },
 "move_menu_item":
 { Args: { "p_direction": string,"p_item_id": string }; Returns: undefined
+                           },
+"respond_to_request":
+{ Args: { "p_decision": string,"p_request_id": string }; Returns: Json
                            },
 "set_business_location":
 { Args: { "p_formatted_address": string,"p_lat": number,"p_lng": number,"p_owner_id": string,"p_place_id": string }; Returns: Json

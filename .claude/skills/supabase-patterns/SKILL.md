@@ -9,7 +9,7 @@ description: LikeToOrder's Supabase conventions — migrations, RLS policy templ
 1. RLS on every table. 2. Ownership checked in SQL. 3. Status changes only via functions. 4. Migrations append-only. 5. Regenerate types after every migration (`npm run db:types`).
 
 ## Lists that can grow are paginated
-Any function or query that returns rows which grow with use (requests, a seller's inbox, notifications, uploads, history) must be paginated: a server-side `limit` (50 or fewer) plus a **keyset cursor** on an immutable, tie-broken sort key, `(created_at, id)`, ordered the same way. Never return "everything for this user". A list may return all its rows only when a database-enforced cap or a reference table bounds it, and the cap is written next to the function (for example menu items: 100 per business; photos: 1 cover, 6 gallery, 10 menu). The cursor is the server's own value, returned as text and sent back untouched (never parsed into a JS Date, which would cut the microseconds). Next to build: the seller inbox (spec 10) and table requests (spec 11), both with the `(created_at, id)` cursor from day one. `list_my_pickup_requests` (spec 09) pages on `created_at` alone: rows can only tie through bulk or admin inserts, because each submit is its own transaction.
+Any function or query that returns rows which grow with use (requests, a seller's inbox, notifications, uploads, history) must be paginated: a server-side `limit` (50 or fewer) plus a **keyset cursor** on an immutable, tie-broken sort key, `(created_at, id)`, ordered the same way. Never return "everything for this user". A list may return all its rows only when a database-enforced cap or a reference table bounds it, and the cap is written next to the function (for example menu items: 100 per business; photos: 1 cover, 6 gallery, 10 menu). The cursor is the server's own value, returned as text and sent back untouched (never parsed into a JS Date, which would cut the microseconds). Built in spec 10: the seller inbox (`list_business_requests`, the text cursor described under `pickup_requests`). Table requests (spec 11) must reuse the same `(created_at, id)` text cursor. `list_my_pickup_requests` (spec 09) pages on `created_at` alone: rows can only tie through bulk or admin inserts, because each submit is its own transaction.
 
 ## Local stack
 After editing anything in `supabase/templates/`, run `npx supabase stop` then `npx supabase start`: `db reset` does not refresh Kong's template mount, and a stale mount makes GoTrue silently send its default link email instead of our code template.
@@ -25,7 +25,9 @@ After editing anything in `supabase/templates/`, run `npx supabase stop` then `n
 - `business_photos` (id, business_id, kind `cover|gallery|menu|item`, menu_item_id (item only), path, status `pending|ready`, position (gallery/menu), created_at) — limits 1 cover / 6 gallery / 10 menu / 1 per item (spec 06).
 - `storage_cleanup_queue` (path PK, business_id, queued_at) — outbox of files whose row is gone; no client grants (spec 06).
 - Menu/photo writes: only via functions (`create_menu_item`, `update_menu_item`, `move_menu_item`, `delete_menu_item`, `begin_photo_upload`, `finish_photo_upload`, `delete_business_photo`, `claim_photo_cleanup`) that lock the caller's business row (`select … where owner_id = auth.uid() for update`), so limits hold under concurrent calls.
-- `pickup_requests` (spec 09: id, business_id, customer_id, status `pending|accepted|declined|expired|cancelled|completed|no_show`, pickup_at, items jsonb snapshot `[{item_id,name,unit_price_minor,quantity}]` read from `menu_items` in SQL, order_text, note, currency_code, `unique (customer_id, idempotency_key)`, expires_at, responded_at). RLS on, **no grants and no policies**: customers use `submit_pickup_request`, `list_my_pickup_requests`, `get_my_pickup_request`, `cancel_pickup_request`, `get_my_pickup_address`; the cron job `pickup-requests-expire` runs `private.expire_pickup_requests()` every minute. Reads return `server_now` and a server-computed `display_status`. Spec 10 adds the seller's functions; table requests (spec 11) decide between a second table and a `kind` column.
+- `pickup_requests` (spec 09: id, business_id, customer_id, status `pending|accepted|declined|expired|cancelled|completed|no_show`, pickup_at, items jsonb snapshot `[{item_id,name,unit_price_minor,quantity}]` read from `menu_items` in SQL, order_text, note, currency_code, `unique (customer_id, idempotency_key)`, expires_at, responded_at; spec 10: `accepted_address text`, the cook's `formatted_address` copied in SQL by `respond_to_request` when a **homemade** request is accepted, null otherwise and never set before `accepted`). RLS on, **no grants and no policies**, for customers and for the business owner alike. Customers use `submit_pickup_request`, `list_my_pickup_requests`, `get_my_pickup_request`, `cancel_pickup_request`, `get_my_pickup_address` (returns `accepted_address`, falling back to the live address only for a row with `responded_at is null`); sellers use `respond_to_request`, `mark_request_outcome`, `list_business_requests`, `get_business_request`, `count_waiting_requests`. The cron job `pickup-requests-expire` runs `private.expire_pickup_requests()` every minute. Reads return `server_now` and a server-computed `display_status`. Table requests (spec 11) decide between a second table and a `kind` column.
+- **One request object:** `private.pickup_request_json(request_id, now, seller_view)` builds it for every function. Customer view = 13 keys (`id, business_id, business_name, business_type, status, display_status, pickup_at, items, order_text, note, currency_code, expires_at, created_at`); seller view adds `customer_name` (display name, else username) and `responded_at`. Neither ever holds `accepted_address`, `place_id`, coordinates, the customer's id or email. A key-set pgTAP test pins both.
+- **Seller inbox cursor:** `list_business_requests(p_status, p_before text)` pages 50 at a time by `(created_at desc, id desc)`. The cursor is the text `YYYY-MM-DD"T"HH24:MI:SS.US"Z"|<uuid>` (UTC, six microsecond digits) built in SQL and sent back untouched by the app (never parse it into a JS `Date`); a strict regex rejects anything else with `invalid_input`; it reads 51 rows so `next_cursor` is null on the last page. `p_status`: null = all, `waiting` = display status pending, or one display status.
 - `food_logs` (id, author_id, photo_path, description, cuisine_code, is_public, created_at default now(), local_date date not null)
 - `promotions` (business_id, starts_at, ends_at, status `draft|active|ended`, activated_by)
 - `reports` (business_id, reporter_id, reason, note, status `open|confirmed|rejected`, reviewed_by)
@@ -58,30 +60,17 @@ create policy "menu_items_owner_write" on public.menu_items for all
 Use `(select auth.uid())` (wrapped) — it's evaluated once per query, much faster.
 
 ## Status transitions (requests)
-No update policy on `requests.status` for clients. Use functions:
+No update policy on `pickup_requests.status` for clients. Use functions that **derive the business from `auth.uid()`** (`businesses.owner_id` is unique; never take a business id from the client), **lock the row first** (`select … for update`, the same lock `cancel_pickup_request` takes, so a customer cancel and a seller answer cannot both win), then check the status and expiry, then update. The real ones (spec 10) are `respond_to_request(p_request_id, p_decision)` and `mark_request_outcome(p_request_id, p_outcome)`; shape:
 ```sql
-create or replace function public.respond_to_request(p_request_id uuid, p_decision text)
-returns public.requests
-language plpgsql security definer set search_path = ''
-as $$
-declare r public.requests;
-begin
-  select * into r from public.requests where id = p_request_id for update;
-  if not found then raise exception 'not_found'; end if;
-  if not exists (select 1 from public.businesses b
-                 where b.id = r.business_id and b.owner_id = auth.uid()) then
-    raise exception 'forbidden';
-  end if;
-  if r.status <> 'pending' or r.expires_at < now() then raise exception 'invalid_transition'; end if;
-  if p_decision not in ('accepted','declined') then raise exception 'invalid_decision'; end if;
-  update public.requests set status = p_decision, responded_at = now()
-   where id = p_request_id returning * into r;
-  return r;
-end $$;
-revoke all on function public.respond_to_request from public, anon;
-grant execute on function public.respond_to_request to authenticated;
+select b.id, b.type into v_b from public.businesses b where b.owner_id = v_uid;     -- none -> not_found
+select r.* into v_r from public.pickup_requests r
+ where r.id = p_request_id and r.business_id = v_b.id for update;                   -- none -> not_found (unknown = someone else's)
+if v_r.status <> 'pending' or v_r.expires_at <= v_now then raise exception 'invalid_transition'; end if;
+update public.pickup_requests set status = p_decision, responded_at = v_now where id = v_r.id;
+return private.pickup_request_json(v_r.id, v_now, true);
 ```
-Allowed transitions (pickup requests): `pending → cancelled` (customer, pending only, spec 09), `pending → expired` (cron), `pending → accepted | declined` and `accepted → completed | no_show` (seller, spec 10). There is no `accepted → cancelled` in v1.
+Error codes: `not_signed_in`, `invalid_input` (checked before the lookup), `not_found`, `invalid_transition`. They never check `is_listed`, freshness or seller mode (a seller can still answer requests already sent); only `submit_pickup_request` does.
+Allowed transitions (pickup requests): `pending → cancelled` (customer, pending only, spec 09), `pending → expired` (cron), `pending → accepted | declined` and `accepted → completed | no_show` (seller, spec 10; `completed`/`no_show` only once `pickup_at <= now()`, no upper time limit in v1). There is no `accepted → cancelled` in v1.
 Expiry: the `pg_cron` job sets `expired` where `status='pending' and expires_at <= now()`, **and** the read functions compute `display_status` in SQL (`pending` past `expires_at` shows `expired`), so a request is never shown live after it expired. Every transition function refuses a request at or past `expires_at` (`<=`, the same line as the job).
 
 ## Server-owned values
@@ -94,7 +83,7 @@ Expiry: the `pg_cron` job sets `expired` where `status='pending' and expires_at 
 ## Homemade approximate location
 Computed in SQL inside `set_business_location()` (spec 05, Decisions 3 and 10): a random bearing and a random distance of 200–500 m (uniform over the ring's area), stored in `businesses.map_lat/map_lng`. The offset and random inputs are never stored. Re-rolled **only when `place_id` changes**: saving the same place again, or a Places coordinate refresh, keeps the point (re-rolling would let an observer average points back to the real one). Never compute, round or display an offset in the app.
 
-Exact address: the owner reads it through `get_my_business()`. `get_my_pickup_address(request_id)` (spec 09) returns it only to the requesting customer while the request is `accepted` or `completed`, for homemade businesses that are still listed, and `null` for every other cause; it is not behind the 30-day map guard (spec 09 Decision 5), but it stops 24 hours after `pickup_at`, and it returns the cook's current address until spec 10's accept function snapshots it onto the request. Spec 10 adds the seller's accept function.
+Exact address: the owner reads it through `get_my_business()`. `get_my_pickup_address(request_id)` (spec 09) returns it only to the requesting customer while the request is `accepted` or `completed`, for homemade businesses that are still listed, and `null` for every other cause; it is not behind the 30-day map guard (spec 09 Decision 5), but it stops 24 hours after `pickup_at`, and it returns `accepted_address`, the snapshot `respond_to_request` copied from `business_locations.formatted_address` when the cook accepted (spec 10). Only a row never answered through that function (`responded_at is null`: accepted before spec 10) falls back to the current address; a request accepted while the cook had no location row keeps a null snapshot and never shows a later address. The every-minute expiry job also sets `accepted_address` to null once `pickup_at <= now() - 24 hours` (the line where the read window closes), so a home address does not stay on old rows.
 
 ## Storage
 | Bucket | Public? | Path | Notes |

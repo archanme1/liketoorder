@@ -42,6 +42,8 @@ type PickupTimePickerProps = TimeOptions & {
   /** "Now" on the phone; the earliest time offered is 15 minutes after it. */
   now: Date;
   value: Date | null;
+  /** Read-only, e.g. while the request is being sent. */
+  disabled?: boolean;
   /** The chosen time (a quarter hour, inside the allowed window), and which side it was outside of. */
   onChange: (value: Date, problem: PickupTimeProblem | null) => void;
 };
@@ -57,6 +59,7 @@ export function PickupTimePicker({
   now,
   value,
   onChange,
+  disabled = false,
   timeZone,
   locale,
 }: PickupTimePickerProps) {
@@ -121,7 +124,13 @@ export function PickupTimePicker({
       ) : (
         <Text color="textMuted">No pickup time chosen yet.</Text>
       )}
-      <Button title={label} variant="secondary" accessibilityLabel={label} onPress={choose} />
+      <Button
+        title={label}
+        variant="secondary"
+        accessibilityLabel={label}
+        onPress={choose}
+        disabled={disabled}
+      />
 
       {Platform.OS === 'ios' ? (
         <Modal

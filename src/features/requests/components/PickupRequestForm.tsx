@@ -25,7 +25,6 @@ import {
   prepareOrder,
   stripHidden,
   type OrderDraftProblem,
-  type PickupRequest,
 } from '../schema';
 import { summarizeOrder } from '../summary';
 import { formatDateTime } from '../time';
@@ -59,6 +58,10 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
   const { space } = useTheme();
   const router = useRouter();
   const submit = useSubmitPickupRequest();
+  // While a send is running the form is read-only, and the result is taken from the mutation
+  // itself (not a per-call callback), so "Request sent" appears whatever happened meanwhile.
+  const sending = submit.isPending;
+  const sent = submit.isSuccess ? submit.data : null;
   const currencies = useCurrencies();
   const locale = deviceLocale();
 
@@ -69,7 +72,6 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
   const [now, setNow] = useState(() => new Date());
   const [problem, setProblem] = useState<string | null>(null);
   const [timeProblem, setTimeProblem] = useState<string | null>(null);
-  const [sent, setSent] = useState<PickupRequest | null>(null);
   const keyboardVisible = useKeyboardVisible();
   // Height of the scrolling area, so any field can be scrolled up to its top edge.
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -95,6 +97,8 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
   );
 
   const edited = () => {
+    // A reset while a send runs would detach it from this form. Edits are blocked then anyway.
+    if (submit.isPending) return;
     setProblem(null);
     submit.reset();
   };
@@ -132,16 +136,13 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
       setProblem(DRAFT_MESSAGES[prepared.problem]);
       return;
     }
-    submit.submit(
-      {
-        businessId: menu.id,
-        pickupAt,
-        items: prepared.args.items,
-        orderText: prepared.args.orderText,
-        note: prepared.args.note,
-      },
-      { onSuccess: setSent },
-    );
+    submit.submit({
+      businessId: menu.id,
+      pickupAt,
+      items: prepared.args.items,
+      orderText: prepared.args.orderText,
+      note: prepared.args.note,
+    });
   };
 
   if (sent) {
@@ -167,7 +168,6 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
   }
 
   const serverError = submit.error ? requestErrorMessage(submit.error.code) : null;
-  const sending = submit.isPending;
   // One message at a time, in the bar, right under Send.
   const barError = timeProblem ?? problem ?? serverError;
 
@@ -233,6 +233,7 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
                   <QuantityStepper
                     itemName={item.name}
                     quantity={quantity}
+                    disabled={sending}
                     onChange={(next) => {
                       edited();
                       setQuantities((current) => ({ ...current, [item.id]: next }));
@@ -268,6 +269,7 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
             }
             multiline
             maxLength={MAX_ORDER_TEXT}
+            editable={!sending}
             textAlignVertical="top"
           />
         </View>
@@ -283,6 +285,7 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
           </Text>
           <PickupTimePicker
             now={now}
+            disabled={sending}
             value={pickupAt}
             locale={locale}
             onChange={(value, problem) => {
@@ -321,6 +324,7 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
             }
             multiline
             maxLength={MAX_NOTE}
+            editable={!sending}
             textAlignVertical="top"
           />
         </View>

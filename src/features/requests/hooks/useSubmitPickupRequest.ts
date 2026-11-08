@@ -24,6 +24,8 @@ function fingerprint(input: SubmitInput): string {
  * Sends a pickup request with ONE idempotency key per form session: a retry of the same order
  * (bad connection, double tap) re-uses the key and so creates one request. The key is replaced
  * when the order changes and after a success. A second call while one is running is ignored.
+ * The result is `isSuccess` / `data` on the returned mutation; read it from there rather than
+ * from a per-call `onSuccess`, which a `reset()` mid-flight would silently drop.
  */
 export function useSubmitPickupRequest() {
   const queryClient = useQueryClient();

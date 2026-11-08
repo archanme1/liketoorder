@@ -713,3 +713,68 @@ describe('the pickup time', () => {
     await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
   });
 });
+
+describe('editing while a send is in flight', () => {
+  const sendAndEdit = async () => {
+    let finish: (value: ReturnType<typeof makeRequest>) => void = () => undefined;
+    submitMock.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    await renderScreen();
+    await formReady();
+    await fireEvent.changeText(screen.getByLabelText('Anything else'), 'two pizzas');
+    await pickFirstTime();
+    await fireEvent.press(send());
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+    // The person edits the order while the request is on its way.
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Increase Margherita quantity, now 0' }),
+    );
+    await fireEvent.changeText(screen.getByLabelText('Anything else'), 'two pizzas and a soda');
+    await fireEvent.changeText(
+      screen.getByLabelText('Note for the seller (optional)'),
+      'ring bell',
+    );
+    return finish;
+  };
+
+  it('still shows "Request sent" when the send finishes, and sent exactly one request', async () => {
+    const finish = await sendAndEdit();
+    await act(async () => finish(makeRequest()));
+    expect(await screen.findByText('Request sent')).toBeOnTheScreen();
+    expect(screen.getByText("Waiting for Joe's Pizza to respond.")).toBeOnTheScreen();
+    expect(submitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('the steppers, text boxes and time button are disabled while sending, and the edits are ignored', async () => {
+    const finish = await sendAndEdit();
+    expect(screen.getByRole('button', { name: 'Increase Margherita quantity, now 0' })).toHaveProp(
+      'accessibilityState',
+      { disabled: true },
+    );
+    expect(screen.getByLabelText('Anything else')).toHaveProp('editable', false);
+    expect(screen.getByLabelText('Anything else')).toHaveProp('value', 'two pizzas');
+    expect(screen.getByLabelText('Note for the seller (optional)')).toHaveProp('editable', false);
+    expect(screen.getByRole('button', { name: 'Change pickup time' })).toHaveProp(
+      'accessibilityState',
+      { disabled: true, busy: false },
+    );
+    await act(async () => finish(makeRequest()));
+    await screen.findByText('Request sent');
+  });
+
+  it('after a failed send the form is editable again and the same order retries with the same key', async () => {
+    submitMock
+      .mockRejectedValueOnce(new RequestAppError('network'))
+      .mockResolvedValueOnce(makeRequest());
+    await renderScreen();
+    await formReady();
+    await fireEvent.changeText(screen.getByLabelText('Anything else'), 'two pizzas');
+    await pickFirstTime();
+    await fireEvent.press(send());
+    await screen.findByText(/No connection/);
+    expect(screen.getByLabelText('Anything else')).toHaveProp('editable', true);
+    await fireEvent.press(send());
+    await screen.findByText('Request sent');
+    const [first, second] = submitMock.mock.calls.map(([input]) => input.idempotencyKey);
+    expect(second).toBe(first);
+  });
+});

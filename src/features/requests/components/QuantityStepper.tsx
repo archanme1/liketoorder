@@ -10,12 +10,19 @@ type QuantityStepperProps = {
   itemName: string;
   quantity: number;
   onChange: (quantity: number) => void;
+  /** Read-only, e.g. while the request is being sent. */
+  disabled?: boolean;
 };
 
-export function QuantityStepper({ itemName, quantity, onChange }: QuantityStepperProps) {
+export function QuantityStepper({
+  itemName,
+  quantity,
+  onChange,
+  disabled = false,
+}: QuantityStepperProps) {
   const { colors, space, radius, size, opacity } = useTheme();
-  const canDecrease = quantity > 0;
-  const canIncrease = quantity < MAX_QUANTITY;
+  const canDecrease = !disabled && quantity > 0;
+  const canIncrease = !disabled && quantity < MAX_QUANTITY;
   const button = (disabled: boolean) => [
     styles.button,
     {

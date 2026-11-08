@@ -4,7 +4,7 @@
 - PR 1 (backend only: migration, functions, pgTAP, types): `feature/seller-request-inbox` (renamed to `feature/seller-request-inbox-backend` before its first push)
 - PR 2 (the app: inbox, request detail, actions, Manage row, seed data, jest tests): `feature/seller-request-inbox-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (Manage tab), §5 (Homemade specifics), §8 (Pickup requests), §10 (no-show), §12 (notifications, for what is NOT built here), §14 row 10, §15 (open question 2), §16 (Seller inbox keyset cursor, Function privileges, exact address read/write side)
-**Plan mode:** required — adds a column and four functions, changes `get_my_pickup_address` and the shared request object, extends the pgTAP function allowlists, adds routes, and touches well over ~5 files.
+**Plan mode:** required — adds a column, five seller functions and a shared request-object helper, changes `get_my_pickup_address` and the shared request object, extends the pgTAP function allowlists, adds routes, and touches well over ~5 files.
 **Status:** 📝 Spec written
 
 ## Overview

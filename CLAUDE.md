@@ -182,7 +182,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 06 | menu-management | ✅ Shipped | .claude/specs/06-menu-management.md |
 | 07 | restaurant-map | ✅ Shipped | .claude/specs/07-restaurant-map.md |
 | 08 | homemade-map | ✅ Shipped | .claude/specs/08-homemade-map.md |
-| 09 | pickup-requests | 🚧 In progress | .claude/specs/09-pickup-requests.md |
+| 09 | pickup-requests | ✅ Shipped | .claude/specs/09-pickup-requests.md |
 | 10 | seller-request-inbox | ⬜ Not started | — |
 | 11 | table-requests | ⬜ Not started | — |
 | 12 | notifications | ⬜ Not started | — |

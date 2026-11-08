@@ -5,7 +5,7 @@
 - PR 2 (the app: form, picker, My requests, detail, sheet buttons, seed data, jest tests): `feature/pickup-requests-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (requests need sign-in), §5 (Homemade specifics), §8 (Pickup requests), §12 (notifications, for what is NOT built here), §14 row 09, §16 (Function privileges, Account deletion)
 **Plan mode:** required — adds a table, RLS, status-transition and read functions, a cron job and a new route group; touches well over ~5 files; changes the two map sheets and a pgTAP function allowlist.
-**Status:** 🚧 In progress
+**Status:** ✅ Shipped (PR 1 backend #14, PR 2 app)
 
 ## Overview
 After this ships, a signed-in customer can open a restaurant or homemade sheet, tap **Request pickup**, choose items from the menu (or write a free-text order), choose a pickup time, and submit. They then see the request in a **My requests** list with its status. A request is always shown as "Waiting for the seller" until the seller answers; it is **never shown as confirmed while pending**. The customer can cancel while it is pending. If the seller does not answer within the window, the request **expires on its own**. Submitting twice (double tap, retry after a bad connection) creates one request. When a request is `accepted`, a homemade customer can read the cook's **exact address**; nobody else can, at any other status.
@@ -270,28 +270,33 @@ Fixed: editing the form during a send no longer loses the "Request sent" screen 
 - Seller-side visibility of customer no-shows (v1 §15 open question 2)
 
 ## Definition of done
-- [ ] A signed-in customer can submit a pickup request from a restaurant sheet and a homemade sheet with menu items, with free text only, and with both; it appears in My requests as "Waiting for the seller".
-- [ ] A pending request is never shown with confirmed wording anywhere (list, detail, success state), including the screen-reader labels.
-- [ ] Submitting the same `idempotency_key` twice creates exactly one row and returns the same request, including when the replay would now fail a check (pending limit, pickup time, empty order, rate limit) (pgTAP + jest). The concurrent path (two sessions, same key, and two sessions with different keys for one business) is proven by the manual two-session psql run recorded in the PR description, not by pgTAP; pgTAP only asserts that `submit_pickup_request` takes the per-customer advisory lock first.
-- [ ] Tapping Submit twice quickly sends one request (jest).
-- [ ] The server reads item names and prices itself: a tampered price or name in `p_items` is ignored (pgTAP).
-- [ ] An unavailable item, an item of another business, quantity 0 or 21, more than 30 lines, an empty order, a pickup time less than 15 minutes ahead or more than 7 days ahead are each rejected with a stable error code (pgTAP).
-- [ ] A request to an unlisted, stale (30-day guard), unknown or own business is rejected, and the error does not reveal which of the unlisted, stale or unknown causes it was (pgTAP). `own_business` has its own code: only the owner can reach it.
-- [ ] A 6th pending request, a 2nd pending request for the same business, and the 11th submit within an hour are refused (pgTAP).
-- [ ] `expires_at` is the earlier of created + 30 minutes and the pickup time; the cron function expires exactly the due pending rows, leaves other statuses alone, and the job is registered (`cron.job`) (pgTAP).
-- [ ] The customer can cancel a pending request; cancelling an expired, cancelled or accepted one fails with `invalid_transition`; cancelling someone else's request fails as `not_found` (pgTAP).
-- [ ] **An outsider cannot read another customer's request** by direct table select, by id, or through any function, and `anon` cannot read, insert, update or call anything here (pgTAP).
-- [ ] **A client cannot insert, update (including `status`, `expires_at`, `customer_id`) or delete a request directly,** as customer, as the business owner, or as an outsider (pgTAP).
-- [ ] **The exact address of a homemade seller is returned only to the requesting customer at `accepted`/`completed`;** `null` for pending, declined, expired, cancelled, no_show, for another customer, for the owner of another business, and for restaurants; **anon cannot call the function at all (42501)**; and nothing is returned more than 24 hours after `pickup_at` (an accepted or completed request 25 hours past its pickup gets `null`, one inside 24 hours gets the address; inside the window the address is the cook's current one) (pgTAP, with statuses set by the superuser since spec 10 is not built).
-- [ ] No response of any new function contains `place_id`, exact coordinates or `map_lat`/`map_lng`.
-- [ ] The function-privilege allowlists in `05-seller-onboarding.test.sql` pass with the new functions and fail if a function is left executable by `anon`/`public`.
-- [ ] A pending request whose `expires_at` has passed is returned with `display_status = 'expired'` before the cron has run (pgTAP), and the app shows it as Expired (jest, fake timers).
-- [ ] A wrong phone clock (hours ahead or behind) never makes a request show the wrong status: the app shows the server's `display_status` and uses the clock offset only to time the refetch (jest with a skewed device clock; deliberate break 1).
-- [ ] Times are shown in the phone's time zone and sent as UTC (jest under a non-UTC `TZ`).
-- [ ] Guest: Request pickup leads to sign-in and then straight to the request form for that business. A seller does not see the button on their own business (jest).
-- [ ] Loading, empty, error (with retry) and success states exist on My requests, the detail and the form (jest).
-- [ ] Every touchable has a label and role, targets ≥ 44 pt, `StatusChip` shows a word plus icon, large text does not clip the form (jest where possible, device run for the rest).
-- [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` pass; `src/types/database.ts` is regenerated, not hand-edited.
+- [x] A signed-in customer can submit a pickup request from a restaurant sheet and a homemade sheet with menu items, with free text only, and with both; it appears in My requests as "Waiting for the seller".
+- [x] A pending request is never shown with confirmed wording anywhere (list, detail, success state), including the screen-reader labels.
+- [x] Submitting the same `idempotency_key` twice creates exactly one row and returns the same request, including when the replay would now fail a check (pending limit, pickup time, empty order, rate limit) (pgTAP + jest). The concurrent path (two sessions, same key, and two sessions with different keys for one business) is proven by the manual two-session psql run recorded in the PR description, not by pgTAP; pgTAP only asserts that `submit_pickup_request` takes the per-customer advisory lock first.
+- [x] Tapping Submit twice quickly sends one request (jest).
+- [x] The server reads item names and prices itself: a tampered price or name in `p_items` is ignored (pgTAP).
+- [x] An unavailable item, an item of another business, quantity 0 or 21, more than 30 lines, an empty order, a pickup time less than 15 minutes ahead or more than 7 days ahead are each rejected with a stable error code (pgTAP).
+- [x] A request to an unlisted, stale (30-day guard), unknown or own business is rejected, and the error does not reveal which of the unlisted, stale or unknown causes it was (pgTAP). `own_business` has its own code: only the owner can reach it.
+- [x] A 6th pending request, a 2nd pending request for the same business, and the 11th submit within an hour are refused (pgTAP).
+- [x] `expires_at` is the earlier of created + 30 minutes and the pickup time; the cron function expires exactly the due pending rows, leaves other statuses alone, and the job is registered (`cron.job`) (pgTAP).
+- [x] The customer can cancel a pending request; cancelling an expired, cancelled or accepted one fails with `invalid_transition`; cancelling someone else's request fails as `not_found` (pgTAP).
+- [x] **An outsider cannot read another customer's request** by direct table select, by id, or through any function, and `anon` cannot read, insert, update or call anything here (pgTAP).
+- [x] **A client cannot insert, update (including `status`, `expires_at`, `customer_id`) or delete a request directly,** as customer, as the business owner, or as an outsider (pgTAP).
+- [x] **The exact address of a homemade seller is returned only to the requesting customer at `accepted`/`completed`;** `null` for pending, declined, expired, cancelled, no_show, for another customer, for the owner of another business, and for restaurants; **anon cannot call the function at all (42501)**; and nothing is returned more than 24 hours after `pickup_at` (an accepted or completed request 25 hours past its pickup gets `null`, one inside 24 hours gets the address; inside the window the address is the cook's current one) (pgTAP, with statuses set by the superuser since spec 10 is not built).
+- [x] No response of any new function contains `place_id`, exact coordinates or `map_lat`/`map_lng`.
+- [x] The function-privilege allowlists in `05-seller-onboarding.test.sql` pass with the new functions and fail if a function is left executable by `anon`/`public`.
+- [x] A pending request whose `expires_at` has passed is returned with `display_status = 'expired'` before the cron has run (pgTAP), and the app shows it as Expired (jest, fake timers).
+- [x] A wrong phone clock (hours ahead or behind) never makes a request show the wrong status: the app shows the server's `display_status` and uses the clock offset only to time the refetch (jest with a skewed device clock; deliberate break 1).
+- [x] Times are shown in the phone's time zone and sent as UTC (jest, with the zone passed in explicitly: `Pacific/Auckland`, Kathmandu, Toronto and daylight-saving days; a process-level `TZ` cannot be set from inside a test file, see the gate B decision).
+- [x] Guest: Request pickup leads to sign-in and then straight to the request form for that business. A seller does not see the button on their own business (jest).
+- [x] Loading, empty, error (with retry) and success states exist on My requests, the detail and the form (jest).
+- [x] Every touchable has a label and role, targets ≥ 44 pt, `StatusChip` shows a word plus icon, large text does not clip the form (jest where possible; the rest on the iOS Simulator only, see the manual run below; a real device is still a section 16 item).
+- [x] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` pass (the last one in CI; this PR changes no database file); `src/types/database.ts` is regenerated, not hand-edited.
+
+### Manual run results (iOS Simulator only, run by Archan; not a real iPhone or Android)
+All of these passed, including a re-check after the code-review fixes:
+guest sign-in return to the request form; submit with menu items and with free text; double tap on Send (one request); airplane-mode retry (one request); the fixed Send bar with the total; the calendar and time dialog (Cancel / Done); My requests pagination with 120 extra seeded requests; cancel with the confirm step; auto-expiry of the seeded "expires in about 2 minutes" row; the accepted homemade request showing the cook's address; the Request pickup button hidden on your own business; the fixed action row in both map sheets (hidden at the collapsed snap).
+Not part of this run, so still listed in section 16 of `docs/product/v1.md` as before-launch items: a real iPhone, Android, VoiceOver and TalkBack, the largest text size on a device, Hermes `Intl`, the phone's clock and time zone, the Android dismissed-time-dialog, the dark-mode scrim, and the unchecked behaviour of the native pickers.
 
 ## Test plan
 - Unit/component tests (jest): `status.ts` (labels, `clockOffset`), the skewed phone clock (device clock +5 h and −5 h: status and timing still follow the server), time-zone display and the picker's time helpers with an explicit zone (`Pacific/Auckland`, Kathmandu, Toronto, daylight-saving days; the native control is faked in `jest.setup.ts`), keyboard props on the form, schema (limits mirror SQL), `useSubmitPickupRequest` (key reuse on retry, new key after edit, double tap), form (steppers, unavailable items hidden, free-text only, total with `formatPrice`, error messages, sign-in gate, own-business hide), `PickupTimePicker` (earliest time, 7-day limit), My requests / detail states, cancel, address card shown only when the api returns an address and never for other statuses, `StatusChip` accessibility, `routeAccess`.

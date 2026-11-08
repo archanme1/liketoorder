@@ -245,6 +245,11 @@ Each item says how it applies here. The reviewer ticks every line. Sources: `.cl
 - **Seed:** `scripts/seed/requests.ts --extra 120` adds older requests for testing pagination.
 - **Native calendar and time picker (gate E3):** replaces the day buttons and slot grid; see Decision 7 (amended) and New dependencies.
 
+## Gate F decisions (after the second simulator run)
+- **Fixed action row in both map sheets (F1):** the Request pickup button leaves the scrolling content (Gate C put it after the menu items) and sits in a fixed row under the header (name, flag, cuisine), shown at the half and full snaps and hidden at the collapsed snap. `RequestPickupButton` is replaced by `useSheetActions` (descriptors, today one) + `SheetActionRow` + per-tab `SheetActions`, passed to the sheet as the `Actions` prop from each tab's config. Spec 11 adds a Reserve a table descriptor; no placeholder now. Hidden for the business owner, while that is being checked, outside the auth provider, and while the details are loading or unavailable. Snap arithmetic and the spec 07/08 tests are unchanged.
+- **Content jump risk:** for a signed-in non-owner the row appears once the details and the own-business check have loaded, so the scroll area shrinks by about 56 pt at that moment. Guests see it as soon as the details load. If the jump is noticeable in the simulator, the smallest fix is to reserve the row's space while the owner check is pending (at the price of an empty strip for owners).
+- **Picker as a modal dialog on iOS (F2):** see the F2 notes below.
+
 ## Notes for specs 10 and 12 (from the PR 1 review)
 - **Spec 10 (seller inbox) must be built with a `(created_at, id)` keyset cursor from day one** (server limit 50, text cursor sent back untouched; see the lists rule in `supabase-patterns`). Many customers can create rows at the same instant, so created_at alone would skip rows at a page boundary. `list_my_pickup_requests` keeps `created_at` alone: a single customer's rows cannot tie through the app (each submit is its own transaction), only through bulk or admin inserts; give it the same cursor when spec 10 touches this function if wanted.
 - **Spec 10:** the accept function must snapshot the address (and place) onto the request, and `get_my_pickup_address` must return the snapshot (see Decision 5).

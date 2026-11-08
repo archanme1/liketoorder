@@ -18,15 +18,14 @@ import type { DetailsPhoto, HomemadeDetails } from '../schema';
 
 import { HomemadeDisclaimer } from './HomemadeDisclaimer';
 import type { SheetBodyProps } from './RestaurantSheet';
-import { RequestPickupButton } from './RequestPickupButton';
 import { SheetMenu } from './SheetMenu';
 import { useCoverAndGallery } from './SheetPhotos';
 
 // The body of the sheet for one home cook: loading, not available, error with Retry, or (menu
 // first, spec 08 Decision 15) the cover banner, the small food-safety row, menu pages, menu items,
-// gallery, and at the very bottom the "approximate area" note. The Request pickup button sits right
-// after the menu items (spec 09). On purpose there is no address and no Directions here; Report
-// arrives in spec 17.
+// gallery, and at the very bottom the "approximate area" note. Actions (Request pickup) are not
+// here: they live in the sheet's fixed row under the header (SheetActions). On purpose there is no
+// address and no Directions here; Report arrives in spec 17.
 export function HomemadeSheetDetails({ id, onClose, closeLabel = 'Close' }: SheetBodyProps) {
   const { space, size, type } = useTheme();
   const details = useHomemadeDetails(id);
@@ -134,7 +133,6 @@ function DetailsBody({ details }: { details: HomemadeDetails }) {
         urlFor={urlFor}
         onExpired={onExpired}
       />
-      <RequestPickupButton businessId={details.id} name={details.name} />
       {photos.gallerySection}
       <View style={{ gap: space.xs }}>
         <Text variant="bodyLg" accessibilityRole="header">

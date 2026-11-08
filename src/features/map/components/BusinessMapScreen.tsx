@@ -363,6 +363,7 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
         onClose={onClearSelection}
         containerHeight={containerHeight}
         DetailsBody={config.DetailsBody}
+        Actions={config.Actions}
         detailsLabel={config.texts.detailsLabel}
         placesTitle={config.texts.placesTitle}
         emptyText={config.texts.listEmpty}

@@ -12,7 +12,6 @@ import { useRestaurantDetails } from '../hooks/useRestaurantDetails';
 import { mapErrorMessage, RATE_LIMITED_MESSAGE } from '../messages';
 import type { DetailsPhoto, RestaurantDetails } from '../schema';
 
-import { RequestPickupButton } from './RequestPickupButton';
 import { SheetMenu } from './SheetMenu';
 import { useCoverAndGallery } from './SheetPhotos';
 
@@ -28,8 +27,8 @@ type SheetDetailsProps = {
 
 // The body of the sheet for one restaurant: loading, not available, error with Retry, or (menu
 // first, spec 08 Decision 15) the cover banner, menu pages, menu items, gallery, and at the very
-// bottom the address and Directions. The Request pickup button sits right after the menu items
-// (spec 09); there is no Report button yet.
+// bottom the address and Directions. Actions (Request pickup) are not here: they live in the
+// sheet's fixed row under the header (SheetActions), outside this scrolling content.
 export function SheetDetails({ id, onClose, closeLabel = 'Close' }: SheetDetailsProps) {
   const { space, size, type } = useTheme();
   const details = useRestaurantDetails(id);
@@ -144,7 +143,6 @@ function DetailsBody({ details }: { details: RestaurantDetails }) {
         urlFor={urlFor}
         onExpired={onExpired}
       />
-      <RequestPickupButton businessId={details.id} name={details.name} />
       {photos.gallerySection}
       <View style={{ gap: space.xs }}>
         <Text variant="bodyLg" accessibilityRole="header">

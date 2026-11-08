@@ -23,6 +23,7 @@ import { useReduceMotion } from '@/lib/useReduceMotion';
 import type { Pin } from '../schema';
 
 import { PlacesList, PLACES_TITLE } from './PlacesList';
+import type { SheetActionsProps } from './SheetActions';
 import { SheetDetails } from './SheetDetails';
 
 type RestaurantSheetProps = {
@@ -48,6 +49,11 @@ type RestaurantSheetProps = {
    * Restaurants screen passes none of them.
    */
   DetailsBody?: ComponentType<SheetBodyProps>;
+  /**
+   * The action row for the open business (Request pickup today), drawn in the fixed part under
+   * the header and only at the half and full snaps. None by default.
+   */
+  Actions?: ComponentType<SheetActionsProps>;
   detailsLabel?: string;
   placesTitle?: string;
   emptyText?: string;
@@ -121,6 +127,7 @@ export const RestaurantSheet = memo(function RestaurantSheet({
   onClose,
   containerHeight,
   DetailsBody = SheetDetails,
+  Actions,
   detailsLabel = 'Restaurant details',
   placesTitle = PLACES_TITLE,
   emptyText,
@@ -246,6 +253,9 @@ export const RestaurantSheet = memo(function RestaurantSheet({
               <Ionicons name="close" size={size.tabIcon} color={colors.text} />
             </Pressable>
           </View>
+          {/* Fixed, like the header: outside the scrolling content, and not at the collapsed peek,
+              which has room for the header only. */}
+          {selected && Actions && snapIndex >= HALF_INDEX ? <Actions id={selected.id} /> : null}
           {selected ? (
             <BottomSheetScrollView testID="sheet-scroll" contentContainerStyle={contentStyle}>
               <DetailsBody

@@ -7,7 +7,8 @@ import type { SheetAction } from '../hooks/useSheetActions';
 
 // The sheet's action buttons, in the FIXED part of the sheet under the header and outside the
 // scrolling content, so they stay on screen while the content scrolls. One or two buttons that
-// wrap (each at least a thumbnail wide, none a fixed height) so large text never clips them.
+// wrap (each at least a thumbnail wide, none a fixed height) so large text never clips them. The
+// row's own padding (theme tokens) keeps the button off the cuisine line above it.
 // No actions, no row: nothing is reserved for a button that isn't there.
 export function SheetActionRow({ actions }: { actions: readonly SheetAction[] }) {
   const { space, size } = useTheme();
@@ -15,7 +16,17 @@ export function SheetActionRow({ actions }: { actions: readonly SheetAction[] })
   return (
     <View
       testID="sheet-actions"
-      style={[styles.row, { gap: space.sm, paddingHorizontal: space.lg, paddingBottom: space.md }]}
+      style={[
+        styles.row,
+        {
+          gap: space.sm,
+          paddingHorizontal: space.lg,
+          // Room under the cuisine line above, and a little before the scrolling content below
+          // (which adds its own top padding).
+          paddingTop: space.md,
+          paddingBottom: space.md,
+        },
+      ]}
     >
       {actions.map((action) => (
         <View key={action.key} style={[styles.cell, { minWidth: size.photoThumb }]}>

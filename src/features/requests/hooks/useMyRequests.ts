@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { listMyPickupRequests, type RequestAppError } from '../api';
 import { PAGE_SIZE, type PickupRequest, type RequestList } from '../schema';
@@ -39,7 +39,7 @@ const hasPending = (data: Pages | undefined) =>
  * app focus, every 30 s while a pending one is loaded, and just after one expires (server
  * clock). A refetch re-reads every loaded page, each page's cursor taken from the page just
  * fetched, so a request added meanwhile shifts rows between pages without losing or repeating
- * any. `refresh` (pull to refresh) goes back to page 1 only.
+ * any. `refresh` (pull to refresh) goes back to page 1 only, and only once page 1 has loaded.
  */
 export function useMyRequests() {
   const queryClient = useQueryClient();
@@ -73,12 +73,31 @@ export function useMyRequests() {
     void refetch();
   });
 
+  // Pull to refresh: back to the newest 50. Nothing is thrown away until the new first page has
+  // arrived, so a failure leaves every loaded page where it was.
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const refresh = useCallback(async () => {
-    queryClient.setQueryData<Pages>(requestKeys.mine, (data) =>
-      data ? { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) } : data,
-    );
-    await refetch();
-  }, [queryClient, refetch]);
+    setRefreshing(true);
+    setRefreshFailed(false);
+    // A next-page or background read still running would answer for the list we are replacing.
+    await queryClient.cancelQueries({ queryKey: requestKeys.mine });
+    try {
+      const first = await listMyPickupRequests(undefined);
+      queryClient.setQueryData<Pages>(requestKeys.mine, { pages: [first], pageParams: [{}] });
+    } catch {
+      if (mounted.current) setRefreshFailed(true);
+    } finally {
+      if (mounted.current) setRefreshing(false);
+    }
+  }, [queryClient]);
 
-  return { ...query, requests, refresh };
+  return { ...query, requests, refresh, refreshing, refreshFailed };
 }

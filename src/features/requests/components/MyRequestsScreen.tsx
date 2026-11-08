@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { Banner, Button, EmptyState, ErrorState, Screen, Skeleton, Text } from '@/components/ui';
@@ -17,6 +17,8 @@ type MyRequestsScreenProps = TimeOptions & {
   onFindPlace: () => void;
 };
 
+const requestKey = (request: PickupRequest) => request.id;
+
 export const LOAD_MORE_ERROR = "Couldn't load more requests.";
 export const REFRESH_ERROR = "Couldn't refresh your requests.";
 
@@ -33,18 +35,32 @@ export function MyRequestsScreen({
 }: MyRequestsScreenProps) {
   const { colors, space, type } = useTheme();
   const query = useMyRequests();
-  const [refreshing, setRefreshing] = useState(false);
+  const {
+    refresh,
+    refreshing,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  } = query;
 
   // The full-screen error is only for a first load that failed. With rows on screen, a failed
   // refresh or a failed next page is shown inline and the rows stay.
   const firstLoadFailed = query.isError && query.data === undefined;
-  const refreshFailed = query.isError && query.data !== undefined && !query.isFetchNextPageError;
+  const refreshFailed =
+    query.refreshFailed ||
+    (query.isError && query.data !== undefined && !query.isFetchNextPageError);
 
-  const loadMore = () => {
-    if (query.hasNextPage && !query.isFetchingNextPage && !query.isFetchNextPageError) {
-      void query.fetchNextPage();
-    }
-  };
+  const loadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
+  const onRefresh = useCallback(() => void refresh(), [refresh]);
+  const renderItem = useCallback(
+    ({ item }: { item: PickupRequest }) => (
+      <RequestRow request={item} onPress={onOpen} timeZone={timeZone} locale={locale} />
+    ),
+    [onOpen, timeZone, locale],
+  );
 
   return (
     <Screen>
@@ -77,10 +93,8 @@ export function MyRequestsScreen({
         <FlatList
           testID="requests-list"
           data={query.requests}
-          keyExtractor={(request) => request.id}
-          renderItem={({ item }) => (
-            <RequestRow request={item} onPress={onOpen} timeZone={timeZone} locale={locale} />
-          )}
+          keyExtractor={requestKey}
+          renderItem={renderItem}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
           contentContainerStyle={{ gap: space.md, paddingVertical: space.lg }}
@@ -92,8 +106,8 @@ export function MyRequestsScreen({
                   title="Try again"
                   variant="secondary"
                   accessibilityLabel="Try refreshing again"
-                  onPress={() => void query.refetch()}
-                  loading={query.isFetching}
+                  onPress={() => void (query.isError ? query.refetch() : refresh())}
+                  loading={query.isFetching || refreshing}
                 />
               </View>
             ) : undefined
@@ -108,9 +122,7 @@ export function MyRequestsScreen({
               </View>
             ) : query.isFetchNextPageError ? (
               <View style={{ gap: space.sm }}>
-                <Text accessibilityRole="alert" color="textMuted">
-                  {LOAD_MORE_ERROR}
-                </Text>
+                <Banner message={LOAD_MORE_ERROR} />
                 <Button
                   title="Try again"
                   variant="secondary"
@@ -120,15 +132,7 @@ export function MyRequestsScreen({
               </View>
             ) : undefined
           }
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                void query.refresh().finally(() => setRefreshing(false));
-              }}
-            />
-          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         />
       )}
     </Screen>

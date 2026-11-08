@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { makeRows, pagedServer } from '../__fixtures__/pagedServer';
 import { RequestAppError, listMyPickupRequests } from '../api';
 import { MyRequestsScreen } from '../components/MyRequestsScreen';
+import { RequestRow } from '../components/RequestRow';
 
 jest.mock('@/lib/supabase', () => ({
   supabase: { rpc: jest.fn(), from: jest.fn(), functions: { invoke: jest.fn() } },
@@ -93,6 +94,12 @@ describe('loading more as you scroll', () => {
   });
 });
 
+describe('keeping the list cheap to render', () => {
+  it('a row is memoized, so a poll or a new page re-renders only the rows that changed', () => {
+    expect((RequestRow as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for('react.memo'));
+  });
+});
+
 describe('when a page fails', () => {
   it('a failed next page: an inline Try again, and the loaded rows stay', async () => {
     await renderScreen();
@@ -140,6 +147,24 @@ describe('when a page fails', () => {
 });
 
 describe('pull to refresh', () => {
+  it('a failed pull keeps the loaded rows and shows the refresh banner with Try again', async () => {
+    await renderScreen();
+    await screen.findByText('Place 1');
+    await endReached();
+    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(2));
+    listMock.mockRejectedValueOnce(new RequestAppError('network'));
+    const control = screen.getByTestId('requests-list').props.refreshControl;
+    await act(async () => {
+      control.props.onRefresh();
+    });
+    expect(await screen.findByText("Couldn't refresh your requests.")).toBeOnTheScreen();
+    expect(screen.getByText('Place 1')).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Try refreshing again' }));
+    await waitFor(() =>
+      expect(screen.queryByText("Couldn't refresh your requests.")).not.toBeOnTheScreen(),
+    );
+  });
+
   it('starts again from the newest 50 with one read', async () => {
     await renderScreen();
     await screen.findByText('Place 1');

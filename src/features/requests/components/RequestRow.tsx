@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui';
@@ -22,9 +23,14 @@ export function orderPreview(request: Pick<PickupRequest, 'items' | 'order_text'
   return [items, text].filter(Boolean).join(' · ');
 }
 
-// One row of My requests. The status is the server's display_status, shown as it comes: the phone
+// One row of My requests (memoized: a poll or a new page re-renders only the rows that changed). The status is the server's display_status, shown as it comes: the phone
 // never works out "expired" for itself (a wrong phone clock must not change what is shown).
-export function RequestRow({ request, onPress, timeZone, locale }: RequestRowProps) {
+export const RequestRow = memo(function RequestRow({
+  request,
+  onPress,
+  timeZone,
+  locale,
+}: RequestRowProps) {
   const { colors, space, radius, size } = useTheme();
   const status = request.display_status;
   const pickup = formatDateTime(request.pickup_at, { timeZone, locale });
@@ -71,7 +77,7 @@ export function RequestRow({ request, onPress, timeZone, locale }: RequestRowPro
       <Text color="textMuted">{`Pickup ${pickup}`}</Text>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   row: { borderWidth: StyleSheet.hairlineWidth },

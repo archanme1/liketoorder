@@ -210,6 +210,78 @@ describe('refresh (pull to refresh)', () => {
   });
 });
 
+describe('refresh: nothing is thrown away until page 1 has loaded', () => {
+  async function loadTwoPages() {
+    const view = await setup();
+    await act(async () => {
+      await view.result.current.fetchNextPage();
+    });
+    await waitFor(() => expect(view.result.current.requests).toHaveLength(100));
+    return view;
+  }
+
+  it('a failed refresh keeps every loaded page, and says so', async () => {
+    const { result } = await loadTwoPages();
+    listMock.mockRejectedValueOnce(new RequestAppError('network'));
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.refreshFailed).toBe(true);
+    expect(result.current.refreshing).toBe(false);
+    expect(result.current.requests).toHaveLength(100);
+    expect(result.current.hasNextPage).toBe(true);
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.refreshFailed).toBe(false);
+    await waitFor(() => expect(result.current.requests).toHaveLength(50));
+  });
+
+  it('a next page still loading is cancelled, and its late answer is not added', async () => {
+    const { result } = await setup();
+    await waitFor(() => expect(result.current.requests).toHaveLength(50));
+    let late: () => void = () => undefined;
+    listMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          late = () =>
+            resolve({ server_now: '2026-11-08T17:00:00Z', requests: server.rows.slice(50, 100) });
+        }),
+    );
+    await act(async () => {
+      void result.current.fetchNextPage();
+    });
+    await waitFor(() => expect(result.current.isFetchingNextPage).toBe(true));
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    await act(async () => late());
+    expect(result.current.isFetchingNextPage).toBe(false);
+    expect(result.current.requests).toHaveLength(50);
+    expect(ids(result.current.requests)).toEqual(ids(server.rows.slice(0, 50)));
+  });
+
+  it('shows that it is refreshing only while it runs', async () => {
+    const { result } = await loadTwoPages();
+    let finish: () => void = () => undefined;
+    listMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () =>
+            resolve({ server_now: '2026-11-08T17:00:00Z', requests: server.rows.slice(0, 50) });
+        }),
+    );
+    await act(async () => {
+      void result.current.refresh();
+    });
+    await waitFor(() => expect(result.current.refreshing).toBe(true));
+    await act(async () => finish());
+    await waitFor(() => expect(result.current.refreshing).toBe(false));
+  });
+});
+
 describe('failures', () => {
   it('a failed next page keeps the loaded rows and can be retried', async () => {
     const { result } = await setup();

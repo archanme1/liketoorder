@@ -146,9 +146,11 @@ describe('refetching loaded pages', () => {
     await act(async () => {
       await result.current.refetch();
     });
-    await waitFor(() => expect(result.current.requests).toHaveLength(100));
+    // The length stays 100 either way, so wait for the rows themselves to change.
+    await waitFor(() =>
+      expect(ids(result.current.requests)).toEqual(ids(server.rows.slice(0, 100))),
+    );
     expect(new Set(ids(result.current.requests)).size).toBe(100);
-    expect(ids(result.current.requests)).toEqual(ids(server.rows.slice(0, 100)));
   });
 
   it("a status change on page 2 shows after a refetch (app focus), and after a cancel's invalidation", async () => {

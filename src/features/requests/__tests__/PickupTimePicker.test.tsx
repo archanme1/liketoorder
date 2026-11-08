@@ -1,8 +1,10 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { Platform } from 'react-native';
+import { AccessibilityInfo, Dimensions, Platform } from 'react-native';
 
-import { PickupTimePicker } from '../components/PickupTimePicker';
+import { useReduceMotion } from '@/lib/useReduceMotion';
+
+import { PickupTimePicker, pickerDisplay } from '../components/PickupTimePicker';
 import { earliestPickup, formatDateTime, latestPickup } from '../time';
 
 const AUCKLAND = { timeZone: 'Pacific/Auckland', locale: 'en-US' };
@@ -12,10 +14,21 @@ const EARLIEST = earliestPickup(NOW); // 12:30Z = 01:30 on 8 November in Aucklan
 const LATEST = latestPickup(NOW);
 const iso = (date: Date) => date.toISOString();
 
+jest.mock('@/lib/useReduceMotion', () => ({ useReduceMotion: jest.fn(() => false) }));
+
+// The jest default text scale is 2 (the spinner); the tests run at 1 unless they say otherwise.
+const mockFontScale = (fontScale: number) =>
+  jest.spyOn(Dimensions, 'get').mockReturnValue({ width: 390, height: 844, scale: 3, fontScale });
+
 const open = jest.mocked(DateTimePickerAndroid.open);
 const lastDialog = () => open.mock.calls[open.mock.calls.length - 1][0];
 const picked = (date: Date) => ({ nativeEvent: { timestamp: date.getTime(), utcOffset: 0 } });
 const control = () => screen.getByTestId('datetimepicker-datetime');
+
+beforeEach(() => {
+  mockFontScale(1);
+  jest.mocked(useReduceMotion).mockReturnValue(false);
+});
 
 afterEach(async () => {
   await cleanup();
@@ -23,22 +36,26 @@ afterEach(async () => {
   open.mockReset();
 });
 
-describe('iOS: one inline calendar and time control', () => {
-  it('starts with no time chosen and no calendar', async () => {
+describe('iOS: a button opens a dialog with one calendar and time control', () => {
+  const dialog = () => screen.getByTestId('pickup-time-dialog');
+  const choose = async (name = 'Choose pickup time') =>
+    fireEvent.press(screen.getByRole('button', { name }));
+  const drag = async (date: Date) =>
+    act(async () => control().props.onValueChange(picked(new Date()), date));
+
+  it('starts with no time chosen and no dialog', async () => {
     await render(<PickupTimePicker now={NOW} value={null} onChange={jest.fn()} {...AUCKLAND} />);
     expect(screen.getByText('No pickup time chosen yet.')).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: 'Choose pickup time' })).toBeOnTheScreen();
+    expect(screen.queryByTestId('pickup-time-dialog')).not.toBeOnTheScreen();
     expect(screen.queryByTestId('datetimepicker-datetime')).not.toBeOnTheScreen();
   });
 
-  it('opening it selects the earliest time and shows the control with the right limits', async () => {
+  it('opening it chooses nothing yet, and shows the control with the right limits', async () => {
     const onChange = jest.fn();
     await render(<PickupTimePicker now={NOW} value={null} onChange={onChange} {...AUCKLAND} />);
-    await fireEvent.press(screen.getByRole('button', { name: 'Choose pickup time' }));
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(iso(onChange.mock.calls[0][0])).toBe(iso(EARLIEST));
-    expect(onChange.mock.calls[0][1]).toBeNull();
-
+    await choose();
+    expect(onChange).not.toHaveBeenCalled();
     const props = control().props;
     expect(props.mode).toBe('datetime');
     expect(props.display).toBe('inline');
@@ -50,15 +67,15 @@ describe('iOS: one inline calendar and time control', () => {
     expect(props.locale).toBe('en-US');
   });
 
-  it("leaves the native picker on the phone's own zone unless a zone was given", async () => {
-    await render(
-      <PickupTimePicker now={NOW} value={EARLIEST} onChange={jest.fn()} locale="en-US" />,
-    );
-    await fireEvent.press(screen.getByRole('button', { name: 'Change pickup time' }));
+  it("starts from the time already chosen, and leaves the native picker on the phone's own zone unless a zone was given", async () => {
+    const value = new Date('2026-11-08T05:00:00Z');
+    await render(<PickupTimePicker now={NOW} value={value} onChange={jest.fn()} locale="en-US" />);
+    await choose('Change pickup time');
+    expect(iso(control().props.value)).toBe(iso(value));
     expect(control().props.timeZoneName).toBeUndefined();
   });
 
-  it('shows the chosen time in the zone, and can hide the calendar', async () => {
+  it('shows the chosen time in the zone, as text', async () => {
     await render(
       <PickupTimePicker
         now={NOW}
@@ -68,46 +85,154 @@ describe('iOS: one inline calendar and time control', () => {
       />,
     );
     expect(screen.getByText('Pickup: Sun, Nov 8, 6:00 PM')).toBeOnTheScreen();
-    await fireEvent.press(screen.getByRole('button', { name: 'Change pickup time' }));
-    expect(control()).toBeOnTheScreen();
-    await fireEvent.press(screen.getByRole('button', { name: 'Hide pickup calendar' }));
-    expect(screen.queryByTestId('datetimepicker-datetime')).not.toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Change pickup time' })).toBeOnTheScreen();
   });
 
-  it('reports a chosen time as an instant, snapped to a quarter hour', async () => {
+  it('dragging the control changes the draft, not the choice', async () => {
     const onChange = jest.fn();
     await render(<PickupTimePicker now={NOW} value={EARLIEST} onChange={onChange} {...AUCKLAND} />);
-    await fireEvent.press(screen.getByRole('button', { name: 'Change pickup time' }));
-    onChange.mockClear();
-    await act(async () =>
-      control().props.onValueChange(picked(new Date()), new Date('2026-11-08T05:07:00Z')),
-    );
+    await choose('Change pickup time');
+    await drag(new Date('2026-11-08T05:00:00Z'));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(within(dialog()).getByText('Selected: Sun, Nov 8, 6:00 PM')).toBeOnTheScreen();
+  });
+
+  it('Done applies the draft as an instant, snapped to a quarter hour, and closes', async () => {
+    const onChange = jest.fn();
+    await render(<PickupTimePicker now={NOW} value={EARLIEST} onChange={onChange} {...AUCKLAND} />);
+    await choose('Change pickup time');
+    await drag(new Date('2026-11-08T05:07:00Z'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Done, use this pickup time' }));
+    expect(onChange).toHaveBeenCalledTimes(1);
     expect(iso(onChange.mock.calls[0][0])).toBe('2026-11-08T05:00:00.000Z');
     expect(onChange.mock.calls[0][1]).toBeNull();
+    expect(screen.queryByTestId('pickup-time-dialog')).not.toBeOnTheScreen();
   });
 
-  it('keeps a time the control let through if it is too soon or too far, and says which', async () => {
+  it('Done without touching the control chooses the earliest time (an explicit tap)', async () => {
+    const onChange = jest.fn();
+    await render(<PickupTimePicker now={NOW} value={null} onChange={onChange} {...AUCKLAND} />);
+    await choose();
+    await fireEvent.press(screen.getByRole('button', { name: 'Done, use this pickup time' }));
+    expect(iso(onChange.mock.calls[0][0])).toBe(iso(EARLIEST));
+  });
+
+  it('Done keeps a time the control let through if it is too soon or too far, and says which', async () => {
     const onChange = jest.fn();
     await render(<PickupTimePicker now={NOW} value={EARLIEST} onChange={onChange} {...AUCKLAND} />);
-    await fireEvent.press(screen.getByRole('button', { name: 'Change pickup time' }));
-    onChange.mockClear();
-    await act(async () =>
-      control().props.onValueChange(picked(new Date()), new Date('2026-11-07T12:00:00Z')),
-    );
+    await choose('Change pickup time');
+    await drag(new Date('2026-11-07T12:00:00Z'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Done, use this pickup time' }));
     expect(iso(onChange.mock.calls[0][0])).toBe(iso(EARLIEST));
     expect(onChange.mock.calls[0][1]).toBe('too_soon');
-    await act(async () =>
-      control().props.onValueChange(picked(new Date()), new Date(LATEST.getTime() + 3_600_000)),
-    );
+    await choose('Change pickup time');
+    await drag(new Date(LATEST.getTime() + 3_600_000));
+    await fireEvent.press(screen.getByRole('button', { name: 'Done, use this pickup time' }));
     expect(iso(onChange.mock.calls[1][0])).toBe(iso(LATEST));
     expect(onChange.mock.calls[1][1]).toBe('too_far');
   });
 
-  it('has 44 pt targets and roles', async () => {
+  it('Cancel discards the draft and closes; reopening starts from the original', async () => {
+    const onChange = jest.fn();
+    const value = new Date('2026-11-08T05:00:00Z');
+    await render(<PickupTimePicker now={NOW} value={value} onChange={onChange} {...AUCKLAND} />);
+    await choose('Change pickup time');
+    await drag(new Date('2026-11-09T05:00:00Z'));
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Cancel, keep the current pickup time' }),
+    );
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('pickup-time-dialog')).not.toBeOnTheScreen();
+    await choose('Change pickup time');
+    expect(iso(control().props.value)).toBe(iso(value));
+  });
+
+  it('the backdrop discards too', async () => {
+    const onChange = jest.fn();
+    await render(<PickupTimePicker now={NOW} value={EARLIEST} onChange={onChange} {...AUCKLAND} />);
+    await choose('Change pickup time');
+    await drag(new Date('2026-11-08T05:00:00Z'));
+    await fireEvent.press(
+      screen.getByTestId('pickup-time-backdrop', { includeHiddenElements: true }),
+    );
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('pickup-time-dialog')).not.toBeOnTheScreen();
+  });
+
+  it('the system back request discards too', async () => {
+    const onChange = jest.fn();
+    await render(<PickupTimePicker now={NOW} value={EARLIEST} onChange={onChange} {...AUCKLAND} />);
+    await choose('Change pickup time');
+    await drag(new Date('2026-11-08T05:00:00Z'));
+    await act(async () => screen.getByTestId('pickup-time-modal').props.onRequestClose());
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('pickup-time-dialog')).not.toBeOnTheScreen();
+  });
+
+  it('is a modal dialog: Cancel and Done are 44 pt buttons outside the scrolling control', async () => {
     await render(<PickupTimePicker now={NOW} value={null} onChange={jest.fn()} {...AUCKLAND} />);
-    const button = screen.getByRole('button', { name: 'Choose pickup time' });
-    const flat = Object.assign({}, ...[button.props.style].flat(Infinity).filter(Boolean));
-    expect(flat.minHeight).toBeGreaterThanOrEqual(44);
+    await choose();
+    expect(dialog().props.accessibilityViewIsModal).toBe(true);
+    const scroll = screen.getByTestId('pickup-time-scroll');
+    expect(within(scroll).getByTestId('datetimepicker-datetime')).toBeOnTheScreen();
+    for (const name of ['Cancel, keep the current pickup time', 'Done, use this pickup time']) {
+      const button = screen.getByRole('button', { name });
+      expect(within(scroll).queryByRole('button', { name })).not.toBeOnTheScreen();
+      expect(
+        within(screen.getByTestId('pickup-time-footer')).getByRole('button', { name }),
+      ).toBeOnTheScreen();
+      const flat = Object.assign({}, ...[button.props.style].flat(Infinity).filter(Boolean));
+      expect(flat.minHeight).toBeGreaterThanOrEqual(44);
+      expect(flat.height).toBeUndefined();
+    }
+    const footer = Object.assign(
+      {},
+      ...[screen.getByTestId('pickup-time-footer').props.style].flat(Infinity),
+    );
+    expect(footer.flexWrap).toBe('wrap');
+  });
+
+  it('moves focus to the dialog title when it appears', async () => {
+    const send = jest
+      .spyOn(AccessibilityInfo, 'sendAccessibilityEvent')
+      .mockImplementation(() => undefined);
+    await render(<PickupTimePicker now={NOW} value={null} onChange={jest.fn()} {...AUCKLAND} />);
+    await choose();
+    await act(async () => screen.getByTestId('pickup-time-modal').props.onShow());
+    expect(send).toHaveBeenCalledWith(expect.anything(), 'focus');
+  });
+
+  it('fades in, or does not animate at all with Reduce Motion', async () => {
+    await render(<PickupTimePicker now={NOW} value={null} onChange={jest.fn()} {...AUCKLAND} />);
+    await choose();
+    expect(screen.getByTestId('pickup-time-modal').props.animationType).toBe('fade');
+    await cleanup();
+    jest.mocked(useReduceMotion).mockReturnValue(true);
+    await render(<PickupTimePicker now={NOW} value={null} onChange={jest.fn()} {...AUCKLAND} />);
+    await choose();
+    expect(screen.getByTestId('pickup-time-modal').props.animationType).toBe('none');
+  });
+
+  it('is tall enough to scroll but never taller than the screen', async () => {
+    await render(<PickupTimePicker now={NOW} value={null} onChange={jest.fn()} {...AUCKLAND} />);
+    await choose();
+    const flat = Object.assign({}, ...[dialog().props.style].flat(Infinity).filter(Boolean));
+    expect(flat.maxHeight).toBeGreaterThan(0);
+    expect(flat.maxHeight).toBeLessThan(844);
+    expect(flat.height).toBeUndefined();
+  });
+
+  it.each([
+    [1, 'inline'],
+    [1.99, 'inline'],
+    [2, 'spinner'],
+    [3.1, 'spinner'],
+  ])('at text scale %s the control is %s', async (fontScale, display) => {
+    mockFontScale(fontScale);
+    await render(<PickupTimePicker now={NOW} value={null} onChange={jest.fn()} {...AUCKLAND} />);
+    await choose();
+    expect(control().props.display).toBe(display);
+    expect(pickerDisplay(fontScale)).toBe(display);
   });
 });
 

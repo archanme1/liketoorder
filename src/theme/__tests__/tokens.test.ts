@@ -1,4 +1,4 @@
-import { colors } from '@/theme/tokens';
+import { colors, scrim, theme } from '@/theme/tokens';
 
 // WCAG 2.x relative luminance of a #RRGGBB color.
 function luminance(hex: string): number {
@@ -29,5 +29,14 @@ describe('theme tokens', () => {
   it('gives primary on bg at least 4.5:1 contrast (WCAG AA)', () => {
     expect(colors.bg).toBe('#FFFDF9');
     expect(contrastRatio(colors.primary, colors.bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // The modal backdrop dims the page without hiding it, and a card on it keeps its contrast.
+  it('has a translucent scrim for modal dialogs, exposed on the theme', () => {
+    expect(theme.scrim).toBe(scrim);
+    const alpha = Number(/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*([\d.]+)\s*\)/.exec(scrim)?.[1]);
+    expect(alpha).toBeGreaterThanOrEqual(0.2);
+    expect(alpha).toBeLessThanOrEqual(0.6);
+    expect(contrastRatio(colors.text, colors.surface)).toBeGreaterThanOrEqual(4.5);
   });
 });

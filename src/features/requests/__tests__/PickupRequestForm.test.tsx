@@ -120,9 +120,11 @@ async function formReady() {
   await screen.findByRole('header', { name: 'Request pickup' });
 }
 
-// Opening the native picker also selects its first value, the earliest allowed time.
+// Opens the pickup-time dialog and taps Done: with the control untouched that chooses the
+// earliest allowed time.
 async function pickFirstTime() {
   await fireEvent.press(screen.getByRole('button', { name: 'Choose pickup time' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Done, use this pickup time' }));
 }
 
 const send = () => screen.getByRole('button', { name: "Send pickup request to Joe's Pizza" });
@@ -621,21 +623,44 @@ describe('the title steps aside while the keyboard is up', () => {
 describe('the pickup time', () => {
   const control = () => screen.getByTestId('datetimepicker-datetime');
   const picked = (date: Date) => ({ nativeEvent: { timestamp: date.getTime(), utcOffset: 0 } });
+  const done = () => screen.getByRole('button', { name: 'Done, use this pickup time' });
+  // Open the dialog, move the control, and tap Done.
+  async function chooseTime(date: Date, open = 'Choose pickup time') {
+    await fireEvent.press(screen.getByRole('button', { name: open }));
+    await act(async () => control().props.onValueChange(picked(date), date));
+    await fireEvent.press(done());
+  }
 
-  it("is chosen with the native control, whose limits are the server's window", async () => {
+  it("is chosen in a dialog whose control carries the server's window", async () => {
     await renderScreen();
     await formReady();
     expect(screen.getByText('No pickup time chosen yet.')).toBeOnTheScreen();
-    await pickFirstTime();
-    const { minimumDate, maximumDate, minuteInterval, mode, display } = control().props;
+    expect(screen.queryByTestId('pickup-time-dialog')).not.toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose pickup time' }));
+    const { minimumDate, maximumDate, minuteInterval, mode } = control().props;
     expect(mode).toBe('datetime');
-    expect(display).toBe('inline');
     expect(minuteInterval).toBe(15);
     const now = Date.now();
     expect(minimumDate.getTime() - now).toBeGreaterThanOrEqual(15 * 60_000);
     expect(minimumDate.getTime() - now).toBeLessThanOrEqual(31 * 60_000);
     expect(maximumDate.getTime() - now).toBeLessThanOrEqual(7 * 24 * 3_600_000);
+    // Nothing is chosen until Done.
+    expect(screen.getByText('No pickup time chosen yet.')).toBeOnTheScreen();
+    await fireEvent.press(done());
     expect(screen.getByText(/^Pickup: /)).toBeOnTheScreen();
+    expect(screen.queryByTestId('pickup-time-dialog')).not.toBeOnTheScreen();
+  });
+
+  it('Cancel leaves the time as it was', async () => {
+    await renderScreen();
+    await formReady();
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose pickup time' }));
+    const later = new Date(Math.ceil((Date.now() + 3 * 3_600_000) / 900_000) * 900_000);
+    await act(async () => control().props.onValueChange(picked(later), later));
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Cancel, keep the current pickup time' }),
+    );
+    expect(screen.getByText('No pickup time chosen yet.')).toBeOnTheScreen();
   });
 
   it('sends the chosen time as UTC', async () => {
@@ -643,35 +668,32 @@ describe('the pickup time', () => {
     await renderScreen();
     await formReady();
     await fireEvent.changeText(screen.getByLabelText('Anything else'), 'two pizzas');
-    await pickFirstTime();
     const chosen = new Date(Math.ceil((Date.now() + 3 * 3_600_000) / 900_000) * 900_000);
-    await act(async () => control().props.onValueChange(picked(chosen), chosen));
+    await chooseTime(chosen);
     await fireEvent.press(send());
     await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
     expect(submitMock.mock.calls[0][0].pickupAt.toISOString()).toBe(chosen.toISOString());
   });
 
-  it('a time the control let through that is too soon is moved to the earliest, with "Pick a later time"', async () => {
+  it('a time the control let through that is too soon becomes the earliest, with "Pick a later time"', async () => {
     await renderScreen();
     await formReady();
-    await pickFirstTime();
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose pickup time' }));
     const earliest = control().props.minimumDate as Date;
-    await act(async () =>
-      control().props.onValueChange(picked(new Date()), new Date(Date.now() + 60_000)),
-    );
+    const soon = new Date(Date.now() + 60_000);
+    await act(async () => control().props.onValueChange(picked(soon), soon));
+    await fireEvent.press(done());
     expect(
       await within(screen.getByTestId('send-bar')).findByText('Pick a later time'),
     ).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Change pickup time' }));
     expect(control().props.value.getTime()).toBe(earliest.getTime());
   });
 
   it('a time too far ahead is moved to the latest, with a message', async () => {
     await renderScreen();
     await formReady();
-    await pickFirstTime();
-    await act(async () =>
-      control().props.onValueChange(picked(new Date()), new Date(Date.now() + 30 * 24 * 3_600_000)),
-    );
+    await chooseTime(new Date(Date.now() + 30 * 24 * 3_600_000));
     expect(
       await within(screen.getByTestId('send-bar')).findByText('Pick a time within the next 7 days'),
     ).toBeOnTheScreen();
@@ -682,13 +704,10 @@ describe('the pickup time', () => {
     await renderScreen();
     await formReady();
     await fireEvent.changeText(screen.getByLabelText('Anything else'), 'two pizzas');
-    await pickFirstTime();
-    await act(async () =>
-      control().props.onValueChange(picked(new Date()), new Date(Date.now() + 60_000)),
-    );
+    await chooseTime(new Date(Date.now() + 60_000));
     await screen.findByText('Pick a later time');
     const later = new Date(Math.ceil((Date.now() + 2 * 3_600_000) / 900_000) * 900_000);
-    await act(async () => control().props.onValueChange(picked(later), later));
+    await chooseTime(later, 'Change pickup time');
     await waitFor(() => expect(screen.queryByText('Pick a later time')).not.toBeOnTheScreen());
     await fireEvent.press(send());
     await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));

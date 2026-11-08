@@ -1,5 +1,6 @@
 // Where to send a guest after they sign in: set by the "Request pickup" button, read by the root
-// navigator once the profile is complete, cleared by the form when it opens. Kept in memory only:
+// navigator once the profile is complete, cleared by the form when it opens, and cleared when the
+// sign-in screens close without a session (useClearReturnToOnLeave). Kept in memory only:
 // if the app is killed mid-sign-in (say during email verification) the guest lands on Profile.
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -23,12 +24,13 @@ export function setReturnTo(href: string, now: number = Date.now()): boolean {
   return true;
 }
 
+/**
+ * Where to go after sign-in, or null. Pure: it changes nothing, so it is safe to call while a
+ * screen renders (React may render twice or skip a render). An expired value is simply not
+ * returned; `clearReturnTo` is what forgets it.
+ */
 export function peekReturnTo(now: number = Date.now()): string | null {
-  if (pending === null) return null;
-  if (now - pending.at > RETURN_TO_TTL_MS) {
-    pending = null;
-    return null;
-  }
+  if (pending === null || now - pending.at > RETURN_TO_TTL_MS) return null;
   return pending.href;
 }
 

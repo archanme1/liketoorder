@@ -1,10 +1,13 @@
 import { Stack } from 'expo-router';
 
+import { useClearReturnToOnLeave } from '@/features/auth/hooks/useClearReturnToOnLeave';
 import { useSession } from '@/features/auth/hooks/useSession';
 
-// Mid-recovery, reset-password is the only reachable auth screen.
+// Mid-recovery, reset-password is the only reachable auth screen. Leaving the group without a
+// session (swipe back, hardware back) forgets the "sign in, then go to the request form" return.
 export default function AuthLayout() {
   const { isRecovering } = useSession();
+  useClearReturnToOnLeave();
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Protected guard={!isRecovering} redirectTo="/reset-password">

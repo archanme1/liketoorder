@@ -49,6 +49,13 @@ describe('returnTo', () => {
     setReturnTo(requestFormHref(ID), 1_000);
     expect(peekReturnTo(1_000 + RETURN_TO_TTL_MS)).toBe(requestFormHref(ID));
     expect(peekReturnTo(1_000 + RETURN_TO_TTL_MS + 1)).toBeNull();
-    expect(peekReturnTo(1_000)).toBeNull(); // gone for good
+  });
+
+  it('peeking changes nothing (safe to call while rendering), even past the expiry', () => {
+    setReturnTo(requestFormHref(ID), 1_000);
+    expect(peekReturnTo(1_000 + RETURN_TO_TTL_MS + 1)).toBeNull();
+    // A peek that had cleared the value would make this null.
+    expect(peekReturnTo(1_000 + 1)).toBe(requestFormHref(ID));
+    expect(peekReturnTo(1_000 + 1)).toBe(requestFormHref(ID));
   });
 });

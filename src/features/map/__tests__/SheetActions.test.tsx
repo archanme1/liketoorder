@@ -14,6 +14,7 @@ import type { ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthContext, type AuthContextValue } from '@/features/auth/components/AuthProvider';
+import { space } from '@/theme/tokens';
 import { clearReturnTo, peekReturnTo } from '@/features/auth/returnTo';
 import { listCuisines } from '@/features/cuisines/api';
 import { signedUrls } from '@/features/media/api';
@@ -287,6 +288,17 @@ describe('SheetActionRow', () => {
   it('renders nothing for no actions (no empty space is reserved)', async () => {
     await render(<SheetActionRow actions={[]} />);
     expect(screen.toJSON()).toBeNull();
+  });
+
+  it('has room above (off the cuisine line) and below, from the theme tokens', async () => {
+    await render(<SheetActionRow actions={[action('a', 'Request pickup')]} />);
+    const style = flat(screen.getByTestId('sheet-actions'));
+    expect(style.paddingTop).toBe(space.md);
+    expect(style.paddingBottom).toBe(space.md);
+    expect(style.paddingHorizontal).toBe(space.lg);
+    // Padding only: the row has no fixed height, so large text can still grow it.
+    expect(style.height).toBeUndefined();
+    expect(style.maxHeight).toBeUndefined();
   });
 
   it('one or two buttons that wrap, each with a 44 pt target and its own label', async () => {

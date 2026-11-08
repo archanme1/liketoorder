@@ -276,6 +276,21 @@ describe('the exact address', () => {
     expect(await screen.findByText(ADDRESS)).toBeOnTheScreen();
   });
 
+  it('does not keep the address in memory once the screen is closed', async () => {
+    addressMock.mockResolvedValue({ formatted_address: ADDRESS });
+    serve(homemade());
+    const view = await renderScreen();
+    await screen.findByText(ADDRESS);
+    expect(client.getQueryData(requestKeys.address(REQUEST_ID))).toBeTruthy();
+    view.unmount();
+    await waitFor(() =>
+      expect(client.getQueryData(requestKeys.address(REQUEST_ID))).toBeUndefined(),
+    );
+    expect(
+      client.getQueryCache().find({ queryKey: requestKeys.address(REQUEST_ID) }),
+    ).toBeUndefined();
+  });
+
   it('drops the cached address when the request is no longer accepted', async () => {
     addressMock.mockResolvedValue({ formatted_address: ADDRESS });
     serve(homemade());

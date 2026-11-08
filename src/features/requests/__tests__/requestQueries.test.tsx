@@ -12,7 +12,7 @@ import {
 import { requestKeys } from '../hooks/keys';
 import { useCancelPickupRequest } from '../hooks/useCancelPickupRequest';
 import { useMyRequests } from '../hooks/useMyRequests';
-import { canShowAddress, usePickupAddress } from '../hooks/usePickupAddress';
+import { canShowAddress, useAddressCacheGuard, usePickupAddress } from '../hooks/usePickupAddress';
 import { usePickupRequest } from '../hooks/usePickupRequest';
 import { useRefetchAtExpiry } from '../hooks/useRefetchAtExpiry';
 
@@ -185,8 +185,12 @@ describe('usePickupAddress', () => {
 
   it('removes the cached address when the request leaves accepted/completed', async () => {
     addressMock.mockResolvedValue({ formatted_address: '1 King St' });
+    // The detail screen mounts the guard next to the card, once.
     const { result, rerender } = await renderHook(
-      (props: { request: typeof homemadeAccepted }) => usePickupAddress(REQUEST_ID, props.request),
+      (props: { request: typeof homemadeAccepted }) => {
+        useAddressCacheGuard(REQUEST_ID, props.request);
+        return usePickupAddress(REQUEST_ID, props.request);
+      },
       { wrapper, initialProps: { request: homemadeAccepted } },
     );
     await waitFor(() => expect(result.current.data).toBeTruthy());

@@ -30,17 +30,19 @@ export function useAddressCacheGuard(id: string, request: PickupRequest | null |
 }
 
 /**
- * The exact address for a request. The query is off for every other status, and its cached answer
- * is removed as soon as the request leaves accepted/completed, so the address never lingers.
+ * The exact address for a request. The query is off for every other status, and the answer is
+ * dropped from the cache the moment the card unmounts (`gcTime: 0`), so a home address is never
+ * kept in memory for later. The screen that shows the card also mounts `useAddressCacheGuard`
+ * (once), which removes it if the request leaves accepted/completed while the screen is open.
  */
 export function usePickupAddress(id: string, request: PickupRequest | null | undefined) {
   const allowed = canShowAddress(request);
-  useAddressCacheGuard(id, request);
 
   return useQuery<PickupAddress | null, RequestAppError>({
     queryKey: requestKeys.address(id),
     queryFn: () => getMyPickupAddress(id),
     enabled: allowed,
     staleTime: 0,
+    gcTime: 0,
   });
 }

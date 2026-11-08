@@ -309,6 +309,14 @@ describe('the exact address', () => {
 });
 
 describe('total and prices', () => {
+  it('the total is a value, not a heading', async () => {
+    serve(makeRequest());
+    await renderScreen();
+    await screen.findByText('Estimated total: CA$25.00');
+    expect(screen.queryByRole('header', { name: /Estimated total/ })).not.toBeOnTheScreen();
+    expect(screen.getByRole('header', { name: 'Your order' })).toBeOnTheScreen();
+  });
+
   it('says the total leaves out items without a price', async () => {
     serve(
       makeRequest({

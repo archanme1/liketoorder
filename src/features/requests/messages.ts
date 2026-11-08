@@ -1,6 +1,5 @@
 import type { RequestErrorCode } from './api';
 
-export const SENT_TITLE = 'Request sent';
 export const PAY_NOTE = 'Estimated total. Pay the seller directly.';
 export const NO_PRICE_NOTE = 'Total excludes items without a price';
 export const NO_MENU_NOTE = "No menu items available. Describe what you'd like.";
@@ -30,13 +29,13 @@ export function requestErrorMessage(code: RequestErrorCode): string {
     case 'item_unavailable':
       return 'An item you chose is no longer available. Remove it or describe it instead.';
     case 'invalid_text':
-      return 'Your order or note has characters we can’t send. Edit it and try again.';
+      return "Your order or note has characters we can't send. Edit it and try again.";
     case 'empty_order':
-      return 'Choose an item or describe what you’d like.';
+      return "Choose an item or describe what you'd like.";
     case 'too_many_pending':
       return 'You already have a request waiting. Wait for an answer or cancel it first.';
     case 'rate_limited':
-      return 'You’ve sent a lot of requests. Try again later.';
+      return "You've sent a lot of requests. Try again later.";
     case 'invalid_transition':
       return "This request can't be cancelled any more.";
     case 'not_found':

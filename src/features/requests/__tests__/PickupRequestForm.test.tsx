@@ -392,7 +392,7 @@ describe('sending', () => {
     await pickFirstTime();
     await fireEvent.press(send());
     expect(
-      await screen.findByText('Choose an item or describe what you’d like.'),
+      await screen.findByText("Choose an item or describe what you'd like."),
     ).toBeOnTheScreen();
     expect(submitMock).not.toHaveBeenCalled();
   });
@@ -477,6 +477,16 @@ describe('sending', () => {
 
 describe('the fixed Send bar', () => {
   const sendName = "Send pickup request to Joe's Pizza";
+
+  it('the total is a value, not a heading', async () => {
+    await renderScreen();
+    await formReady();
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Increase Margherita quantity, now 0' }),
+    );
+    await screen.findByText('Estimated total: CA$12.50');
+    expect(screen.queryByRole('header', { name: /Estimated total/ })).not.toBeOnTheScreen();
+  });
 
   it('sits above the scrolling form, not inside it', async () => {
     await renderScreen();
@@ -776,5 +786,42 @@ describe('editing while a send is in flight', () => {
     await screen.findByText('Request sent');
     const [first, second] = submitMock.mock.calls.map(([input]) => input.idempotencyKey);
     expect(second).toBe(first);
+  });
+});
+
+describe('a form left open for a while', () => {
+  // Only Date is faked, so timers and promises still run.
+  const fakeDate = (now: Date) =>
+    jest.useFakeTimers({
+      now,
+      doNotFake: [
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+        'setImmediate',
+        'clearImmediate',
+        'nextTick',
+        'queueMicrotask',
+        'requestAnimationFrame',
+        'cancelAnimationFrame',
+      ],
+    });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('offers times from the moment the picker opens, not from when the form was shown', async () => {
+    const shown = new Date('2026-11-08T17:00:00Z');
+    fakeDate(shown);
+    await renderScreen();
+    await formReady();
+    jest.setSystemTime(new Date(shown.getTime() + 45 * 60_000));
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose pickup time' }));
+    const minimum = screen.getByTestId('datetimepicker-datetime').props.minimumDate as Date;
+    // 45 minutes later, plus the 15-minute lead: nothing before 18:00 is offered any more.
+    expect(minimum.getTime()).toBeGreaterThanOrEqual(shown.getTime() + 60 * 60_000);
+    await fireEvent.press(screen.getByRole('button', { name: 'Done, use this pickup time' }));
+    expect(screen.queryByText('Pick a later time')).not.toBeOnTheScreen();
   });
 });

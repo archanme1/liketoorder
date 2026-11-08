@@ -286,6 +286,12 @@ export function PickupRequestForm({ menu, onClose }: PickupRequestFormProps) {
           <PickupTimePicker
             now={now}
             disabled={sending}
+            onOpen={() => {
+              // A form left open for a while must offer times that are still allowed.
+              const fresh = new Date();
+              setNow(fresh);
+              return fresh;
+            }}
             value={pickupAt}
             locale={locale}
             onChange={(value, problem) => {

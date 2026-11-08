@@ -17,19 +17,7 @@ export function deviceTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 
-/** The calendar date of an instant in `timeZone`, as "YYYY-MM-DD". */
-export function localDateKey(date: Date, timeZone: string = deviceTimeZone()): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
-  return `${pick('year')}-${pick('month')}-${pick('day')}`;
-}
-
-export function formatDay(date: Date, { timeZone, locale }: TimeOptions = {}): string {
+function formatDay(date: Date, { timeZone, locale }: TimeOptions = {}): string {
   return new Intl.DateTimeFormat(locale, {
     timeZone: timeZone ?? deviceTimeZone(),
     weekday: 'short',

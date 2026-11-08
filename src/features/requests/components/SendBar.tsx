@@ -35,7 +35,7 @@ export function SendBar({
       <View style={[styles.row, { gap: space.md }]}>
         {total ? (
           <View style={[styles.total, { gap: space.xs, minWidth: size.photoThumb }]}>
-            <Text accessibilityRole="header">{`Estimated total: ${total}`}</Text>
+            <Text>{`Estimated total: ${total}`}</Text>
             {excludesUnpriced ? (
               <Text variant="caption" color="textMuted">
                 {NO_PRICE_NOTE}

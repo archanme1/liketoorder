@@ -5,7 +5,6 @@ import {
   formatDateTime,
   formatTime,
   latestPickup,
-  localDateKey,
   snapToQuarter,
   wallTimeToInstant,
 } from '../time';
@@ -15,15 +14,6 @@ import {
 const AUCKLAND = { timeZone: 'Pacific/Auckland', locale: 'en-US' };
 const HOUR = 3_600_000;
 const iso = (date: Date) => date.toISOString();
-
-describe('localDateKey', () => {
-  it('uses the zone, not UTC', () => {
-    const instant = new Date('2026-11-07T20:00:00Z'); // Nov 8, 09:00 in Auckland
-    expect(localDateKey(instant, 'UTC')).toBe('2026-11-07');
-    expect(localDateKey(instant, 'Pacific/Auckland')).toBe('2026-11-08');
-    expect(localDateKey(instant, 'America/Toronto')).toBe('2026-11-07');
-  });
-});
 
 describe('formatting', () => {
   it('shows a UTC timestamp in the chosen zone', () => {
@@ -188,8 +178,6 @@ describe('combineDateAndTime', () => {
     const combined = combineDateAndTime(day, time, 'Pacific/Auckland');
     expect(iso(combined)).toBe('2026-11-08T05:00:00.000Z'); // 8 November, 18:00 in Auckland
     expect(formatDateTime(combined, AUCKLAND)).toBe('Sun, Nov 8, 6:00 PM');
-    // UTC would have said 7 November 05:00Z + 12:00 = a different day.
-    expect(localDateKey(combined, 'Pacific/Auckland')).toBe('2026-11-08');
   });
 
   it('keeps the wall-clock time across a daylight-saving change (the instant moves by 23 hours)', () => {

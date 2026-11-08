@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react-native';
+import { useState } from 'react';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { AccessibilityInfo, Dimensions, Platform } from 'react-native';
 
@@ -73,6 +74,19 @@ describe('iOS: a button opens a dialog with one calendar and time control', () =
     await choose('Change pickup time');
     expect(iso(control().props.value)).toBe(iso(value));
     expect(control().props.timeZoneName).toBeUndefined();
+  });
+
+  it("the chosen time is a value, not a heading (VoiceOver's heading list stays for sections)", async () => {
+    await render(
+      <PickupTimePicker
+        now={NOW}
+        value={new Date('2026-11-08T05:00:00Z')}
+        onChange={jest.fn()}
+        {...AUCKLAND}
+      />,
+    );
+    expect(screen.queryByRole('header', { name: /Pickup:/ })).not.toBeOnTheScreen();
+    expect(screen.getByText('Pickup: Sun, Nov 8, 6:00 PM')).toBeOnTheScreen();
   });
 
   it('shows the chosen time in the zone, as text', async () => {
@@ -233,6 +247,61 @@ describe('iOS: a button opens a dialog with one calendar and time control', () =
     await choose();
     expect(control().props.display).toBe(display);
     expect(pickerDisplay(fontScale)).toBe(display);
+  });
+});
+
+// A form left open: when the picker opens it asks the parent for the time now, and offers times
+// from that moment, not from when the form was first shown.
+describe('opening the picker uses the time now', () => {
+  const LATER = new Date(NOW.getTime() + 40 * 60_000);
+
+  function Harness({ onChange }: { onChange: jest.Mock }) {
+    const [now, setNow] = useState(NOW);
+    return (
+      <PickupTimePicker
+        now={now}
+        value={null}
+        onChange={onChange}
+        onOpen={() => {
+          setNow(LATER);
+          return LATER;
+        }}
+        {...AUCKLAND}
+      />
+    );
+  }
+
+  it('iOS: the control starts from the fresh earliest time, and Done chooses it', async () => {
+    const onChange = jest.fn();
+    await render(<Harness onChange={onChange} />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose pickup time' }));
+    expect(iso(control().props.minimumDate)).toBe(iso(earliestPickup(LATER)));
+    expect(iso(control().props.maximumDate)).toBe(iso(latestPickup(LATER)));
+    expect(iso(control().props.minimumDate)).not.toBe(iso(EARLIEST));
+    await fireEvent.press(screen.getByRole('button', { name: 'Done, use this pickup time' }));
+    expect(iso(onChange.mock.calls[0][0])).toBe(iso(earliestPickup(LATER)));
+    expect(onChange.mock.calls[0][1]).toBeNull();
+  });
+
+  it('Android: the date dialog uses the fresh limits, and the answer is checked against them', async () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+    const onChange = jest.fn();
+    await render(<Harness onChange={onChange} />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose pickup time' }));
+    expect(iso(lastDialog().minimumDate as Date)).toBe(iso(earliestPickup(LATER)));
+    expect(iso(lastDialog().maximumDate as Date)).toBe(iso(latestPickup(LATER)));
+    await act(async () => lastDialog().onValueChange?.(picked(new Date()), earliestPickup(LATER)));
+    // 01:30, fine at the first-shown time but now too early: the fresh time says so.
+    await act(async () => lastDialog().onValueChange?.(picked(new Date()), EARLIEST));
+    expect(iso(onChange.mock.calls[0][0])).toBe(iso(earliestPickup(LATER)));
+    expect(onChange.mock.calls[0][1]).toBe('too_soon');
+  });
+
+  it('works without onOpen too (the time given is used)', async () => {
+    const onChange = jest.fn();
+    await render(<PickupTimePicker now={NOW} value={null} onChange={onChange} {...AUCKLAND} />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose pickup time' }));
+    expect(iso(control().props.minimumDate)).toBe(iso(EARLIEST));
   });
 });
 

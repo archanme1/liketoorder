@@ -86,7 +86,7 @@ export function RequestDetail({ request, timeZone, locale = deviceLocale() }: Re
         {request.order_text ? <Text>{request.order_text}</Text> : null}
         {summary.total ? (
           <View style={{ gap: space.xs }}>
-            <Text accessibilityRole="header">{`Estimated total: ${summary.total}`}</Text>
+            <Text>{`Estimated total: ${summary.total}`}</Text>
             {summary.excludesUnpriced ? <Text color="textMuted">{NO_PRICE_NOTE}</Text> : null}
             <Text color="textMuted">{PAY_NOTE}</Text>
           </View>

@@ -46,6 +46,12 @@ type PickupTimePickerProps = TimeOptions & {
   disabled?: boolean;
   /** The chosen time (a quarter hour, inside the allowed window), and which side it was outside of. */
   onChange: (value: Date, problem: PickupTimeProblem | null) => void;
+  /**
+   * Called when the person opens the picker. Returns the current time, which the picker uses for
+   * the earliest and latest times, so a form left open for a while offers times that are still
+   * allowed. The parent should also store it as the `now` it passes in.
+   */
+  onOpen?: () => Date;
 };
 
 // The platform's own calendar and time picker, in the platform's own way. iOS: a button opens a
@@ -60,6 +66,7 @@ export function PickupTimePicker({
   value,
   onChange,
   disabled = false,
+  onOpen,
   timeZone,
   locale,
 }: PickupTimePickerProps) {
@@ -72,47 +79,52 @@ export function PickupTimePicker({
   const base = value ?? earliest;
 
   const [open, setOpen] = useState(false);
-  // What the control shows while the dialog is open. Nothing is applied until Done.
-  const [draft, setDraft] = useState<Date>(base);
+  // What the control shows while the dialog is open, once the person has moved it; until then it
+  // shows the chosen time (or the earliest). Nothing is applied until Done.
+  const [draft, setDraft] = useState<Date | null>(null);
+  const shownDraft = draft ?? base;
   const titleRef = useRef<ComponentRef<typeof View>>(null);
 
-  const finish = (picked: Date) => {
-    const { value: next, problem } = clampToWindow(picked, now);
+  const finish = (picked: Date, at: Date = now) => {
+    const { value: next, problem } = clampToWindow(picked, at);
     onChange(next, problem);
   };
 
   const choose = () => {
+    const at = onOpen ? onOpen() : now;
     if (Platform.OS === 'android') {
+      // The dialogs open straight away, so they use the fresh time directly.
+      const openBase = value ?? earliestPickup(at);
       DateTimePickerAndroid.open({
         mode: 'date',
-        value: base,
-        minimumDate: earliest,
-        maximumDate: latest,
+        value: openBase,
+        minimumDate: earliestPickup(at),
+        maximumDate: latestPickup(at),
         timeZoneName: timeZone,
         onValueChange: (_event, pickedDay) => {
           // Keep the wall-clock time already chosen, on the new day, whatever the dialog returned.
-          const withDay = combineDateAndTime(pickedDay, base, zone);
+          const withDay = combineDateAndTime(pickedDay, openBase, zone);
           DateTimePickerAndroid.open({
             mode: 'time',
             value: withDay,
             minuteInterval: 15,
             timeZoneName: timeZone,
             onValueChange: (_timeEvent, pickedTime) => {
-              finish(combineDateAndTime(withDay, pickedTime, zone));
+              finish(combineDateAndTime(withDay, pickedTime, zone), at);
             },
           });
         },
       });
       return;
     }
-    setDraft(base);
+    setDraft(null);
     setOpen(true);
   };
 
   const cancel = () => setOpen(false);
   const done = () => {
     setOpen(false);
-    finish(draft);
+    finish(shownDraft);
   };
 
   const label = value ? 'Change pickup time' : 'Choose pickup time';
@@ -120,7 +132,7 @@ export function PickupTimePicker({
   return (
     <View style={{ gap: space.md }}>
       {value ? (
-        <Text accessibilityRole="header">{`Pickup: ${formatDateTime(value, { timeZone: zone, locale })}`}</Text>
+        <Text>{`Pickup: ${formatDateTime(value, { timeZone: zone, locale })}`}</Text>
       ) : (
         <Text color="textMuted">No pickup time chosen yet.</Text>
       )}
@@ -181,11 +193,11 @@ export function PickupTimePicker({
                     Pickup time
                   </Text>
                 </View>
-                <Text color="textMuted">{`Selected: ${formatDateTime(draft, { timeZone: zone, locale })}`}</Text>
+                <Text color="textMuted">{`Selected: ${formatDateTime(shownDraft, { timeZone: zone, locale })}`}</Text>
                 <DateTimePicker
                   mode="datetime"
                   display={pickerDisplay(fontScale)}
-                  value={draft}
+                  value={shownDraft}
                   minimumDate={earliest}
                   maximumDate={latest}
                   minuteInterval={15}

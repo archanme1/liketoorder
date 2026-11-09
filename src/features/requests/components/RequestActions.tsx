@@ -65,7 +65,7 @@ export function RequestActions({ request, pickupPassed, timeZone, locale }: Requ
     if (running) return;
     const done = { onSettled: () => setConfirming(null) };
     if (action === 'accepted' || action === 'declined') {
-      respond.respond(request.id, action, done);
+      respond.respond(request.id, action, undefined, done);
     } else {
       outcome.markOutcome(request.id, action, done);
     }

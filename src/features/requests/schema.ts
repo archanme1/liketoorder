@@ -3,6 +3,8 @@ import { z } from 'zod';
 // Limits mirror submit_pickup_request. The server is the judge; these give fast feedback only.
 export const MAX_ORDER_TEXT = 500;
 export const MAX_NOTE = 300;
+/** The seller's accept note and the written reason for "Other" (the table check allows 1 to 200). */
+export const MAX_ANSWER_NOTE = 200;
 export const MAX_LINES = 30;
 /** Rows per page of list_my_pickup_requests (the server's limit). A full page may have a next. */
 export const PAGE_SIZE = 50;
@@ -21,6 +23,17 @@ export const REQUEST_STATUSES = [
   'no_show',
 ] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
+
+export const DECLINE_REASONS = [
+  'sold_out',
+  'closed_then',
+  'too_busy',
+  'cannot_prepare',
+  'time_not_possible',
+  'other',
+] as const;
+export const declineReasonSchema = z.enum(DECLINE_REASONS);
+export type DeclineReason = z.output<typeof declineReasonSchema>;
 
 const timestamp = z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'bad timestamp');
 
@@ -48,6 +61,11 @@ export const pickupRequestSchema = z.strictObject({
   currency_code: z.string().nullable(),
   expires_at: timestamp,
   created_at: timestamp,
+  // The seller's answer (spec 10b), always present and null when not set. The reason is only on a
+  // declined row (a request declined before spec 10b has none); for "other" the seller's own words
+  // are in response_note, and a fixed reason never carries a note.
+  decline_reason: declineReasonSchema.nullable(),
+  response_note: z.string().max(MAX_ANSWER_NOTE).nullable(),
 });
 
 export const requestListSchema = z.strictObject({
@@ -91,6 +109,8 @@ export const waitingCountSchema = z.strictObject({
 export type InboxFilter = 'waiting' | 'all';
 export type SellerDecision = 'accepted' | 'declined';
 export type SellerOutcome = 'completed' | 'no_show';
+/** What a seller may attach to an answer. Both are optional here; the server judges them. */
+export type RespondOptions = { declineReason?: DeclineReason; note?: string };
 
 export type PickupRequest = z.output<typeof pickupRequestSchema>;
 export type SellerRequest = z.output<typeof sellerRequestSchema>;
@@ -127,6 +147,36 @@ export function stripHidden(text: string): string {
 export function cleanText(text: string | undefined): string | undefined {
   const cleaned = stripHidden(text ?? '').trim();
   return cleaned === '' ? undefined : cleaned;
+}
+
+// ── The seller's answer ──────────────────────────────────────────────────────────────────────
+// The form behind the Accept and Decline dialogs. Fast feedback only: respond_to_request judges.
+const answerText = z.string().transform((text) => cleanText(text) ?? '');
+
+export const respondInputSchema = z.discriminatedUnion('decision', [
+  z.object({
+    decision: z.literal('accepted'),
+    note: answerText.pipe(z.string().max(MAX_ANSWER_NOTE)),
+  }),
+  z.object({
+    decision: z.literal('declined'),
+    reason: declineReasonSchema,
+    // Only "other" has text; for a fixed reason it is dropped (the server refuses a note on one).
+    text: answerText.pipe(z.string().max(MAX_ANSWER_NOTE)),
+  }),
+]).superRefine((value, ctx) => {
+  if (value.decision === 'declined' && value.reason === 'other' && value.text === '') {
+    ctx.addIssue({ code: 'custom', path: ['text'], message: 'required' });
+  }
+});
+export type RespondInput = z.input<typeof respondInputSchema>;
+
+/** What to send for a valid answer form: nothing for an empty note, the text only for "other". */
+export function respondOptions(input: z.output<typeof respondInputSchema>): RespondOptions | undefined {
+  if (input.decision === 'accepted') return input.note === '' ? undefined : { note: input.note };
+  return input.reason === 'other'
+    ? { declineReason: 'other', note: input.text }
+    : { declineReason: input.reason };
 }
 
 // ── Order lines ──────────────────────────────────────────────────────────────────────────────

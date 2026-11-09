@@ -50,3 +50,12 @@ export function loadErrorMessage(code: RequestErrorCode): string {
     ? 'No connection. Check your internet and try again.'
     : "We couldn't load your requests. Try again.";
 }
+
+/** The seller's answer on a customer's request. Plain text only: no links, no markup. */
+export function declinedLine(reason: string | null): string {
+  return reason ? `Declined: ${reason}` : 'Declined';
+}
+
+export function sellerNoteLine(note: string): string {
+  return `Seller's note: ${note}`;
+}

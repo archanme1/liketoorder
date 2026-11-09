@@ -18,6 +18,8 @@ export function makeRequest(over: Partial<PickupRequest> = {}): PickupRequest {
     currency_code: 'CAD',
     expires_at: '2026-11-08T17:30:00+00:00',
     created_at: '2026-11-08T17:00:00+00:00',
+    decline_reason: null,
+    response_note: null,
     ...over,
   };
 }

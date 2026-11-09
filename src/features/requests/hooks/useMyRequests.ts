@@ -41,7 +41,7 @@ const hasPending = (data: Pages | undefined) =>
  * fetched, so a request added meanwhile shifts rows between pages without losing or repeating
  * any. `refresh` (pull to refresh) goes back to page 1 only, and only once page 1 has loaded.
  */
-export function useMyRequests() {
+export function useMyRequests(options: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
   const query = useInfiniteQuery<
     RequestList,
@@ -58,6 +58,7 @@ export function useMyRequests() {
         ? { before: last.requests[last.requests.length - 1].created_at }
         : undefined,
     staleTime: 0,
+    enabled: options.enabled ?? true,
     refetchInterval: (q) => (hasPending(q.state.data) ? PENDING_POLL_MS : false),
   });
 

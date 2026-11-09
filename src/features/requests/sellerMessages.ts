@@ -15,6 +15,18 @@ export const ACCEPT_ADDRESS_NOTICE =
   'Your exact address will be shown to the customer until 24 hours after the pickup time.';
 export const NOT_FOUND_MESSAGE = "We couldn't find that request.";
 export const NO_UNDO = "You can't undo this.";
+export const DECLINE_REASON_TITLE = 'Why are you declining?';
+export const DECLINE_REASON_REQUIRED = 'Choose a reason first';
+export const OTHER_REASON_LABEL = 'Your reason';
+export const OTHER_REASON_REQUIRED = 'Write your reason first';
+export const ACCEPT_NOTE_LABEL = 'Note for the customer (optional)';
+export const ACCEPT_ADDRESS_HINT =
+  "Your address is shared automatically after you accept, so don't type it here";
+
+/** The live counter under a note box, in words: "12 of 200". */
+export function counterText(length: number, max: number): string {
+  return `${length} of ${max}`;
+}
 
 export type SellerAction = 'accepted' | 'declined' | 'completed' | 'no_show';
 
@@ -92,6 +104,10 @@ export function actionErrorMessage(code: RequestErrorCode): string {
       return NOT_FOUND_MESSAGE;
     case 'not_signed_in':
       return 'Sign in again to answer requests.';
+    case 'decline_reason_required':
+      return 'Choose a reason before declining.';
+    case 'invalid_text':
+      return "Your note has characters we can't send. Edit it and try again.";
     default:
       return 'Something went wrong. Try again.';
   }

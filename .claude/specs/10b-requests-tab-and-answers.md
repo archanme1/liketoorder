@@ -5,7 +5,7 @@
 - PR 2 (the app: Requests tab, switches, badges, decline reason picker, accept note, jest tests): `feature/requests-tab-and-answers-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (Navigation, Final tab bar plan), §8 (Pickup requests), §9 (Table requests, for what must fit later), §12 (notifications, for what is NOT built here), §14 row 10b, §16 (no in-app way into the inbox, paged-list copy, Function privileges)
 **Plan mode:** required — adds columns and changes the signature of `respond_to_request` and the shared request object (customer contract change), extends the pgTAP function allowlists, changes navigation (tab bar rules by seller mode), and touches well over ~5 files.
-**Status:** 🚧 In progress (PR 1, backend, built; PR 2, the app, not started)
+**Status:** 🚧 In progress (PR 1, backend, built and merged; PR 2, the app, built in gates B, C and D on `feature/requests-tab-and-answers-app`, manual run pending)
 
 ## Overview
 After this ships, a signed-in user has a **Requests** tab. A customer sees the pickup requests they sent (today's My requests). Anyone who owns a business sees two switches at the top: **Received** (the seller inbox from spec 10) and **Sent** (their own requests as a customer). It opens on Received when seller mode is on and on Sent when it is off, which closes the §16 gap "no in-app way into the inbox when seller mode is off". The tab bar follows seller mode: off shows Restaurants · Homemade · Requests · Profile; on shows Requests · Manage · Profile (the two map tabs are hidden while a seller is working). Offers is added later by spec 16.

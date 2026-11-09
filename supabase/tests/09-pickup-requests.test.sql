@@ -362,9 +362,9 @@ insert into res select 'a', public.submit_pickup_request(pg_temp.b(1), gen_rando
                     jsonb_build_object('item_id', pg_temp.i(2), 'quantity', 1)),
   E'  extra words \n', 'no onions');
 select is(pg_temp.keys((select j from res where label = 'a')),
-  array['business_id', 'business_name', 'business_type', 'created_at', 'currency_code', 'display_status', 'expires_at', 'id',
-        'items', 'note', 'order_text', 'pickup_at', 'status'],
-  'a request object has exactly the 13 documented keys (no customer_id, idempotency_key, responded_at, updated_at)');
+  array['business_id', 'business_name', 'business_type', 'created_at', 'currency_code', 'decline_reason', 'display_status',
+        'expires_at', 'id', 'items', 'note', 'order_text', 'pickup_at', 'response_note', 'status'],
+  'a request object has exactly the 15 documented keys (no customer_id, idempotency_key, responded_at, updated_at)');
 select is((select j ->> 'status' from res where label = 'a'), 'pending', 'a new request is pending');
 select is((select j ->> 'display_status' from res where label = 'a'), 'pending', 'a new request shows pending, not expired');
 select is((select (j ->> 'created_at')::timestamptz from res where label = 'a'), now(), 'created_at is the server time');

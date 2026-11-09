@@ -51,7 +51,7 @@ create function pg_temp.responded(n int) returns timestamptz language sql securi
 
 -- Error-returning wrappers: 'OK' or the error message.
 create function pg_temp.resp(n int, decision text) returns text language plpgsql as $$
-begin perform public.respond_to_request(pg_temp.r(n), decision); return 'OK';
+begin perform public.respond_to_request(pg_temp.r(n), decision, case when decision = 'declined' then 'sold_out' end); return 'OK';
 exception when others then return sqlerrm; end $$;
 create function pg_temp.outc(n int, o text) returns text language plpgsql as $$
 begin perform public.mark_request_outcome(pg_temp.r(n), o); return 'OK';
@@ -64,7 +64,7 @@ begin perform public.list_business_requests(p_status, p_before); return 'OK';
 exception when others then return sqlerrm; end $$;
 -- Result of a function, or { "error": message }.
 create function pg_temp.resp_j(n int, decision text) returns jsonb language plpgsql as $$
-begin return public.respond_to_request(pg_temp.r(n), decision);
+begin return public.respond_to_request(pg_temp.r(n), decision, case when decision = 'declined' then 'sold_out' end);
 exception when others then return jsonb_build_object('error', sqlerrm); end $$;
 create function pg_temp.outc_j(n int, o text) returns jsonb language plpgsql as $$
 begin return public.mark_request_outcome(pg_temp.r(n), o);
@@ -291,7 +291,7 @@ select ok(not has_function_privilege('anon', 'private.pickup_request_json(uuid, 
   'private.pickup_request_json is executable by none of anon, authenticated, service_role');
 select is_empty(
   $$ select p.oid::regprocedure::text from pg_proc p
-      where p.oid in ('public.respond_to_request(uuid, text)'::regprocedure,
+      where p.oid in ('public.respond_to_request(uuid, text, text, text)'::regprocedure,
                       'public.mark_request_outcome(uuid, text)'::regprocedure,
                       'public.list_business_requests(text, text)'::regprocedure,
                       'public.get_business_request(uuid)'::regprocedure,
@@ -610,7 +610,7 @@ reset role;
 select is(pg_temp.st(60), 'cancelled', 'cancelled stays cancelled');
 select is(pg_temp.st(61), 'accepted', 'accepted stays accepted');
 select is(pg_temp.st(62), 'declined', 'declined stays declined');
-select ok(pg_temp.locks_first('public.respond_to_request(uuid, text)'::regprocedure, 'r\.business_id = v_b\.id'),
+select ok(pg_temp.locks_first('public.respond_to_request(uuid, text, text, text)'::regprocedure, 'r\.business_id = v_b\.id'),
   'respond_to_request locks the row (the business filter is followed by for update) before it updates');
 select ok(pg_temp.locks_first('public.mark_request_outcome(uuid, text)'::regprocedure, 'r\.business_id = v_biz'),
   'mark_request_outcome locks the row (the business filter is followed by for update) before it updates');
@@ -698,15 +698,16 @@ insert into res select 's_listkeys', pg_temp.list_j();
 insert into res select 's_count', pg_temp.count_j();
 reset role;
 select is(pg_temp.keys((select j from res where label = 'c_submit')),
-  array['business_id', 'business_name', 'business_type', 'created_at', 'currency_code', 'display_status', 'expires_at', 'id',
-        'items', 'note', 'order_text', 'pickup_at', 'status'], 'submit returns exactly the 13 spec 09 keys');
+  array['business_id', 'business_name', 'business_type', 'created_at', 'currency_code', 'decline_reason', 'display_status',
+        'expires_at', 'id', 'items', 'note', 'order_text', 'pickup_at', 'response_note', 'status'], 'submit returns exactly the 15 customer keys (spec 09 plus 10b)');
 select is(pg_temp.keys((select j from res where label = 'c_get')), pg_temp.keys((select j from res where label = 'c_submit')), 'get returns the same keys');
 select is(pg_temp.keys((select j from res where label = 'c_list')), pg_temp.keys((select j from res where label = 'c_submit')), 'list returns the same keys');
 select is(pg_temp.keys((select j from res where label = 'c_cancel')), pg_temp.keys((select j from res where label = 'c_submit')), 'cancel returns the same keys');
 select is((select j ->> 'status' from res where label = 'c_cancel'), 'cancelled', 'cancel returns the new status');
 select is(pg_temp.keys((select j from res where label = 's_get')),
-  array['business_id', 'business_name', 'business_type', 'created_at', 'currency_code', 'customer_name', 'display_status', 'expires_at', 'id',
-        'items', 'note', 'order_text', 'pickup_at', 'responded_at', 'status'], 'the seller object is the 13 keys plus customer_name and responded_at');
+  array['business_id', 'business_name', 'business_type', 'created_at', 'currency_code', 'customer_name', 'decline_reason', 'display_status',
+        'expires_at', 'id', 'items', 'note', 'order_text', 'pickup_at', 'responded_at', 'response_note', 'status'],
+  'the seller object is the 15 customer keys plus customer_name and responded_at');
 select is(pg_temp.keys((select j from res where label = 's_list')), pg_temp.keys((select j from res where label = 's_get')), 'the seller list rows have the same keys as the seller get');
 select is(pg_temp.keys((select j from res where label = 's_listkeys')), array['next_cursor', 'requests', 'server_now'], 'the seller list answer has exactly requests, next_cursor and server_now');
 select is(pg_temp.keys((select j from res where label = 's_count')), array['server_now', 'waiting'], 'the count answer has exactly server_now and waiting');

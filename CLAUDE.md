@@ -184,7 +184,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 08 | homemade-map | ✅ Shipped | .claude/specs/08-homemade-map.md |
 | 09 | pickup-requests | ✅ Shipped | .claude/specs/09-pickup-requests.md |
 | 10 | seller-request-inbox | ✅ Shipped | .claude/specs/10-seller-request-inbox.md |
-| 10b | requests-tab-and-answers | ⬜ Not started | — |
+| 10b | requests-tab-and-answers | 🚧 In progress | .claude/specs/10b-requests-tab-and-answers.md |
 | 11 | table-requests | ⬜ Not started | — |
 | 12 | notifications | ⬜ Not started | — |
 | 13 | food-log-uploads | ⬜ Not started | — |

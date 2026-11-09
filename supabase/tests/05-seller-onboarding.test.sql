@@ -1,7 +1,7 @@
 -- Spec 05: seller onboarding — businesses, business_locations, places_rate_limits,
 -- column grants, function privileges, homemade approximate location and Places quota.
 begin;
-select plan(196);
+select plan(197);
 
 -- ── Fixtures (as postgres) ──────────────────────────────────────────────────
 -- 0501 A  restaurant, listed, with location (the public one)
@@ -179,7 +179,7 @@ select is(
         'get_restaurant_details', 'list_business_requests', 'list_my_pickup_requests', 'map_homemade_in_bounds',
         'map_restaurants_in_bounds', 'mark_request_outcome', 'move_menu_item', 'respond_to_request',
         'set_menu_currency', 'set_seller_mode', 'submit_pickup_request', 'update_menu_item'],
-  'only the allowlisted public functions (specs 05 to 10) are executable by authenticated'
+  'only the allowlisted public functions (specs 05 to 10b) are executable by authenticated'
 );
 select is(
   (select coalesce(array_agg(distinct p.proname::text order by p.proname::text), array[]::text[])
@@ -191,6 +191,11 @@ select is(
   array['get_homemade_details', 'get_restaurant_details', 'map_homemade_in_bounds', 'map_restaurants_in_bounds'],
   'anon can execute only the four public map reads (specs 07, 08)'
 );
+-- Spec 10b: the allowlist above lists names only, so a leftover overload would pass it.
+select is(
+  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'respond_to_request'),
+  1, 'exactly one respond_to_request exists (the old two-argument form is gone)');
 
 -- Spec 06: RLS helpers live in `private`, which PostgREST does not expose.
 select is(

@@ -8,6 +8,8 @@ import type { RequestStatus } from './schema';
 export const EMPTY_INBOX =
   'No requests yet. Customers who request pickup will show up here.';
 export const EMPTY_WAITING = 'Nothing waiting for you right now.';
+export const INBOX_LOAD_MORE_ERROR = "Couldn't load more requests.";
+export const INBOX_REFRESH_ERROR = "Couldn't refresh your requests.";
 export const NO_PRICE_NOTE = 'Total excludes items without a price';
 export const CUSTOMER_PAYS_NOTE = 'Estimated total. The customer pays you directly.';
 export const ACCEPT_ADDRESS_NOTICE =

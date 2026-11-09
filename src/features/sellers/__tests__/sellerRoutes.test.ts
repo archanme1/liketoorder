@@ -39,8 +39,10 @@ describe('getSellerRoute: has a business, seller mode on', () => {
   });
 });
 
-// Spec 06 "Access rules": menu, menu-item and photos follow the same rule as 'edit'.
-describe.each(['menu', 'menu-item', 'photos'] as const)(
+// Spec 06 "Access rules": menu, menu-item and photos follow the same rule as 'edit'. Spec 10: the
+// seller inbox and its request screen follow it too (an owner with seller mode off can still answer
+// requests already sent, Decision 11).
+describe.each(['menu', 'menu-item', 'photos', 'requests', 'request'] as const)(
   'getSellerRoute: the %s screen (spec 06)',
   (screen) => {
     it('sends a user with no business to /seller/onboarding', () => {

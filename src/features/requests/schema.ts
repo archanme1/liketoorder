@@ -62,7 +62,41 @@ export const requestDetailSchema = z.strictObject({
 
 export const pickupAddressSchema = z.strictObject({ formatted_address: z.string().min(1) });
 
+// The seller's view of a request (spec 10): the customer object plus the customer's display name
+// and when it was answered. Still strict: no customer id or email, no address, no place_id.
+export const sellerRequestSchema = pickupRequestSchema.extend({
+  customer_name: z.string().nullable(),
+  responded_at: timestamp.nullable(),
+});
+
+// next_cursor is the server's own text ("<created_at, microseconds>|<id>"), sent back untouched;
+// null on the last page.
+export const sellerRequestListSchema = z.strictObject({
+  server_now: timestamp,
+  requests: z.array(sellerRequestSchema),
+  next_cursor: z.string().min(1).nullable(),
+});
+
+export const sellerRequestDetailSchema = z.strictObject({
+  server_now: timestamp,
+  request: sellerRequestSchema.nullable(),
+});
+
+export const waitingCountSchema = z.strictObject({
+  server_now: timestamp,
+  waiting: z.number().int().min(0),
+});
+
+/** The inbox filter: pending requests that can still be answered, or every request. */
+export type InboxFilter = 'waiting' | 'all';
+export type SellerDecision = 'accepted' | 'declined';
+export type SellerOutcome = 'completed' | 'no_show';
+
 export type PickupRequest = z.output<typeof pickupRequestSchema>;
+export type SellerRequest = z.output<typeof sellerRequestSchema>;
+export type SellerRequestList = z.output<typeof sellerRequestListSchema>;
+export type SellerRequestDetail = z.output<typeof sellerRequestDetailSchema>;
+export type WaitingCount = z.output<typeof waitingCountSchema>;
 export type RequestItem = z.output<typeof requestItemSchema>;
 export type RequestList = z.output<typeof requestListSchema>;
 export type RequestDetail = z.output<typeof requestDetailSchema>;

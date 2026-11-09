@@ -8,7 +8,12 @@
  *
  * - Talks only to http://127.0.0.1 or http://localhost (anything else is refused).
  * - The key is read from the environment variable SEED_SERVICE_ROLE_KEY. It is never printed.
- * - Safe to re-run: it deletes and re-creates only seed-customer@example.com.
+ * - Safe to re-run: it deletes and re-creates only the demo customers (seed-customer@example.com,
+ *   seed-customer-sam@example.com, seed-customer-priya@example.com); their requests go with them.
+ * - Also seeds a seller inbox (spec 10) for seed_rest_001 (seed-restaurant-001@example.com) and
+ *   seed_cook_1 (seed-homemade-1@example.com): pending, accepted with a passed pickup time, and
+ *   answered requests, from three customers. Add `--inbox-extra` (or `--inbox-extra N`, default
+ *   60) to give seed_rest_001 that many older requests, to scroll its inbox past 50.
  * - Add `--extra` (or `--extra N`, default 120) to also create that many older requests, for testing
  *   the My requests list's infinite scroll: SEED_SERVICE_ROLE_KEY=<key> npx tsx scripts/seed/requests.ts --extra 120
  * - Times are relative to when you run it, so re-run it for fresh times (the "expires in about 2
@@ -22,12 +27,16 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database, Json } from '../../src/types/database';
 
 import {
-  CUSTOMER_EMAIL,
-  CUSTOMER_USERNAME,
+  needsAddressSnapshot,
   parseExtra,
+  parseInboxExtra,
   planExtraRequests,
+  planInboxExtra,
   planRequests,
+  planSellerInbox,
+  SEED_CUSTOMERS,
   snapshotItems,
+  type CustomerKey,
   type PlannedRequest,
 } from './requestsData';
 import { assertLocalUrl, isSeedEmail } from './safety';
@@ -36,6 +45,8 @@ type Db = SupabaseClient<Database>;
 type Target = {
   business: { id: string; name: string; currency_code: string | null };
   menu: { id: string; name: string; price_minor: number | null }[];
+  /** A cook's current address, copied onto accepted requests like respond_to_request does. */
+  address: string | null;
 };
 
 const PASSWORD = 'password123';
@@ -44,36 +55,43 @@ function fail(error: { message: string } | null, what: string): void {
   if (error) throw new Error(`${what}: ${error.message}`);
 }
 
-async function removeCustomer(db: Db): Promise<void> {
-  if (!isSeedEmail(CUSTOMER_EMAIL)) throw new Error('Refusing to delete a non-seed account.');
+async function removeCustomers(db: Db): Promise<void> {
+  const emails = new Set(SEED_CUSTOMERS.map((customer) => customer.email));
+  for (const email of emails) {
+    if (!isSeedEmail(email)) throw new Error('Refusing to delete a non-seed account.');
+  }
   for (let page = 1; ; page++) {
     const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 });
     fail(error, 'list users');
     const users = data?.users ?? [];
     for (const user of users) {
-      if (user.email !== CUSTOMER_EMAIL) continue;
+      if (!user.email || !emails.has(user.email)) continue;
       const result = await db.auth.admin.deleteUser(user.id);
-      fail(result.error, 'delete the demo customer');
+      fail(result.error, `delete ${user.email}`);
     }
     if (users.length < 200) return;
   }
 }
 
-async function createCustomer(db: Db): Promise<string> {
-  const { data, error } = await db.auth.admin.createUser({
-    email: CUSTOMER_EMAIL,
-    password: PASSWORD,
-    email_confirm: true,
-  });
-  fail(error, 'create the demo customer');
-  const id = data?.user?.id;
-  if (!id) throw new Error('create the demo customer: no id returned');
-  const update = await db
-    .from('profiles')
-    .update({ username: CUSTOMER_USERNAME, display_name: 'Demo Customer' })
-    .eq('id', id);
-  fail(update.error, 'demo customer profile');
-  return id;
+async function createCustomers(db: Db): Promise<Record<CustomerKey, string>> {
+  const ids = {} as Record<CustomerKey, string>;
+  for (const customer of SEED_CUSTOMERS) {
+    const { data, error } = await db.auth.admin.createUser({
+      email: customer.email,
+      password: PASSWORD,
+      email_confirm: true,
+    });
+    fail(error, `create ${customer.email}`);
+    const id = data?.user?.id;
+    if (!id) throw new Error(`create ${customer.email}: no id returned`);
+    const update = await db
+      .from('profiles')
+      .update({ username: customer.username, display_name: customer.displayName })
+      .eq('id', id);
+    fail(update.error, `profile of ${customer.email}`);
+    ids[customer.key] = id;
+  }
+  return ids;
 }
 
 async function findBusiness(db: Db, plan: PlannedRequest) {
@@ -114,12 +132,18 @@ async function main() {
   });
 
   console.log(`Seeding pickup requests at ${url}`);
-  await removeCustomer(db);
-  const customerId = await createCustomer(db);
+  await removeCustomers(db);
+  const customerIds = await createCustomers(db);
 
   const now = new Date();
   const extra = parseExtra(process.argv.slice(2));
-  const plans = [...planRequests(now), ...(extra ? planExtraRequests(now, extra) : [])];
+  const inboxExtra = parseInboxExtra(process.argv.slice(2));
+  const plans = [
+    ...planRequests(now),
+    ...planSellerInbox(now),
+    ...(inboxExtra ? planInboxExtra(now, inboxExtra) : []),
+    ...(extra ? planExtraRequests(now, extra) : []),
+  ];
   const targets = new Map<string, Target>();
   try {
     const rows: Database['public']['Tables']['pickup_requests']['Insert'][] = [];
@@ -135,7 +159,17 @@ async function main() {
           .eq('is_available', true)
           .order('position');
         fail(menu.error, `menu of ${business.name}`);
-        target = { business, menu: menu.data ?? [] };
+        let address: string | null = null;
+        if (plan.target.kind === 'homemade') {
+          const location = await db
+            .from('business_locations')
+            .select('formatted_address')
+            .eq('business_id', business.id)
+            .maybeSingle();
+          fail(location.error, `address of ${business.name}`);
+          address = location.data?.formatted_address ?? null;
+        }
+        target = { business, menu: menu.data ?? [], address };
         targets.set(cacheKey, target);
       }
       const items = snapshotItems(target.menu, plan.itemCount);
@@ -143,7 +177,7 @@ async function main() {
       const orderText = plan.orderText ?? (items ? null : 'Two of whatever is good today');
       rows.push({
         business_id: target.business.id,
-        customer_id: customerId,
+        customer_id: customerIds[plan.customer ?? 'demo'],
         status: plan.status,
         pickup_at: plan.pickupAt.toISOString(),
         items: items as unknown as Json,
@@ -154,8 +188,10 @@ async function main() {
         expires_at: plan.expiresAt.toISOString(),
         responded_at: plan.respondedAt ? plan.respondedAt.toISOString() : null,
         created_at: plan.createdAt.toISOString(),
+        // The snapshot respond_to_request writes at Accept; never for a restaurant.
+        accepted_address: needsAddressSnapshot(plan, now) ? target.address : null,
       });
-      if (!plan.key.startsWith('extra-')) {
+      if (!plan.key.startsWith('extra-') && !plan.key.startsWith('inbox-extra-')) {
         console.log(`  ${plan.status.padEnd(9)} ${target.business.name} (${plan.purpose})`);
       }
     }
@@ -164,16 +200,20 @@ async function main() {
       fail(inserted.error, `requests ${from + 1} to ${Math.min(from + 50, rows.length)}`);
     }
   } catch (error) {
-    console.error('Seeding failed; removing the demo customer so a re-run starts clean.');
-    await removeCustomer(db).catch(() => undefined);
+    console.error('Seeding failed; removing the demo customers so a re-run starts clean.');
+    await removeCustomers(db).catch(() => undefined);
     throw error;
   }
 
   console.log('');
   console.log(
-    `Added ${plans.length} requests for ${CUSTOMER_EMAIL} (password ${PASSWORD})` +
-      (extra ? `, ${extra} of them extra for pagination.` : '.'),
+    `Added ${plans.length} requests for ${SEED_CUSTOMERS.length} demo customers (password ${PASSWORD})` +
+      (extra ? `, ${extra} of them extra for the customer list's pagination` : '') +
+      (inboxExtra ? `, ${inboxExtra} of them extra for the seller inbox's pagination` : '') +
+      '.',
   );
+  console.log(`Customers: ${SEED_CUSTOMERS.map((c) => c.email).join(', ')}`);
+  console.log('Seller inbox: seed-restaurant-001@example.com and seed-homemade-1@example.com.');
   console.log('Times are relative to now: re-run this seed for fresh times.');
 }
 

@@ -15,6 +15,7 @@ import {
 import { CuisineLabel } from '@/features/cuisines/components/CuisineLabel';
 import { useMyMenu } from '@/features/menu/hooks/useMyMenu';
 import { menuSummary, photosSummary } from '@/features/menu/photos';
+import { useWaitingCount } from '@/features/requests/hooks/useWaitingCount';
 import { useTheme } from '@/theme/useTheme';
 
 import { useMyBusiness } from '../hooks/useMyBusiness';
@@ -120,8 +121,37 @@ function BusinessSummary({ business }: { business: MyBusiness }) {
         variant="secondary"
         onPress={() => router.push('/seller/address')}
       />
-      <MenuRows businessId={business.id} />
+      <View style={{ gap: space.md }}>
+        <RequestsRow />
+        <MenuRows businessId={business.id} />
+      </View>
     </View>
+  );
+}
+
+// Spec 10: how many requests wait for an answer. Loads on its own like the Menu rows, and on error
+// the row still opens the inbox.
+function RequestsRow() {
+  const { space } = useTheme();
+  const router = useRouter();
+  const count = useWaitingCount();
+
+  const loading = count.isPending ? <Skeleton height={space.lg} width="40%" /> : undefined;
+  const value = count.data
+    ? count.data.waiting === 0
+      ? 'Nothing waiting'
+      : `${count.data.waiting} waiting`
+    : count.isError
+      ? 'Couldn’t load the count'
+      : undefined;
+
+  return (
+    <NavRow
+      label="Requests"
+      value={value}
+      valueSlot={loading}
+      onPress={() => router.push('/seller/requests')}
+    />
   );
 }
 

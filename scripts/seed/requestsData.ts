@@ -14,8 +14,39 @@ export type RequestStatus =
 /** Which demo business a request goes to: the profile username of its owner (set by restaurants.ts). */
 export type Target = { kind: 'restaurant' | 'homemade'; ownerUsername: string };
 
+export type CustomerKey = 'demo' | 'sam' | 'priya';
+
+export type SeedCustomer = {
+  key: CustomerKey;
+  email: string;
+  username: string;
+  displayName: string;
+};
+
+/**
+ * Every demo customer. The first is the original one (spec 09); the other two give the seller
+ * inbox (spec 10) different names to read. All are seed-*@example.com, so the seed may delete them.
+ */
+export const SEED_CUSTOMERS: readonly SeedCustomer[] = [
+  { key: 'demo', email: CUSTOMER_EMAIL, username: CUSTOMER_USERNAME, displayName: 'Demo Customer' },
+  {
+    key: 'sam',
+    email: 'seed-customer-sam@example.com',
+    username: 'seed_customer_sam',
+    displayName: 'Sam Rivera',
+  },
+  {
+    key: 'priya',
+    email: 'seed-customer-priya@example.com',
+    username: 'seed_customer_priya',
+    displayName: 'Priya Shah',
+  },
+];
+
 export type PlannedRequest = {
   key: string;
+  /** Which demo customer sent it (default: the original demo customer). */
+  customer?: CustomerKey;
   /** What this row is for, printed by the seed. */
   purpose: string;
   target: Target;
@@ -240,4 +271,214 @@ export function snapshotItems(
     unit_price_minor: line.price_minor,
     quantity: index === 0 ? 2 : 1,
   }));
+}
+
+// ── Seller inbox (spec 10) ───────────────────────────────────────────────────────────────────
+const ANSWERED: readonly RequestStatus[] = ['accepted', 'declined', 'completed', 'no_show'];
+
+/**
+ * Whether the seed copies the cook's current address into `accepted_address`, like
+ * respond_to_request does at Accept: homemade, accepted / completed / no_show, and the pickup is
+ * still inside the 24 hours after which the expiry job clears the snapshot.
+ */
+export function needsAddressSnapshot(
+  plan: Pick<PlannedRequest, 'target' | 'status' | 'pickupAt'>,
+  now: Date,
+): boolean {
+  return (
+    plan.target.kind === 'homemade' &&
+    (plan.status === 'accepted' || plan.status === 'completed' || plan.status === 'no_show') &&
+    plan.pickupAt.getTime() > now.getTime() - 24 * HOUR
+  );
+}
+
+/**
+ * Requests for ONE restaurant (seed_rest_001) and ONE cook (seed_cook_1), from three customers, so
+ * a seller can try every inbox action: Accept and Decline, Completed and No-show (pickup already
+ * passed), an accepted request that has to wait for its pickup time, and the homemade Accept that
+ * shows the address notice. Times are relative to `now`: re-run the seed for fresh times.
+ */
+export function planSellerInbox(now: Date): PlannedRequest[] {
+  const at = (offset: number) => new Date(now.getTime() + offset);
+  const rest: Target = { kind: 'restaurant', ownerUsername: 'seed_rest_001' };
+  const cook: Target = { kind: 'homemade', ownerUsername: 'seed_cook_1' };
+  const row = (
+    key: string,
+    purpose: string,
+    target: Target,
+    customer: CustomerKey,
+    status: RequestStatus,
+    created: number,
+    pickup: number,
+    extra: { responded?: number; itemCount?: number; orderText?: string; note?: string } = {},
+  ): PlannedRequest => {
+    const createdAt = at(created);
+    const pickupAt = at(pickup);
+    return {
+      key: `inbox-${key}`,
+      purpose,
+      customer,
+      target,
+      status,
+      createdAt,
+      pickupAt,
+      expiresAt: expiryFor(createdAt, pickupAt),
+      respondedAt: extra.responded === undefined ? null : at(extra.responded),
+      itemCount: extra.itemCount ?? 0,
+      orderText: extra.orderText ?? null,
+      note: extra.note ?? null,
+    };
+  };
+
+  return [
+    row('accept-me', 'inbox: pending, try ACCEPT', rest, 'sam', 'pending', -2 * MINUTE, 2 * HOUR, {
+      itemCount: 2,
+      note: 'Extra napkins please',
+    }),
+    row(
+      'decline-me',
+      'inbox: pending, try DECLINE',
+      rest,
+      'priya',
+      'pending',
+      -5 * MINUTE,
+      3 * HOUR,
+      { orderText: 'One large margherita, no basil' },
+    ),
+    row(
+      'complete-me',
+      'inbox: accepted, pickup 20 min ago, try MARK COMPLETED',
+      rest,
+      'sam',
+      'accepted',
+      -3 * HOUR,
+      -20 * MINUTE,
+      { itemCount: 1, responded: -2.5 * HOUR },
+    ),
+    row(
+      'noshow-me',
+      'inbox: accepted, pickup 40 min ago, try MARK NO-SHOW',
+      rest,
+      'priya',
+      'accepted',
+      -4 * HOUR,
+      -40 * MINUTE,
+      { itemCount: 2, responded: -3.5 * HOUR },
+    ),
+    row(
+      'accepted-later',
+      'inbox: accepted, pickup in 2 h (no buttons yet)',
+      rest,
+      'sam',
+      'accepted',
+      -HOUR,
+      2 * HOUR,
+      { itemCount: 1, responded: -50 * MINUTE },
+    ),
+    row('declined', 'inbox: declined', rest, 'priya', 'declined', -6 * HOUR, -4 * HOUR, {
+      itemCount: 1,
+      responded: -5.5 * HOUR,
+    }),
+    row(
+      'cancelled',
+      'inbox: cancelled by the customer',
+      rest,
+      'sam',
+      'cancelled',
+      -7 * HOUR,
+      -5 * HOUR,
+      {
+        itemCount: 1,
+      },
+    ),
+    row('expired', 'inbox: expired', rest, 'priya', 'expired', -8 * HOUR, -6 * HOUR, {
+      orderText: 'A large pepperoni',
+    }),
+    row('completed', 'inbox: completed', rest, 'sam', 'completed', -9 * HOUR, -8 * HOUR, {
+      itemCount: 2,
+      responded: -8.5 * HOUR,
+    }),
+    row('no-show', 'inbox: no-show', rest, 'priya', 'no_show', -10 * HOUR, -9 * HOUR, {
+      itemCount: 1,
+      responded: -9.5 * HOUR,
+    }),
+    row(
+      'cook-accept-me',
+      'inbox (cook): pending, try ACCEPT (the address notice)',
+      cook,
+      'priya',
+      'pending',
+      -3 * MINUTE,
+      2 * HOUR,
+      { itemCount: 1, note: 'Allergic to peanuts' },
+    ),
+    row(
+      'cook-complete-me',
+      'inbox (cook): accepted, pickup 15 min ago, try MARK COMPLETED',
+      cook,
+      'sam',
+      'accepted',
+      -2 * HOUR,
+      -15 * MINUTE,
+      { itemCount: 1, responded: -1.5 * HOUR },
+    ),
+  ];
+}
+
+/** Reads a "--flag" / "--flag N" count (default `fallback`). Null when absent; throws on a bad number. */
+function parseCountFlag(args: readonly string[], flag: string, fallback: number): number | null {
+  const at = args.indexOf(flag);
+  if (at === -1) return null;
+  const given = args[at + 1];
+  if (given === undefined || given.startsWith('--')) return fallback;
+  if (!/^\d+$/.test(given))
+    throw new Error(`${flag} needs a whole number, e.g. ${flag} ${fallback}`);
+  const count = Number(given);
+  if (count < 1 || count > MAX_EXTRA)
+    throw new Error(`${flag} must be between 1 and ${MAX_EXTRA}.`);
+  return count;
+}
+
+/** "--inbox-extra" / "--inbox-extra N": older requests to seed_rest_001, so its inbox passes 50. Default 60. */
+export function parseInboxExtra(args: readonly string[]): number | null {
+  return parseCountFlag(args, '--inbox-extra', 60);
+}
+
+const INBOX_EXTRA_STATUSES: RequestStatus[] = [
+  'declined',
+  'completed',
+  'cancelled',
+  'expired',
+  'no_show',
+];
+
+/**
+ * `count` older requests to seed_rest_001 for trying the inbox's infinite scroll: no pending ones,
+ * every created_at different (7 minutes apart), all older than the main inbox plan's rows.
+ */
+export function planInboxExtra(now: Date, count: number): PlannedRequest[] {
+  const target: Target = { kind: 'restaurant', ownerUsername: 'seed_rest_001' };
+  const customers: CustomerKey[] = ['sam', 'priya', 'demo'];
+  const rows: PlannedRequest[] = [];
+  for (let i = 0; i < count; i++) {
+    const status = INBOX_EXTRA_STATUSES[i % INBOX_EXTRA_STATUSES.length];
+    const createdAt = new Date(now.getTime() - 40 * HOUR - i * 7 * MINUTE);
+    const pickupAt = new Date(createdAt.getTime() + HOUR);
+    const itemCount = i % 3 === 0 ? 1 : 0;
+    rows.push({
+      key: `inbox-extra-${i + 1}`,
+      purpose: 'inbox pagination test',
+      customer: customers[i % customers.length],
+      target,
+      status,
+      createdAt,
+      pickupAt,
+      expiresAt: expiryFor(createdAt, pickupAt),
+      respondedAt: ANSWERED.includes(status) ? new Date(createdAt.getTime() + 10 * MINUTE) : null,
+      itemCount,
+      orderText: itemCount === 0 ? `Inbox pagination test order ${i + 1}` : null,
+      note: null,
+    });
+  }
+  return rows;
 }

@@ -238,3 +238,36 @@ describe('getRouteAccess: the requests screens use the signed-in `app` access', 
     expect(getPostAuthRoute(access)).toBe('/profile');
   });
 });
+
+// Spec 10: /seller/* (the inbox and a request) sit under the root `app` guard, and the only way in
+// is the Manage tab. The database enforces ownership; these are the UX gates.
+describe('getRouteAccess: the seller screens', () => {
+  const access = (input: Parameters<typeof getRouteAccess>[0]) => getRouteAccess(input);
+
+  it.each([
+    ['a guest', { hasSession: false, isRecovering: false }, { app: false, manage: false }],
+    [
+      'someone mid-recovery',
+      { hasSession: true, isRecovering: true, profileComplete: true, isSeller: true },
+      { app: false, manage: false },
+    ],
+    [
+      'a signed-in user with an incomplete profile',
+      { hasSession: true, isRecovering: false, profileComplete: false, isSeller: true },
+      { app: false, manage: false },
+    ],
+    [
+      'a complete profile that is not a seller',
+      { hasSession: true, isRecovering: false, profileComplete: true, isSeller: false },
+      { app: true, manage: false },
+    ],
+    [
+      'a complete profile in seller mode',
+      { hasSession: true, isRecovering: false, profileComplete: true, isSeller: true },
+      { app: true, manage: true },
+    ],
+  ])('%s: app and Manage access', (_who, input, expected) => {
+    const result = access(input);
+    expect({ app: result.app, manage: result.manage }).toEqual(expected);
+  });
+});

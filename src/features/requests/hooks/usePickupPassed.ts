@@ -24,7 +24,8 @@ export function usePickupPassed(
     const wait = msUntilExpiry(pickupAt, offset, Date.now()) + 1;
     const timer = setTimeout(() => setReadAt(Date.now()), wait);
     return () => clearTimeout(timer);
-  }, [pickupAt, offset, passed]);
+    // readAt is a dependency: if the timer ever fires a little early, the effect re-arms for the rest.
+  }, [pickupAt, offset, passed, readAt]);
 
   return passed;
 }

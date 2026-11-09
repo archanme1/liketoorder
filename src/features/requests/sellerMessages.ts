@@ -1,5 +1,5 @@
 import type { RequestErrorCode } from './api';
-import type { RequestStatus } from './schema';
+import type { InboxFilter, RequestStatus } from './schema';
 
 // The seller's wording (messages.ts and statusSentence are written for the customer). A pending
 // request never reads as booked, confirmed or accepted; "accepted" appears only once the seller
@@ -13,6 +13,7 @@ export const NO_PRICE_NOTE = 'Total excludes items without a price';
 export const CUSTOMER_PAYS_NOTE = 'Estimated total. The customer pays you directly.';
 export const ACCEPT_ADDRESS_NOTICE =
   'Your exact address will be shown to the customer until 24 hours after the pickup time.';
+export const NOT_FOUND_MESSAGE = "We couldn't find that request.";
 export const NO_UNDO = "You can't undo this.";
 
 export type SellerAction = 'accepted' | 'declined' | 'completed' | 'no_show';
@@ -69,7 +70,7 @@ export function customerLabel(name: string | null): string {
   return trimmed ? trimmed : 'Customer';
 }
 
-export function emptyMessage(filter: 'waiting' | 'all'): string {
+export function emptyMessage(filter: InboxFilter): string {
   return filter === 'waiting' ? EMPTY_WAITING : EMPTY_INBOX;
 }
 
@@ -88,7 +89,7 @@ export function actionErrorMessage(code: RequestErrorCode): string {
     case 'invalid_transition':
       return 'This request has changed (it may have expired, been cancelled or already been answered). Its current status is shown.';
     case 'not_found':
-      return "We couldn't find that request.";
+      return NOT_FOUND_MESSAGE;
     case 'not_signed_in':
       return 'Sign in again to answer requests.';
     default:

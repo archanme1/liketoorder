@@ -82,6 +82,8 @@ const restaurant: MyBusiness = {
 
 let client: QueryClient;
 async function renderScreen() {
+  // gcTime Infinity, like ManageBusinessScreen.test.tsx: the Menu, Photos and Requests rows load on
+  // their own, and a collected cache entry would make a late answer change the screen mid-test.
   client = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: Infinity },

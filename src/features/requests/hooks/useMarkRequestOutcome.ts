@@ -2,10 +2,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useRef } from 'react';
 
 import { markRequestOutcome, type RequestAppError } from '../api';
-import type { SellerOutcome, SellerRequest, SellerRequestDetail } from '../schema';
+import type { SellerOutcome, SellerRequest } from '../schema';
 
-import { invalidateSellerRequests } from './invalidateSellerRequests';
-import { requestKeys } from './keys';
+import { invalidateSellerRequests, writeAnswer } from './invalidateSellerRequests';
 
 type Variables = { requestId: string; outcome: SellerOutcome };
 
@@ -19,11 +18,7 @@ export function useMarkRequestOutcome() {
   const inFlight = useRef(false);
   const mutation = useMutation<SellerRequest, RequestAppError, Variables>({
     mutationFn: ({ requestId, outcome }) => markRequestOutcome(requestId, outcome),
-    onSuccess: (request, { requestId }) => {
-      queryClient.setQueryData<SellerRequestDetail>(requestKeys.businessDetail(requestId), (old) =>
-        old ? { ...old, request } : old,
-      );
-    },
+    onSuccess: (request, { requestId }) => writeAnswer(queryClient, requestId, request),
     onSettled: async (_data, _error, { requestId }) => {
       inFlight.current = false;
       await invalidateSellerRequests(queryClient, requestId);

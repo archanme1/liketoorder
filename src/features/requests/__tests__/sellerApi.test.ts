@@ -102,7 +102,10 @@ describe('respondToRequest / markRequestOutcome', () => {
   });
 
   it('maps a lost connection to network, without carrying the upstream message', async () => {
-    db.rpc.mockResolvedValue({ data: null, error: { message: 'TypeError: Network request failed' } });
+    db.rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'TypeError: Network request failed' },
+    });
     const error = await respondToRequest(REQUEST_ID, 'accepted').catch((e: unknown) => e);
     expect(error).toMatchObject({ code: 'network', message: 'network' });
   });

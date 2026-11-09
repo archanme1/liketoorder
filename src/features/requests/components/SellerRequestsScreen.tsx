@@ -42,9 +42,12 @@ export function SellerRequestsScreen({ onOpen, timeZone, locale }: SellerRequest
     fetchNextPage,
   } = query;
 
-  // The full-screen error is only for a first load that failed. With rows on screen, a failed
-  // refresh or a failed next page is shown inline and the rows stay.
-  const firstLoadFailed = query.isError && query.data === undefined;
+  // The full-screen error is for a first load that failed, and for a refetch that failed while the
+  // list is empty (there is nothing on screen to keep, and the plain empty state would hide the
+  // failure). With rows on screen, a failed refresh or a failed next page is shown inline and the
+  // rows stay.
+  const firstLoadFailed =
+    query.isError && (query.data === undefined || query.requests.length === 0);
   const refreshFailed =
     query.refreshFailed ||
     (query.isError && query.data !== undefined && !query.isFetchNextPageError);

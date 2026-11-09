@@ -60,9 +60,9 @@ describe('seller response schemas (strict)', () => {
   it('refuses an empty cursor, a negative or fractional count, and extra list fields', () => {
     const base = { server_now: NOW, requests: [] };
     expect(sellerRequestListSchema.safeParse({ ...base, next_cursor: '' }).success).toBe(false);
-    expect(sellerRequestListSchema.safeParse({ ...base, next_cursor: null, extra: 1 }).success).toBe(
-      false,
-    );
+    expect(
+      sellerRequestListSchema.safeParse({ ...base, next_cursor: null, extra: 1 }).success,
+    ).toBe(false);
     expect(waitingCountSchema.safeParse({ server_now: NOW, waiting: -1 }).success).toBe(false);
     expect(waitingCountSchema.safeParse({ server_now: NOW, waiting: 1.5 }).success).toBe(false);
   });

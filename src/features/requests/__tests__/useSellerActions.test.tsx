@@ -26,6 +26,7 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
+  // gcTime Infinity: the tests read the cached request back with no component observing it.
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } },
   });
@@ -122,6 +123,42 @@ describe('useRespondToRequest', () => {
     await act(async () => result.current.respond(REQUEST_ID, 'declined'));
     await waitFor(() => expect(respondMock).toHaveBeenCalled());
     expect(respondMock.mock.calls[0]).toEqual([REQUEST_ID, 'declined']);
+  });
+});
+
+describe('the answer written into the open request', () => {
+  const FETCHED_AT = 1_700_000_000_000;
+  const seed = () =>
+    client.setQueryData(
+      requestKeys.businessDetail(REQUEST_ID),
+      { server_now: '2026-11-08T17:00:00Z', request: makeSellerRequest() },
+      { updatedAt: FETCHED_AT },
+    );
+  const stored = () =>
+    client.getQueryState<{ server_now: string; request: { status: string } }>(
+      requestKeys.businessDetail(REQUEST_ID),
+    );
+
+  it('Accept shows the new status but keeps the server time and when it was fetched together', async () => {
+    seed();
+    respondMock.mockResolvedValue(makeSellerRequest({ status: 'accepted' }));
+    const { result } = await renderHook(() => useRespondToRequest(), { wrapper });
+    await act(async () => result.current.respond(REQUEST_ID, 'accepted'));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(stored()?.data?.request.status).toBe('accepted');
+    expect(stored()?.data?.server_now).toBe('2026-11-08T17:00:00Z');
+    // A newer fetch time with the old server_now would skew the clock offset.
+    expect(stored()?.dataUpdatedAt).toBe(FETCHED_AT);
+  });
+
+  it('Completed / No-show do the same', async () => {
+    seed();
+    outcomeMock.mockResolvedValue(makeSellerRequest({ status: 'completed' }));
+    const { result } = await renderHook(() => useMarkRequestOutcome(), { wrapper });
+    await act(async () => result.current.markOutcome(REQUEST_ID, 'completed'));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(stored()?.data?.request.status).toBe('completed');
+    expect(stored()?.dataUpdatedAt).toBe(FETCHED_AT);
   });
 });
 

@@ -169,7 +169,11 @@ describe('refetching and polling', () => {
     expect(listMock).toHaveBeenCalledTimes(1);
 
     // Everything answered: the next poll finds no pending row, and polling stops.
-    server.rows = server.rows.map((r) => ({ ...r, status: 'declined', display_status: 'declined' }));
+    server.rows = server.rows.map((r) => ({
+      ...r,
+      status: 'declined',
+      display_status: 'declined',
+    }));
     await act(async () => {
       await jest.advanceTimersByTimeAsync(PENDING_POLL_MS);
     });
@@ -191,6 +195,24 @@ describe('refetching and polling', () => {
       await jest.advanceTimersByTimeAsync(PENDING_POLL_MS * 3);
     });
     expect(listMock).not.toHaveBeenCalled();
+  });
+
+  it('an EMPTY Waiting list is still polled, so a new request shows up after 30 s', async () => {
+    jest.useFakeTimers();
+    server.rows = makeSellerRows(3, { status: 'declined' });
+    const { result } = await setup('waiting');
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.requests).toHaveLength(0);
+
+    server.rows = [
+      ...server.rows,
+      { ...makeSellerRows(1)[0], id: '00000000-0000-4000-8000-0000000000ff', customer_name: 'New' },
+    ];
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(PENDING_POLL_MS + 100);
+    });
+    await waitFor(() => expect(result.current.requests).toHaveLength(1));
+    expect(result.current.requests[0].customer_name).toBe('New');
   });
 
   it("re-reads just after a pending row's expires_at on the server's clock", async () => {

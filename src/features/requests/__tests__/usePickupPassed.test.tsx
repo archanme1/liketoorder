@@ -19,7 +19,9 @@ function at(phoneNow: string) {
 describe('usePickupPassed (server clock, a hint only)', () => {
   it('is false until there is a server time', async () => {
     at(SERVER_NOW);
-    const { result } = await renderHook(() => usePickupPassed('2026-11-08T16:00:00Z', undefined, 0));
+    const { result } = await renderHook(() =>
+      usePickupPassed('2026-11-08T16:00:00Z', undefined, 0),
+    );
     expect(result.current).toBe(false);
   });
 
@@ -73,5 +75,32 @@ describe('usePickupPassed (server clock, a hint only)', () => {
     await unmount();
     expect(cleared).toHaveBeenCalled();
     cleared.mockRestore();
+  });
+
+  it('if the timer fires a little early, it arms again for the rest instead of waiting for a refetch', async () => {
+    // Only the timers are fake; the clock is a variable, so the timer can fire "early".
+    jest.useFakeTimers({ doNotFake: ['Date'] });
+    let clock = Date.parse(SERVER_NOW);
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      const pickup = new Date(clock + 10_000).toISOString();
+      const fetchedAt = clock; // fixed when the data arrived; only the phone's clock moves on
+      const { result } = await renderHook(() => usePickupPassed(pickup, SERVER_NOW, fetchedAt));
+      expect(result.current).toBe(false);
+
+      clock = Date.parse(pickup) - 5; // 5 ms short of the pickup time when the timer fires
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(10_001);
+      });
+      expect(result.current).toBe(false);
+
+      clock = Date.parse(pickup) + 1;
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(20);
+      });
+      expect(result.current).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
   });
 });

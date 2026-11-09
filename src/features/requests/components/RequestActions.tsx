@@ -116,7 +116,7 @@ export function RequestActions({ request, pickupPassed, timeZone, locale }: Requ
     <View testID="request-actions" style={{ gap: space.sm }}>
       <View style={[styles.row, { gap: space.md }]}>
         {available.map((action) => (
-          <View key={action} style={[styles.action, { minWidth: size.photoThumb }]}>
+          <View key={action} style={[styles.action, { minWidth: size.touch }]}>
             <Button
               title={BUTTON_TITLE[action]}
               accessibilityLabel={label(action)}

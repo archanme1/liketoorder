@@ -8,6 +8,7 @@ import {
   sellerPagedServer,
 } from '../__fixtures__/sellerRequests';
 import { RequestAppError, listBusinessRequests } from '../api';
+import { PENDING_POLL_MS } from '../hooks/keys';
 import { SellerRequestsScreen } from '../components/SellerRequestsScreen';
 import type { SellerRequest } from '../schema';
 
@@ -64,6 +65,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  jest.useRealTimers();
   await cleanup();
   client.clear();
 });
@@ -173,6 +175,47 @@ describe('states', () => {
     await renderScreen(onOpen);
     await fireEvent.press(await screen.findByRole('button', { name: /^Request from Ana/ }));
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ customer_name: 'Ana' }));
+  });
+});
+
+describe('an empty list', () => {
+  it('empty Waiting picks up a new request after 30 s', async () => {
+    jest.useFakeTimers();
+    server.rows = mixedRows().map((r) => ({
+      ...r,
+      status: 'declined',
+      display_status: 'declined',
+    }));
+    await renderScreen();
+    expect(await screen.findByText('Nothing waiting for you right now.')).toBeOnTheScreen();
+
+    server.rows = [
+      ...server.rows,
+      makeSellerRequest({ id: '00000000-0000-4000-8000-0000000000ff', customer_name: 'Newcomer' }),
+    ];
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(PENDING_POLL_MS + 100);
+    });
+    expect(await screen.findByText('Newcomer')).toBeOnTheScreen();
+    expect(screen.queryByText('Nothing waiting for you right now.')).not.toBeOnTheScreen();
+  });
+
+  it('a refetch that fails while the list is empty shows the error with Try again, not the empty state', async () => {
+    server.rows = [];
+    await renderScreen();
+    expect(await screen.findByText('Nothing waiting for you right now.')).toBeOnTheScreen();
+
+    listMock.mockRejectedValueOnce(new RequestAppError('network'));
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    expect(await screen.findByText(/No connection/)).toBeOnTheScreen();
+    expect(screen.queryByText('Nothing waiting for you right now.')).not.toBeOnTheScreen();
+
+    server.rows = mixedRows();
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Ana')).toBeOnTheScreen();
   });
 });
 

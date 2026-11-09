@@ -13,6 +13,7 @@ import {
   customerLabel,
   inboxErrorMessage,
   NO_PRICE_NOTE,
+  NOT_FOUND_MESSAGE,
   sellerStatusSentence,
 } from '../sellerMessages';
 import { summarizeOrder } from '../summary';
@@ -56,7 +57,7 @@ function NotFound({ onClose }: { onClose: () => void }) {
   const { space } = useTheme();
   return (
     <View style={{ gap: space.md }}>
-      <Text accessibilityRole="alert">{"We couldn't find that request."}</Text>
+      <Text accessibilityRole="alert">{NOT_FOUND_MESSAGE}</Text>
       <Button title="Close" variant="secondary" onPress={onClose} />
     </View>
   );

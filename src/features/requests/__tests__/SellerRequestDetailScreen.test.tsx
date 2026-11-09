@@ -43,6 +43,8 @@ const serve = (request: SellerRequest | null) => {
 
 let client: QueryClient;
 function renderScreen(requestId: string | null = REQUEST_ID, zone = 'Pacific/Auckland') {
+  // gcTime Infinity: a mutation writes the answer into a cached request, and the tests read it back
+  // while no component observes it (gcTime 0 would drop it at once).
   client = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: Infinity },
@@ -195,12 +197,14 @@ describe('what the seller sees', () => {
     expect(screen.queryByText('Customer note')).not.toBeOnTheScreen();
   });
 
-  it('a pending request says when it expires; an answered one does not', async () => {
+  it('a pending request says when it expires', async () => {
     await renderScreen();
     expect(
       await screen.findByText(/If you don't answer by .*, this request expires\./),
     ).toBeOnTheScreen();
-    await cleanup();
+  });
+
+  it('an answered request does not talk about expiring', async () => {
     serve(accepted());
     await renderScreen();
     await screen.findByText('You accepted this request');

@@ -35,7 +35,8 @@ const hasPending = (data: Pages | undefined) =>
 
 /**
  * The seller's inbox for one filter, newest first, 50 a page, paged by the server's cursor. Refetched
- * on app focus, every 30 s while a pending row is loaded, and just after one expires (server clock).
+ * on app focus, every 30 s (always on Waiting, even when empty; on All while a pending row is loaded),
+ * and just after one expires (server clock).
  * A refetch re-reads every loaded page. `refresh` (pull to refresh) goes back to page 1 only, and
  * only replaces the list once page 1 has loaded.
  */
@@ -54,7 +55,10 @@ export function useBusinessRequests(filter: InboxFilter) {
     queryFn: ({ pageParam }) => listBusinessRequests(filter, pageParam.before),
     getNextPageParam: (last) => (last.next_cursor ? { before: last.next_cursor } : undefined),
     staleTime: 0,
-    refetchInterval: (q) => (hasPending(q.state.data) ? PENDING_POLL_MS : false),
+    // Waiting is polled even when empty: nothing pushes a new request until spec 12, and an empty
+    // Waiting list is where a seller sits and waits. All is polled only while a pending row is loaded.
+    refetchInterval: (q) =>
+      filter === 'waiting' || hasPending(q.state.data) ? PENDING_POLL_MS : false,
   });
 
   const requests = useMemo(() => flattenBusinessPages(query.data), [query.data]);

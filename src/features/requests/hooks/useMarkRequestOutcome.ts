@@ -30,14 +30,16 @@ export function useMarkRequestOutcome() {
     },
   });
 
-  const { mutate } = mutation;
+  const { mutate, reset } = mutation;
   const markOutcome = useCallback(
     (requestId: string, outcome: SellerOutcome, options?: Parameters<typeof mutate>[1]) => {
       if (inFlight.current) return;
       inFlight.current = true;
+      // After the guard: a second tap must not detach the mutation that is still running.
+      reset();
       mutate({ requestId, outcome }, options);
     },
-    [mutate],
+    [mutate, reset],
   );
 
   return { ...mutation, markOutcome };

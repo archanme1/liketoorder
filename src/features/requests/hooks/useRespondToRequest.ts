@@ -30,14 +30,16 @@ export function useRespondToRequest() {
     },
   });
 
-  const { mutate } = mutation;
+  const { mutate, reset } = mutation;
   const respond = useCallback(
     (requestId: string, decision: SellerDecision, options?: Parameters<typeof mutate>[1]) => {
       if (inFlight.current) return;
       inFlight.current = true;
+      // After the guard: a second tap must not detach the mutation that is still running.
+      reset();
       mutate({ requestId, decision }, options);
     },
-    [mutate],
+    [mutate, reset],
   );
 
   return { ...mutation, respond };

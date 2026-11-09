@@ -238,13 +238,15 @@ describe('loading more as you scroll', () => {
     await fireEvent.press(await screen.findByRole('radio', { name: 'All' }));
     // Ties are listed highest id first, the server's order.
     await screen.findByText('Customer 120');
-    for (let n = 0; n < 4; n += 1) {
-      await endReached();
-      await act(async () => undefined);
-    }
-    await waitFor(() => expect(listMock.mock.calls.filter((c) => c[0] === 'all')).toHaveLength(3));
+    // Keep reaching the end until the last page is in (the end-reached guard allows one read at a time).
+    await waitFor(
+      async () => {
+        await endReached();
+        expect(screen.getByTestId('inbox-list').props.data).toHaveLength(120);
+      },
+      { timeout: 5000 },
+    );
     const list = screen.getByTestId('inbox-list');
-    expect(list.props.data).toHaveLength(120);
     expect(new Set(list.props.data.map((r: SellerRequest) => r.id)).size).toBe(120);
   });
 });

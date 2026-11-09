@@ -72,6 +72,10 @@ revoke execute on function private.pickup_request_json(uuid, timestamptz, boolea
 -- Adding parameters with create or replace would leave two overloads, so the old one goes first.
 -- An old app build that sends two arguments still accepts; its decline gets decline_reason_required.
 -- Everything is validated before any row is read, so an error says nothing about the row.
+-- The note is trimmed of spaces, newlines and Unicode blanks at both ends (no-break and ideographic
+-- spaces, the Hangul fillers), so a note of only blanks counts as no note. The reason code is
+-- matched exactly: ' sold_out' or 'SOLD_OUT' is refused with invalid_input, never trimmed or
+-- case-folded. A reason that is only blanks counts as missing (decline_reason_required).
 -- Error codes: not_signed_in, invalid_input, invalid_text, decline_reason_required, not_found
 -- (identical for unknown and someone else's), invalid_transition.
 drop function public.respond_to_request(uuid, text);
@@ -91,17 +95,18 @@ declare
   v_reason text;
   v_note   text;
   c_ctrl   constant text := '[\x00-\x09\x0B-\x1F\u007F-\u009F\u200B-\u200D\u202A-\u202E\u2066-\u2069\uFEFF]';
+  c_edge   constant text := '^[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+|[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+$';
 begin
   if v_uid is null then raise exception 'not_signed_in'; end if;
   if p_decision is null or p_decision not in ('accepted', 'declined') then raise exception 'invalid_input'; end if;
 
-  v_note := nullif(btrim(p_note, E' \n'), '');
+  v_note := nullif(regexp_replace(p_note, c_edge, '', 'g'), '');
 
   if p_decision = 'accepted' then
     if p_decline_reason is not null then raise exception 'invalid_input'; end if;
     if char_length(v_note) > 200 or v_note ~ c_ctrl then raise exception 'invalid_text'; end if;
   else
-    v_reason := nullif(btrim(p_decline_reason, E' \n'), '');
+    v_reason := nullif(regexp_replace(p_decline_reason, c_edge, '', 'g'), '');
     if v_reason is null then raise exception 'decline_reason_required'; end if;
     if p_decline_reason not in ('sold_out', 'closed_then', 'too_busy', 'cannot_prepare', 'time_not_possible', 'other') then
       raise exception 'invalid_input';

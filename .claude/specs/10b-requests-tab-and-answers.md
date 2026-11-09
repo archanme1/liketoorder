@@ -5,7 +5,7 @@
 - PR 2 (the app: Requests tab, switches, badges, decline reason picker, accept note, jest tests): `feature/requests-tab-and-answers-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (Navigation, Final tab bar plan), §8 (Pickup requests), §9 (Table requests, for what must fit later), §12 (notifications, for what is NOT built here), §14 row 10b, §16 (no in-app way into the inbox, paged-list copy, Function privileges)
 **Plan mode:** required — adds columns and changes the signature of `respond_to_request` and the shared request object (customer contract change), extends the pgTAP function allowlists, changes navigation (tab bar rules by seller mode), and touches well over ~5 files.
-**Status:** 📝 Spec written
+**Status:** 🚧 In progress (PR 1, backend, built; PR 2, the app, not started)
 
 ## Overview
 After this ships, a signed-in user has a **Requests** tab. A customer sees the pickup requests they sent (today's My requests). Anyone who owns a business sees two switches at the top: **Received** (the seller inbox from spec 10) and **Sent** (their own requests as a customer). It opens on Received when seller mode is on and on Sent when it is off, which closes the §16 gap "no in-app way into the inbox when seller mode is off". The tab bar follows seller mode: off shows Restaurants · Homemade · Requests · Profile; on shows Requests · Manage · Profile (the two map tabs are hidden while a seller is working). Offers is added later by spec 16.
@@ -101,14 +101,14 @@ alter table public.pickup_requests
   --   decline_reason = 'other' implies response_note is not null  -- Other always carries its text
   --   status = 'declined' and response_note is not null implies decline_reason is not distinct from 'other'
   --                                                                -- a fixed reason never carries a note
-  --   status = 'declined' implies decline_reason is not null, ONLY for rows answered after this migration
-  --   (older declined rows have no reason: the check is `status <> 'declined' or decline_reason is not null
-  --   or responded_at < <migration time>` or enforced by the function only; the plan decides, Decision 3)
+  --   Decided (Decision 3): NO table check that a declined row has a reason. Rows declined before this
+  --   migration have none, and their fixtures and seeds insert declined rows directly. Only respond_to_request
+  --   writes new declines and it refuses a decline without a reason; an old declined row reads decline_reason null.
 ```
 
 How the two fields map: **Other's written reason is stored in `response_note`** and `decline_reason = 'other'`; for the fixed reasons `response_note` must be null (Decision 15: the function refuses a note on a fixed reason, and the table enforces it through two checks: a reason only on a declined row, and a declined row with a note must be `other`; there is no separate fixed-reason check, it would repeat those two). So: declined + fixed reason → no note; declined + other → note required; accepted → note optional. The hidden-character regex is the same `c_ctrl` pattern as `note` and `order_text` (spec 09), written once in a comment and reused.
 
-A note stays on a row after `accepted → completed | no_show`, so `response_note` is allowed on those statuses; `decline_reason` is only on `declined`.
+A note stays on a row after `accepted → completed | no_show`, so `response_note` is allowed on those statuses; `decline_reason` is only on `declined`. **The accept note also stays after the homemade address snapshot is cleared** (24 hours after the pickup): the expiry job clears `accepted_address` only. This is accepted on record (review S1); PR 2 shows the hint "Your address is shared automatically after you accept, so don't type it here" under the accept note box.
 
 ### RLS and grants
 - No new table. `pickup_requests` keeps **RLS on, no policies, no client grants**. The new columns inherit "no grants"; pgTAP asserts no role in `anon` / `authenticated` has any privilege on `decline_reason` or `response_note`, and that the business owner, the customer and an outsider cannot `select`, `insert`, `update` or `delete` them directly.
@@ -117,7 +117,7 @@ A note stays on a row after `accepted → completed | no_show`, so `response_not
 ### Functions
 | Function | Who may execute | What changes |
 |---|---|---|
-| `respond_to_request(p_request_id uuid, p_decision text, p_decline_reason text default null, p_note text default null) returns jsonb` | `authenticated` | Server validates everything. `accepted`: `p_decline_reason` must be null (else `invalid_input`), `p_note` optional (trimmed with `btrim(…, E' \n')`, empty → null, > 200 characters → `invalid_text`, hidden characters → `invalid_text`). `declined`: `p_decline_reason` required and one of the six codes, else **`decline_reason_required`** (null / empty) or `invalid_input` (unknown code); `other` requires a note of 1 to 200 characters, else `decline_reason_required`; a fixed reason with a note is refused with `invalid_input` (Open question 3). Everything else as spec 10 (owner-derived business, row lock first, `pending` and unexpired, else `invalid_transition`, address snapshot on a homemade accept, no `is_listed` / freshness / seller-mode check). |
+| `respond_to_request(p_request_id uuid, p_decision text, p_decline_reason text default null, p_note text default null) returns jsonb` | `authenticated` | Server validates everything. `accepted`: `p_decline_reason` must be null (else `invalid_input`), `p_note` optional (trimmed with `btrim(…, E' \n')`, empty → null, > 200 characters → `invalid_text`, hidden characters → `invalid_text`). `declined`: `p_decline_reason` required and one of the six codes, else **`decline_reason_required`** (null / empty) or `invalid_input` (unknown code); `other` requires a note of 1 to 200 characters, else `decline_reason_required`; a fixed reason with a note is refused with `invalid_input` (Decision 15). Notes and reasons are trimmed of spaces, newlines and Unicode blanks (no-break, ideographic, Hangul filler) before the checks, so a note of only blanks counts as none; the reason code itself is matched exactly (`' sold_out'` is `invalid_input`). Everything else as spec 10 (owner-derived business, row lock first, `pending` and unexpired, else `invalid_transition`, address snapshot on a homemade accept, no `is_listed` / freshness / seller-mode check). |
 | `private.pickup_request_json(...)` | none directly | Adds `decline_reason` and `response_note` (see "Request object"). |
 | `list_my_pickup_requests`, `get_my_pickup_request`, `submit_pickup_request`, `cancel_pickup_request`, `list_business_requests`, `get_business_request` | unchanged | Re-created only if the builder call needs it; their logic does not change. |
 
@@ -155,7 +155,7 @@ All in `src/features/requests/` unless noted. Routes stay thin.
 - `components/RequestsTabScreen.tsx` — the tab body: decides customer-only vs switches, owns the local switch state and default.
 - `components/RequestsSwitch.tsx` — the Received / Sent control (radio-style, selected state spoken, each target ≥ 44 pt, number shown as text and in the label: "Received, 3 need you, selected").
 - `components/DeclineReasonPicker.tsx` — six radio rows, the Other text box, validation messages.
-- `components/AcceptNoteField.tsx` — optional note box with counter.
+- `components/AcceptNoteField.tsx` — optional note box with counter, and the hint "Your address is shared automatically after you accept, so don't type it here" under the box.
 - `components/RequestActions.tsx` (change) — Accept and Decline dialogs use the note field / reason picker; confirm disabled until valid; double tap protection kept.
 - `components/RequestKindLabel.tsx` — the small "Pickup" label (spec 11 adds "Table"); row components take the kind from the row.
 - `components/SellerRequestRow.tsx`, `RequestRow.tsx`, `RequestDetail.tsx`, `SellerRequestDetailScreen.tsx` (change) — show the reason and note.
@@ -321,7 +321,7 @@ Sources: `.claude/skills/map-markers/SKILL.md` "Lessons from spec 07" (tests, la
 Decisions already made by Archan (from the request for this spec), not open questions:
 1. **Decline requires one reason from a fixed list of six** (`sold_out`, `closed_then`, `too_busy`, `cannot_prepare`, `time_not_possible`, `other` with a required 1 to 200 character text). **Accept may carry an optional 1 to 200 character note.**
 2. **Stored on `pickup_requests`** with checks (a reason only on declined rows, a note only on answered rows, same hidden-character rules as other text fields), no client grants. `respond_to_request` gets new optional parameters; the server validates all of it; a decline without a reason is refused with a stable error code.
-3. **Both the customer and the seller request objects gain the new keys** (the customer must see the reason and the note), through the shared private builder; pgTAP key-set tests, strict zod schemas and function allowlists are updated together. (Implementation detail left to the plan: whether the "declined rows have a reason" rule is a table check or function-only, because rows declined before this migration have none.)
+3. **Both the customer and the seller request objects gain the new keys** (the customer must see the reason and the note), through the shared private builder; pgTAP key-set tests, strict zod schemas and function allowlists are updated together. (Outcome of the plan: the "declined rows have a reason" rule is function-only, with no table check, because rows declined before this migration have none and their fixtures and seeds insert declined rows directly.)
 4. **A new Requests tab, signed in only.** Customers see their requests; anyone who owns a business sees **Received** and **Sent** switches.
 5. **Tab bar:** seller mode off shows Restaurants, Homemade, Requests, Profile (Offers added by spec 16); seller mode on shows Requests, Manage, Profile (the two map tabs hidden). Seller mode is toggled in Profile as today. This closes the §16 gap "no in-app way into the inbox when seller mode is off".
 6. **Default switch:** Received when seller mode is on, Sent when it is off.

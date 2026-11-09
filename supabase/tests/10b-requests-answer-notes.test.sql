@@ -6,7 +6,7 @@
 -- violated constraint's name), so a broken function or table turns a NAMED assertion red instead of
 -- aborting the file.
 begin;
-select plan(150);
+select plan(167);
 
 -- ── Helpers (pg_temp) ───────────────────────────────────────────────────────
 -- Ids:  users 00000000-0000-0000-0011-<n>   businesses …-0411-<n>   requests …-0611-<n>   keys …-0711-<n>
@@ -151,7 +151,9 @@ select pg_temp.mk(n, 1, 1, 'pending', interval '2 hours', interval '30 minutes')
 select pg_temp.mk(7, 2, 1, 'pending', interval '2 hours', interval '30 minutes');                                  -- homemade accept
 select pg_temp.mk(8, 2, 1, 'pending', interval '2 hours', interval '30 minutes');                                  -- homemade decline
 select pg_temp.mk(10, 1, 1, 'pending', interval '2 hours', interval '30 minutes');                                 -- refusals: must stay untouched
-select pg_temp.mk(n, 1, 1, 'pending', interval '2 hours', interval '30 minutes') from generate_series(20, 24) n;  -- accepts and trimming
+select pg_temp.mk(n, 1, 1, 'pending', interval '2 hours', interval '30 minutes') from generate_series(20, 29) n;  -- accepts, boundaries, trimming
+select pg_temp.mk(31, 1, 1, 'pending', interval '2 hours', interval '30 minutes');                                -- accept with a note of only blanks
+select pg_temp.mk(90, 3, 2, 'pending', interval '2 hours', interval '30 minutes');                                 -- C2's own request, to B3
 select pg_temp.mk(30, 1, 1, 'declined', interval '2 hours', interval '30 minutes');                                -- declined before 10b: no reason
 select pg_temp.mk(40, 1, 1, 'pending', interval '2 hours', interval '30 minutes');                                 -- outsider target
 select pg_temp.mk(n, 1, 1, 'pending', interval '2 hours', interval '30 minutes') from generate_series(50, 52) n;  -- races, double answers
@@ -205,8 +207,8 @@ select is(pg_temp.upd(80, $$response_note = 'x'$$), 'pickup_requests_note_on_ans
 select is(pg_temp.upd(83, $$response_note = 'x'$$), 'pickup_requests_note_on_answered', 'a note on an expired row is refused');
 select is(pg_temp.upd(84, $$response_note = 'x'$$), 'pickup_requests_note_on_answered', 'a note on a cancelled row is refused');
 select is(pg_temp.upd(82, $$decline_reason = 'other'$$), 'pickup_requests_other_has_note', 'other without a note is refused');
-select ok(pg_temp.upd(82, $$decline_reason = 'sold_out', response_note = 'why'$$) like 'pickup_requests_%',
-  'a fixed reason with a note is refused by a table check');
+select is(pg_temp.upd(82, $$decline_reason = 'sold_out', response_note = 'why'$$), 'pickup_requests_declined_note_is_other',
+  'a fixed reason with a note is refused by the declined-note check');
 select is(pg_temp.upd(82, $$response_note = 'x'$$), 'pickup_requests_declined_note_is_other', 'a declined row with a note but no reason is refused');
 select is(pg_temp.upd(81, $$response_note = ''$$), 'pickup_requests_response_note_check', 'an empty note is refused');
 select is(pg_temp.upd(81, $$response_note = repeat('a', 201)$$), 'pickup_requests_response_note_check', 'a 201-character note is refused');
@@ -249,6 +251,9 @@ select is(pg_temp.resp(10, 'cancelled', 'sold_out'), 'invalid_input', 'any other
 select is(pg_temp.resp(10, null, 'sold_out'), 'invalid_input', 'a missing decision is refused');
 select pg_temp.as_user(6);
 select is(pg_temp.resp(10, 'declined'), 'decline_reason_required', 'input is validated before the business is looked up (a caller with no business still sees the input error)');
+select is(pg_temp.resp(10, 'declined', 'other', chr(160)), 'decline_reason_required', 'other with a note of only a no-break space is refused');
+select is(pg_temp.resp(10, 'declined', 'other', chr(12288) || chr(160) || ' '), 'decline_reason_required', 'other with a note of only ideographic and no-break spaces is refused');
+select is(pg_temp.resp(10, 'declined', chr(160)), 'decline_reason_required', 'a reason of only a no-break space counts as missing');
 select pg_temp.as_nobody();
 select is(pg_temp.resp(10, 'declined', 'sold_out'), 'not_signed_in', 'a call with no signed-in user is refused');
 reset role;
@@ -267,7 +272,19 @@ select is(pg_temp.resp(24, 'declined', 'other', E'  Out of rice\nback Monday \n'
 insert into res select 'acc20', pg_temp.resp_j(20, 'accepted', null, 'Please bring a bag');
 select is(pg_temp.resp(21, 'accepted', null, E' \n '), 'OK', 'accept with a blank note');
 select is(pg_temp.resp(22, 'accepted'), 'OK', 'accept with no note');
+select is(pg_temp.resp(25, 'accepted', null, 'a'), 'OK', 'accept with a 1-character note');
+select is(pg_temp.resp(26, 'accepted', null, repeat('a', 200)), 'OK', 'accept with a 200-character note');
+select is(pg_temp.resp(27, 'declined', 'other', 'a'), 'OK', 'other with a 1-character note');
+select is(pg_temp.resp(28, 'declined', 'other', repeat('b', 200)), 'OK', 'other with a 200-character note');
+select is(pg_temp.resp(29, 'accepted', null, chr(160) || 'Bag' || chr(12288)), 'OK', 'accept with a note padded by no-break and ideographic spaces');
+select is(pg_temp.resp(31, 'accepted', null, chr(160) || chr(12288)), 'OK', 'accept with a note of only blanks');
 reset role;
+select is(pg_temp.sig(25), 'accepted|-|a|true', 'the 1-character accept note is stored');
+select is(pg_temp.sig(26), 'accepted|-|' || repeat('a', 200) || '|true', 'the 200-character accept note is stored whole');
+select is(pg_temp.sig(27), 'declined|other|a|true', 'the 1-character other note is stored');
+select is(pg_temp.sig(28), 'declined|other|' || repeat('b', 200) || '|true', 'the 200-character other note is stored whole');
+select is(pg_temp.sig(29), 'accepted|-|Bag|true', 'the unicode blanks at the ends are trimmed');
+select is(pg_temp.sig(31), 'accepted|-|-|true', 'a note of only blanks is stored as null');
 select is(pg_temp.sig(1), 'declined|sold_out|-|true', 'sold_out stored, no note, answered now');
 select is(pg_temp.sig(2), 'declined|closed_then|-|true', 'closed_then stored');
 select is(pg_temp.sig(3), 'declined|too_busy|-|true', 'too_busy stored');
@@ -372,6 +389,7 @@ select ok(not exists (select 1 from unnest(array[
   'the business owner cannot select, update, insert or delete the two columns directly either');
 -- Another customer, another seller and the public map never see the reason or the note.
 select pg_temp.as_user(2);
+select ok(jsonb_array_length(pg_temp.mylist_j() -> 'requests') > 0, 'another customer''s list is not empty (it holds their own request), so the next check is not vacuous');
 select is(pg_temp.myget_j(pg_temp.r(6)), 'null'::jsonb, 'another customer gets a null request for someone else''s answered request');
 select is(position('Closed for a wedding' in pg_temp.mylist_j()::text) + position('Please bring a bag' in pg_temp.mylist_j()::text),
   0, 'another customer''s list holds neither the reason text nor the note');
@@ -381,6 +399,7 @@ select is(position('Closed for a wedding' in (select j #>> '{}' from res where l
   'the public map reads never carry a note');
 select ok((select length(j #>> '{}') > 20 and (j #>> '{}') not like 'error:%' from res where label = 'map'), 'and those map reads did return data');
 select pg_temp.as_user(5);
+select ok(jsonb_array_length(pg_temp.list_j() -> 'requests') > 0, 'another seller''s list is not empty (it holds their own request), so the next check is not vacuous');
 select is(pg_temp.get_j(6) -> 'request', 'null'::jsonb, 'another seller gets a null request for someone else''s answered request');
 select is(position('Closed for a wedding' in pg_temp.list_j()::text), 0, 'another seller''s list holds no foreign note');
 reset role;
@@ -473,7 +492,7 @@ select is(pg_temp.sig(70), 'accepted|-|Bring a bag|false', 'but the note stays')
 select is_empty(
   $$ select id from public.pickup_requests where status = 'declined' and responded_at is not null and decline_reason is null $$,
   'no row declined through respond_to_request lacks a reason');
-select ok((select count(*) from public.pickup_requests where status = 'declined' and responded_at is not null) >= 9,
+select ok((select count(*) from public.pickup_requests where status = 'declined' and responded_at is not null) = 12,
   'and that check looked at the declines made in this file (not an empty set)');
 
 select * from finish();

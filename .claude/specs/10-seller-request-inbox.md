@@ -5,7 +5,7 @@
 - PR 2 (the app: inbox, request detail, actions, Manage row, seed data, jest tests): `feature/seller-request-inbox-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (Manage tab), §5 (Homemade specifics), §8 (Pickup requests), §10 (no-show), §12 (notifications, for what is NOT built here), §14 row 10, §15 (open question 2), §16 (Seller inbox keyset cursor, Function privileges, exact address read/write side)
 **Plan mode:** required — adds a column, five seller functions and a shared request-object helper, changes `get_my_pickup_address` and the shared request object, extends the pgTAP function allowlists, adds routes, and touches well over ~5 files.
-**Status:** 📝 Spec written
+**Status:** 🚧 In progress (PR 2, the app)
 
 ## Overview
 After this ships, a seller (restaurant or homemade) opens **Manage Business**, taps **Requests**, and sees the pickup requests sent to their business, newest first, with a status chip per row and the customer's display name. They open a request to see what was ordered, the pickup time, and the customer's note, then **Accept** or **Decline** a pending one. After the pickup time they mark an accepted request **Completed** or **No-show**. Accepting a homemade request **snapshots the cook's exact address onto the request**, so the customer's address read (spec 09) returns the snapshot and a later move is never revealed. Every status change goes through a Postgres function that checks the caller owns the business and the transition is valid; a seller can never read or change another business's requests.

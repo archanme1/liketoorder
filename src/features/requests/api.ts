@@ -11,11 +11,22 @@ import {
   pickupRequestSchema,
   requestDetailSchema,
   requestListSchema,
+  sellerRequestDetailSchema,
+  sellerRequestListSchema,
+  sellerRequestSchema,
+  waitingCountSchema,
   type OrderLine,
   type PickupAddress,
+  type InboxFilter,
   type PickupRequest,
   type RequestDetail,
   type RequestList,
+  type SellerDecision,
+  type SellerOutcome,
+  type SellerRequest,
+  type SellerRequestDetail,
+  type SellerRequestList,
+  type WaitingCount,
 } from './schema';
 
 export type RequestErrorCode =
@@ -149,6 +160,70 @@ export async function getMyPickupAddress(requestId: string): Promise<PickupAddre
   if (error) throw mapRequestError(error);
   if (data === null) return null;
   const parsed = pickupAddressSchema.safeParse(data);
+  if (!parsed.success) throw new RequestAppError('unknown');
+  return parsed.data;
+}
+
+// ── Seller side (spec 10) ────────────────────────────────────────────────────────────────────
+// The business is always the caller's own (the database derives it from auth.uid()); the app sends
+// only a request id, a decision or outcome, a filter and the server's own cursor text.
+
+/** One page (50) of the caller's business requests; `before` is the previous page's next_cursor. */
+export async function listBusinessRequests(
+  filter: InboxFilter,
+  before?: string,
+): Promise<SellerRequestList> {
+  const { data, error } = await supabase.rpc('list_business_requests', {
+    p_status: filter === 'waiting' ? 'waiting' : undefined,
+    p_before: before,
+  });
+  if (error) throw mapRequestError(error);
+  const parsed = sellerRequestListSchema.safeParse(data);
+  if (!parsed.success) throw new RequestAppError('unknown');
+  return parsed.data;
+}
+
+/** A request to the caller's business; `request` is null for an unknown id and for someone else's. */
+export async function getBusinessRequest(requestId: string): Promise<SellerRequestDetail> {
+  const { data, error } = await supabase.rpc('get_business_request', { p_request_id: requestId });
+  if (error) throw mapRequestError(error);
+  const parsed = sellerRequestDetailSchema.safeParse(data);
+  if (!parsed.success) throw new RequestAppError('unknown');
+  return parsed.data;
+}
+
+export async function respondToRequest(
+  requestId: string,
+  decision: SellerDecision,
+): Promise<SellerRequest> {
+  const { data, error } = await supabase.rpc('respond_to_request', {
+    p_request_id: requestId,
+    p_decision: decision,
+  });
+  if (error) throw mapRequestError(error);
+  const parsed = sellerRequestSchema.safeParse(data);
+  if (!parsed.success) throw new RequestAppError('unknown');
+  return parsed.data;
+}
+
+export async function markRequestOutcome(
+  requestId: string,
+  outcome: SellerOutcome,
+): Promise<SellerRequest> {
+  const { data, error } = await supabase.rpc('mark_request_outcome', {
+    p_request_id: requestId,
+    p_outcome: outcome,
+  });
+  if (error) throw mapRequestError(error);
+  const parsed = sellerRequestSchema.safeParse(data);
+  if (!parsed.success) throw new RequestAppError('unknown');
+  return parsed.data;
+}
+
+export async function countWaitingRequests(): Promise<WaitingCount> {
+  const { data, error } = await supabase.rpc('count_waiting_requests');
+  if (error) throw mapRequestError(error);
+  const parsed = waitingCountSchema.safeParse(data);
   if (!parsed.success) throw new RequestAppError('unknown');
   return parsed.data;
 }

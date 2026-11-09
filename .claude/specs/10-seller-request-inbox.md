@@ -5,7 +5,7 @@
 - PR 2 (the app: inbox, request detail, actions, Manage row, seed data, jest tests): `feature/seller-request-inbox-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (Manage tab), §5 (Homemade specifics), §8 (Pickup requests), §10 (no-show), §12 (notifications, for what is NOT built here), §14 row 10, §15 (open question 2), §16 (Seller inbox keyset cursor, Function privileges, exact address read/write side)
 **Plan mode:** required — adds a column, five seller functions and a shared request-object helper, changes `get_my_pickup_address` and the shared request object, extends the pgTAP function allowlists, adds routes, and touches well over ~5 files.
-**Status:** 🚧 In progress (PR 2, the app)
+**Status:** ✅ Shipped (PR 1 database #17, PR 2 app)
 
 ## Overview
 After this ships, a seller (restaurant or homemade) opens **Manage Business**, taps **Requests**, and sees the pickup requests sent to their business, newest first, with a status chip per row and the customer's display name. They open a request to see what was ordered, the pickup time, and the customer's note, then **Accept** or **Decline** a pending one. After the pickup time they mark an accepted request **Completed** or **No-show**. Accepting a homemade request **snapshots the cook's exact address onto the request**, so the customer's address read (spec 09) returns the snapshot and a later move is never revealed. Every status change goes through a Postgres function that checks the caller owns the business and the transition is valid; a seller can never read or change another business's requests.
@@ -222,27 +222,32 @@ Sources: `.claude/skills/map-markers/SKILL.md` "Lessons from spec 07" (tests, la
 - Seller-side stats or an export of past requests.
 
 ## Definition of done
-- [ ] A seller sees only the requests sent to their own business, newest first, with the customer's display name, in pages of 50 (pgTAP + jest).
-- [ ] **A seller can still see and answer already-sent pending and accepted requests when the business is unlisted, stale (30-day guard) or seller mode is off;** `respond_to_request`, `mark_request_outcome`, `list_business_requests` and `get_business_request` check neither `is_listed` nor freshness, while `submit_pickup_request` still refuses new requests to such a business (pgTAP).
-- [ ] A seller can accept and decline a pending request; the customer's My requests then shows the new status from the server (pgTAP + jest).
-- [ ] A seller cannot accept or decline a request that is expired (stored or by `expires_at`), cancelled, already answered, or past its expiry before the cron ran; each fails with `invalid_transition` (pgTAP).
-- [ ] After the pickup time a seller can mark an accepted request completed or no-show; before the pickup time, or on a request that is not accepted, it fails with `invalid_transition` (pgTAP).
-- [ ] **An outsider cannot read or answer another business's requests:** another seller, a customer who is not the requester, `anon`, and the requester themselves cannot call the seller functions on a request that is not to their business; every such call returns `not_found` / `request: null` / an empty list, identical to an unknown id (pgTAP).
-- [ ] **A client cannot insert, update (including `status`, `accepted_address`, `expires_at`, `business_id`, `customer_id`) or delete a request directly,** as the business owner, the customer or an outsider (pgTAP).
-- [ ] Accepting a homemade request stores the cook's address at that moment; changing the cook's address afterwards does not change what `get_my_pickup_address` returns; accepting a restaurant request stores no address (pgTAP).
-- [ ] `get_my_pickup_address` still returns an address only to the requesting customer at `accepted` / `completed` within 24 hours of `pickup_at`, and `null` for pending, declined, expired, cancelled, no_show, another customer, another seller and restaurants; `anon` gets 42501 (spec 09 tests pass, adjusted only for the snapshot) (pgTAP).
-- [ ] Rows sharing one `created_at` across a page boundary are neither skipped nor duplicated by `list_business_requests` (pgTAP + jest).
-- [ ] No response of any new function contains `place_id`, exact coordinates, `map_lat`/`map_lng`, the customer's id or email, or an address; the customer object has the same keys as before (pgTAP).
-- [ ] The function-privilege allowlists pass with the new functions and fail if one is left executable by `anon`/`public`; `private.pickup_request_json` is not executable by any API role (pgTAP).
-- [ ] A pending request past `expires_at` shows as Expired to the seller with no answer actions before the cron has run (pgTAP + jest, fake timers).
-- [ ] A wrong phone clock never changes a displayed status (jest with a skewed clock).
-- [ ] Double-tapping Accept sends one decision and the second outcome is handled calmly (jest).
-- [ ] The Manage Business screen shows a Requests row with the number waiting, with loading and failed states (jest).
-- [ ] A pending request is never described as accepted or confirmed on the seller side, including screen-reader labels (jest).
-- [ ] The homemade Accept confirm says the exact address will be shown to the customer; the restaurant one does not (jest).
-- [ ] Loading, empty, error (with retry) and success states exist on the inbox and the detail (jest).
-- [ ] Every touchable has a label and role, targets ≥ 44 pt, status is always a word, large text does not clip (jest where possible; the rest on the iOS Simulator, see the manual run).
-- [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` pass; `src/types/database.ts` is regenerated, not hand-edited.
+- [x] A seller sees only the requests sent to their own business, newest first, with the customer's display name, in pages of 50 (pgTAP + jest).
+- [x] **A seller can still see and answer already-sent pending and accepted requests when the business is unlisted, stale (30-day guard) or seller mode is off;** `respond_to_request`, `mark_request_outcome`, `list_business_requests` and `get_business_request` check neither `is_listed` nor freshness, while `submit_pickup_request` still refuses new requests to such a business (pgTAP).
+- [x] A seller can accept and decline a pending request; the customer's My requests then shows the new status from the server (pgTAP + jest).
+- [x] A seller cannot accept or decline a request that is expired (stored or by `expires_at`), cancelled, already answered, or past its expiry before the cron ran; each fails with `invalid_transition` (pgTAP).
+- [x] After the pickup time a seller can mark an accepted request completed or no-show; before the pickup time, or on a request that is not accepted, it fails with `invalid_transition` (pgTAP).
+- [x] **An outsider cannot read or answer another business's requests:** another seller, a customer who is not the requester, `anon`, and the requester themselves cannot call the seller functions on a request that is not to their business; every such call returns `not_found` / `request: null` / an empty list, identical to an unknown id (pgTAP).
+- [x] **A client cannot insert, update (including `status`, `accepted_address`, `expires_at`, `business_id`, `customer_id`) or delete a request directly,** as the business owner, the customer or an outsider (pgTAP).
+- [x] Accepting a homemade request stores the cook's address at that moment; changing the cook's address afterwards does not change what `get_my_pickup_address` returns; accepting a restaurant request stores no address (pgTAP).
+- [x] `get_my_pickup_address` still returns an address only to the requesting customer at `accepted` / `completed` within 24 hours of `pickup_at`, and `null` for pending, declined, expired, cancelled, no_show, another customer, another seller and restaurants; `anon` gets 42501 (spec 09 tests pass, adjusted only for the snapshot) (pgTAP).
+- [x] Rows sharing one `created_at` across a page boundary are neither skipped nor duplicated by `list_business_requests` (pgTAP + jest).
+- [x] No response of any new function contains `place_id`, exact coordinates, `map_lat`/`map_lng`, the customer's id or email, or an address; the customer object has the same keys as before (pgTAP).
+- [x] The function-privilege allowlists pass with the new functions and fail if one is left executable by `anon`/`public`; `private.pickup_request_json` is not executable by any API role (pgTAP).
+- [x] A pending request past `expires_at` shows as Expired to the seller with no answer actions before the cron has run (pgTAP + jest, fake timers).
+- [x] A wrong phone clock never changes a displayed status (jest with a skewed clock).
+- [x] Double-tapping Accept sends one decision and the second outcome is handled calmly (jest).
+- [x] The Manage Business screen shows a Requests row with the number waiting, with loading and failed states (jest).
+- [x] A pending request is never described as accepted or confirmed on the seller side, including screen-reader labels (jest).
+- [x] The homemade Accept confirm says the exact address will be shown to the customer; the restaurant one does not (jest).
+- [x] Loading, empty, error (with retry) and success states exist on the inbox and the detail (jest).
+- [x] Every touchable has a label and role, targets ≥ 44 pt, status is always a word, large text does not clip (jest where possible; the rest on the iOS Simulator, see the manual run).
+- [x] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` pass; `src/types/database.ts` is regenerated, not hand-edited.
+
+### Manual run results (iOS Simulator only, run by Archan; not a real iPhone or Android)
+All of these passed: the inbox opens on Waiting; the All filter; infinite scroll past 50; pull to refresh; auto-expiry of the seeded "expires in about 2 minutes" request; accept and decline with a double tap; Completed and No-show on the seeded past-pickup requests; the customer accounts seeing the new statuses; a homemade Accept with the address confirm and the address snapshot (a later address change not reaching the customer); the cancel-while-answering race (a calm message and the real status); the largest text size; VoiceOver.
+The code review (APPROVED WITH SUGGESTIONS, no security findings) was done after this run; its fixes (empty Waiting polling, the cached server time kept with its fetch time, an error instead of an empty state, a stable `onOpen`, small cleanups) are covered by jest and were not re-run by hand.
+Not part of this run, so still listed in section 16 of `docs/product/v1.md` as before-launch items: a real iPhone, Android, VoiceOver and TalkBack on devices, the largest text size on a device, the phone's clock and time zone on a real phone, and the Hermes `Intl` check. No native module was added: no rebuild is needed.
 
 ## Test plan
 - Unit/component tests (jest): `sellerMessages`, `sellerRequestSchema` (strict, text cursor kept as a string), `useBusinessRequests` (keyset paging with ties, dedupe, polling, focus refetch, refresh), `useRespondToRequest` / `useMarkRequestOutcome` (double tap, invalidation, error refetch), inbox and detail states, filter, confirm steps, homemade vs restaurant Accept confirm, action visibility per status and per `pickup_at`, skewed phone clock, time-zone display, Manage row summary, `sellerRoutes`, `routeAccess` cases pinning that only a seller reaches the screens.

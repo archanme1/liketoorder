@@ -59,3 +59,21 @@ export function getPostAuthRoute(
   if (access.app) return '/profile';
   return getHomeRoute(access);
 }
+
+export type TabVisibility = {
+  /** Restaurants and Homemade: guests and customers; hidden while a seller is working. */
+  maps: boolean;
+  /** Requests: signed in with a complete profile; never for a guest. */
+  requests: boolean;
+  /** Manage: signed in, profile complete, seller mode on. */
+  manage: boolean;
+};
+
+/**
+ * Which tabs the tab bar shows. UX only: every request stays protected by the database. A guest
+ * sees the maps; a customer the maps and Requests; a seller (seller mode on) Requests and Manage
+ * with the two maps out of the way. Profile is always there.
+ */
+export function getTabVisibility(access: RouteAccess): TabVisibility {
+  return { maps: !access.manage, requests: access.app, manage: access.manage };
+}

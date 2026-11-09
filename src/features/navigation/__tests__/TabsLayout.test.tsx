@@ -154,9 +154,9 @@ describe('tab bar', () => {
       mocked.auth.getSession.mockResolvedValue({ data: { session } });
     });
 
-    it('shows three tabs and no Manage', async () => {
+    it('shows Restaurants, Homemade, Requests and Profile, and no Manage', async () => {
       await renderRouter('./app', { initialUrl: '/restaurants' });
-      for (const label of TAB_LABELS) {
+      for (const label of [...TAB_LABELS, 'Requests']) {
         expect(await screen.findByLabelText(`${label} tab`)).toBeTruthy();
       }
       expect(screen.queryByLabelText('Manage tab')).toBeNull();
@@ -175,12 +175,14 @@ describe('tab bar', () => {
       current = { ...profile, is_seller: true };
     });
 
-    it('shows four tabs including Manage', async () => {
+    it('shows Requests, Manage and Profile, and hides Restaurants and Homemade', async () => {
       await renderRouter('./app', { initialUrl: '/restaurants' });
-      for (const label of [...TAB_LABELS, 'Manage']) {
+      for (const label of ['Requests', 'Manage', 'Profile']) {
         expect(await screen.findByLabelText(`${label} tab`)).toBeTruthy();
       }
       expect(screen.getByText('Manage')).toBeTruthy();
+      await waitFor(() => expect(screen.queryByLabelText('Restaurants tab')).toBeNull());
+      expect(screen.queryByLabelText('Homemade tab')).toBeNull();
     });
 
     it('opens Manage Business from the Manage tab', async () => {

@@ -4,17 +4,21 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
 
+import { kindLabel, type RequestKind } from '../kind';
 import type { SellerRequest } from '../schema';
 import { customerLabel, sellerStatusSentence } from '../sellerMessages';
 import { STATUS_INFO } from '../status';
 import { formatDateTime, type TimeOptions } from '../time';
 
 import { orderPreview } from './RequestRow';
+import { RequestKindLabel } from './RequestKindLabel';
 import { RequestStatusChip } from './RequestStatusChip';
 
 type SellerRequestRowProps = TimeOptions & {
   request: SellerRequest;
   onPress: (request: SellerRequest) => void;
+  /** What kind of request this is; spec 11 adds table requests. */
+  kind?: RequestKind;
 };
 
 export const ROW_TITLE_MAX_FONT_MULTIPLIER = 1.6;
@@ -25,6 +29,7 @@ export const ROW_TITLE_MAX_FONT_MULTIPLIER = 1.6;
 export const SellerRequestRow = memo(function SellerRequestRow({
   request,
   onPress,
+  kind = 'pickup',
   timeZone,
   locale,
 }: SellerRequestRowProps) {
@@ -50,6 +55,7 @@ export const SellerRequestRow = memo(function SellerRequestRow({
       onPress={() => onPress(request)}
       accessibilityRole="button"
       accessibilityLabel={spoken}
+      accessibilityValue={{ text: kindLabel(kind) }}
       accessibilityHint="Opens the request"
       style={({ pressed }) => [
         styles.row,
@@ -74,6 +80,7 @@ export const SellerRequestRow = memo(function SellerRequestRow({
         </Text>
         <RequestStatusChip status={status} />
       </View>
+      <RequestKindLabel kind={kind} />
       <Text color="textMuted">{sentence}</Text>
       {preview ? <Text numberOfLines={2}>{preview}</Text> : null}
       <Text color="textMuted">{`Pickup ${pickup}`}</Text>

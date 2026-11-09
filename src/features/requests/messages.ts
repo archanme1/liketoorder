@@ -4,6 +4,8 @@ export const PAY_NOTE = 'Estimated total. Pay the seller directly.';
 export const NO_PRICE_NOTE = 'Total excludes items without a price';
 export const NO_MENU_NOTE = "No menu items available. Describe what you'd like.";
 export const EMPTY_LIST = 'No requests yet. Find a place on the map and request pickup.';
+export const SENT_EMPTY = 'No requests yet. Requests you send will show up here.';
+export const BUSINESS_CHECK_ERROR = "Couldn't check your business, so Received is not shown.";
 export const NOT_AVAILABLE = "This place isn't available right now.";
 
 export function sentMessage(sellerName: string): string {

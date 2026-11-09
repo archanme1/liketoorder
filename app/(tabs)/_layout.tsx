@@ -1,19 +1,28 @@
 import { Tabs } from 'expo-router';
 import { useMemo } from 'react';
+import { View } from 'react-native';
 
+import { TabBadge, spokenBadge } from '@/features/navigation/components/TabBadge';
 import { TabIcon, type TabIconName } from '@/features/navigation/components/TabIcon';
 import { TabLabel } from '@/features/navigation/components/TabLabel';
-import { useIsSeller } from '@/features/navigation/hooks/useIsSeller';
+import { useTabVisibility } from '@/features/navigation/hooks/useTabVisibility';
+import { useRequestsBadge } from '@/features/requests/hooks/useRequestsBadge';
 import { useTheme } from '@/theme/useTheme';
 
-function tabOptions(label: string, icon: TabIconName) {
+function tabOptions(label: string, icon: TabIconName, badge?: number) {
+  const spoken = spokenBadge(badge);
   return {
     title: label,
-    tabBarAccessibilityLabel: `${label} tab`,
+    tabBarAccessibilityLabel: spoken ? `${label} tab, ${spoken}` : `${label} tab`,
     tabBarLabel: ({ focused }: { focused: boolean }) => (
       <TabLabel label={label} focused={focused} />
     ),
-    tabBarIcon: ({ focused }: { focused: boolean }) => <TabIcon name={icon} focused={focused} />,
+    tabBarIcon: ({ focused }: { focused: boolean }) => (
+      <View>
+        <TabIcon name={icon} focused={focused} />
+        {badge === undefined ? null : <TabBadge count={badge} />}
+      </View>
+    ),
   };
 }
 
@@ -23,10 +32,14 @@ const HOMEMADE_OPTIONS = tabOptions('Homemade', 'home');
 const PROFILE_OPTIONS = tabOptions('Profile', 'person');
 const MANAGE_OPTIONS = tabOptions('Manage', 'storefront');
 
-// Hiding Manage is UX only; seller data is protected by RLS (spec 05+).
+// Which tabs show is decided in one place (useTabVisibility). Hiding is UX only: seller data and
+// every request are protected by RLS. A guest sees Restaurants, Homemade, Profile; a customer adds
+// Requests; a seller (seller mode on) sees Requests, Manage, Profile, so the home route
+// /restaurants sends a seller to Requests as soon as the profile has loaded.
 export default function TabsLayout() {
   const { colors, size } = useTheme();
-  const isSeller = useIsSeller();
+  const visibility = useTabVisibility();
+  const badge = useRequestsBadge();
   const screenOptions = useMemo(
     () => ({
       headerShown: false,
@@ -35,15 +48,21 @@ export default function TabsLayout() {
     }),
     [colors.surface, colors.border, size.touch],
   );
+  const requestsOptions = useMemo(() => tabOptions('Requests', 'receipt', badge), [badge]);
 
   return (
     <Tabs screenOptions={screenOptions}>
-      <Tabs.Screen name="restaurants" options={RESTAURANTS_OPTIONS} />
-      <Tabs.Screen name="homemade" options={HOMEMADE_OPTIONS} />
-      <Tabs.Screen name="profile" options={PROFILE_OPTIONS} />
-      <Tabs.Protected guard={isSeller} redirectTo="/restaurants">
+      <Tabs.Protected guard={visibility.maps} redirectTo="/requests">
+        <Tabs.Screen name="restaurants" options={RESTAURANTS_OPTIONS} />
+        <Tabs.Screen name="homemade" options={HOMEMADE_OPTIONS} />
+      </Tabs.Protected>
+      <Tabs.Protected guard={visibility.requests} redirectTo="/restaurants">
+        <Tabs.Screen name="requests" options={requestsOptions} />
+      </Tabs.Protected>
+      <Tabs.Protected guard={visibility.manage} redirectTo="/restaurants">
         <Tabs.Screen name="manage" options={MANAGE_OPTIONS} />
       </Tabs.Protected>
+      <Tabs.Screen name="profile" options={PROFILE_OPTIONS} />
     </Tabs>
   );
 }

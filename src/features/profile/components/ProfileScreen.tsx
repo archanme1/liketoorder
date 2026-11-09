@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScrollView } from 'react-native';
 
-import { Banner, Button, NavRow, Screen } from '@/components/ui';
+import { Banner, Button, Screen } from '@/components/ui';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { useSignOut } from '@/features/auth/hooks/useSignOut';
 import { authErrorMessage, PASSWORD_UPDATED } from '@/features/auth/messages';
@@ -38,13 +38,6 @@ export function ProfileScreen() {
           onPress={() => {
             clearNotice();
             router.push('/profile/edit');
-          }}
-        />
-        <NavRow
-          label="My requests"
-          onPress={() => {
-            clearNotice();
-            router.push('/requests');
           }}
         />
         <SellerModeRow />

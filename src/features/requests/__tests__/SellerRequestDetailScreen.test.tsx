@@ -351,12 +351,17 @@ describe('Accept and Decline: a confirm step', () => {
     expect(screen.queryByText('Accept this request?')).not.toBeOnTheScreen();
   });
 
-  it('confirming Decline sends the decision and shows Declined', async () => {
+  it('confirming Decline sends the decision and the chosen reason, and shows Declined', async () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: /^Decline request/ }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Sold out' }));
     await fireEvent.press(screen.getByRole('button', { name: /^Yes, decline request/ }));
     expect(await screen.findByText('You declined this request')).toBeOnTheScreen();
-    expect(respondMock.mock.calls[0]).toEqual([REQUEST_ID, 'declined']);
+    expect(respondMock.mock.calls[0]).toEqual([
+      REQUEST_ID,
+      'declined',
+      { declineReason: 'sold_out' },
+    ]);
     expect(screen.getByText('Declined')).toBeOnTheScreen();
   });
 });

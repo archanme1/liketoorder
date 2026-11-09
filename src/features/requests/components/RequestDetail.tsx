@@ -13,6 +13,7 @@ import { statusSentence } from '../status';
 import { summarizeOrder } from '../summary';
 import { formatDateTime, type TimeOptions } from '../time';
 
+import { AnswerLines } from './AnswerLines';
 import { RequestAddressCard } from './RequestAddressCard';
 import { RequestStatusChip } from './RequestStatusChip';
 
@@ -62,6 +63,7 @@ export function RequestDetail({ request, timeZone, locale = deviceLocale() }: Re
         </Text>
         <RequestStatusChip status={status} />
         <Text variant="bodyLg">{statusSentence(status, request.business_name)}</Text>
+        <AnswerLines request={request} variant="bodyLg" />
         {status === 'pending' ? (
           <Text color="textMuted">
             {`If there is no answer by ${formatDateTime(request.expires_at, options)}, this request expires.`}

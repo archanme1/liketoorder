@@ -4,9 +4,10 @@ import { StyleSheet, View } from 'react-native';
 import { Banner, Button, Card, Text } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
 
+import type { RequestErrorCode } from '../api';
 import { useMarkRequestOutcome } from '../hooks/useMarkRequestOutcome';
 import { useRespondToRequest } from '../hooks/useRespondToRequest';
-import type { SellerRequest } from '../schema';
+import type { RespondOptions, SellerRequest } from '../schema';
 import {
   actionErrorMessage,
   confirmCopy,
@@ -14,6 +15,8 @@ import {
   type SellerAction,
 } from '../sellerMessages';
 import { formatDateTime, type TimeOptions } from '../time';
+
+import { RespondDialog } from './RespondDialog';
 
 type RequestActionsProps = TimeOptions & {
   request: SellerRequest;
@@ -28,6 +31,9 @@ const BUTTON_TITLE: Record<SellerAction, string> = {
   no_show: 'Mark no-show',
 };
 
+// Errors about what the seller typed: the dialog stays open with the text, to fix and send again.
+const KEEP_OPEN: readonly RequestErrorCode[] = ['decline_reason_required', 'invalid_text'];
+
 const CONFIRM_TITLE: Record<SellerAction, string> = {
   accepted: 'Yes, accept request',
   declined: 'Yes, decline request',
@@ -36,8 +42,9 @@ const CONFIRM_TITLE: Record<SellerAction, string> = {
 };
 
 // The actions valid for the request's status, in the FIXED part of the detail screen (outside the
-// scrolling body), so they stay on screen at any text size. A press opens a short confirm in the
-// same place, because every answer is final in v1. No text input here, so no keyboard to avoid.
+// scrolling body), so they stay on screen at any text size. A press opens a short confirm, because
+// every answer is final in v1: a dialog for Accept (optional note) and Decline (a reason), which
+// can scroll above the keyboard; an inline card for Completed and No-show.
 // Actions come from the server's display_status: a pending request past its expiry is "expired"
 // and has none. Completed / No-show also wait for the pickup-time hint (the server re-checks).
 export function RequestActions({ request, pickupPassed, timeZone, locale }: RequestActionsProps) {
@@ -61,14 +68,20 @@ export function RequestActions({ request, pickupPassed, timeZone, locale }: Requ
   // A failed action leaves the banner up even if the refetched status has no actions any more.
   const banner = errorCode ? <Banner message={actionErrorMessage(errorCode)} /> : null;
 
-  const run = (action: SellerAction) => {
+  const run = (action: 'completed' | 'no_show') => {
     if (running) return;
-    const done = { onSettled: () => setConfirming(null) };
-    if (action === 'accepted' || action === 'declined') {
-      respond.respond(request.id, action, undefined, done);
-    } else {
-      outcome.markOutcome(request.id, action, done);
-    }
+    outcome.markOutcome(request.id, action, { onSettled: () => setConfirming(null) });
+  };
+
+  // Accept / Decline come from the dialog with what the seller typed. A problem with that text
+  // keeps the dialog open; any other outcome closes it (the banner or the new status shows).
+  const answer = (action: 'accepted' | 'declined', options: RespondOptions | undefined) => {
+    if (running) return;
+    respond.respond(request.id, action, options, {
+      onSettled: (_data, error) => {
+        if (!(error && KEEP_OPEN.includes(error.code))) setConfirming(null);
+      },
+    });
   };
 
   const open = (action: SellerAction) => {
@@ -86,6 +99,22 @@ export function RequestActions({ request, pickupPassed, timeZone, locale }: Requ
       : `${BUTTON_TITLE[action]} for request from ${name}, pickup ${pickup}`;
 
   if (confirming && available.includes(confirming)) {
+    if (confirming === 'accepted' || confirming === 'declined') {
+      const keepOpen = errorCode !== undefined && KEEP_OPEN.includes(errorCode);
+      return (
+        <View testID="request-actions" style={{ gap: space.sm }}>
+          <RespondDialog
+            action={confirming}
+            homemade={request.business_type === 'homemade'}
+            customer={name}
+            running={running}
+            errorMessage={keepOpen ? actionErrorMessage(errorCode) : null}
+            onConfirm={(options) => answer(confirming, options)}
+            onCancel={() => setConfirming(null)}
+          />
+        </View>
+      );
+    }
     const copy = confirmCopy(confirming, request.business_type === 'homemade');
     return (
       <View testID="request-actions" style={{ gap: space.sm }}>

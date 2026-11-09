@@ -19,6 +19,7 @@ import {
 import { summarizeOrder } from '../summary';
 import { formatDateTime, type TimeOptions } from '../time';
 
+import { AnswerLines } from './AnswerLines';
 import { RequestActions } from './RequestActions';
 import { RequestStatusChip } from './RequestStatusChip';
 
@@ -155,6 +156,7 @@ function RequestView({
         </Text>
         <RequestStatusChip status={status} />
         <Text variant="bodyLg">{sellerStatusSentence(status)}</Text>
+        <AnswerLines request={request} variant="bodyLg" />
       </View>
 
       <RequestActions

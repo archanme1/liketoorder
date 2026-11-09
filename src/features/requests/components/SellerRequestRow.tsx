@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
 
+import { answerLines } from '../answerLines';
 import { kindLabel, type RequestKind } from '../kind';
 import type { SellerRequest } from '../schema';
 import { customerLabel, sellerStatusSentence } from '../sellerMessages';
@@ -11,6 +12,7 @@ import { STATUS_INFO } from '../status';
 import { formatDateTime, type TimeOptions } from '../time';
 
 import { orderPreview } from './RequestRow';
+import { AnswerLines } from './AnswerLines';
 import { RequestKindLabel } from './RequestKindLabel';
 import { RequestStatusChip } from './RequestStatusChip';
 
@@ -44,6 +46,7 @@ export const SellerRequestRow = memo(function SellerRequestRow({
     `Request from ${name}`,
     `Status: ${STATUS_INFO[status].label}`,
     sentence,
+    ...answerLines(request),
     preview || null,
     `Pickup ${pickup}`,
   ]
@@ -82,6 +85,7 @@ export const SellerRequestRow = memo(function SellerRequestRow({
       </View>
       <RequestKindLabel kind={kind} />
       <Text color="textMuted">{sentence}</Text>
+      <AnswerLines request={request} />
       {preview ? <Text numberOfLines={2}>{preview}</Text> : null}
       <Text color="textMuted">{`Pickup ${pickup}`}</Text>
     </Pressable>

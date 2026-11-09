@@ -14,6 +14,11 @@
  *   seed_cook_1 (seed-homemade-1@example.com): pending, accepted with a passed pickup time, and
  *   answered requests, from three customers. Add `--inbox-extra` (or `--inbox-extra N`, default
  *   60) to give seed_rest_001 that many older requests, to scroll its inbox past 50.
+ * - Also seeds answered requests (spec 10b): a decline for each reason, accepted requests with a
+ *   note, and seed_rest_001 (seed-restaurant-001@example.com) as a CUSTOMER with sent requests, so
+ *   its Requests tab shows both Received and Sent. Those sent requests belong to a seller account the
+ *   seed does not delete, so each run removes and re-creates them (password for every seed account
+ *   is password123).
  * - Add `--extra` (or `--extra N`, default 120) to also create that many older requests, for testing
  *   the My requests list's infinite scroll: SEED_SERVICE_ROLE_KEY=<key> npx tsx scripts/seed/requests.ts --extra 120
  * - Times are relative to when you run it, so re-run it for fresh times (the "expires in about 2
@@ -30,6 +35,7 @@ import {
   needsAddressSnapshot,
   parseExtra,
   parseInboxExtra,
+  planAnswerNotes,
   planExtraRequests,
   planInboxExtra,
   planRequests,
@@ -71,6 +77,34 @@ async function removeCustomers(db: Db): Promise<void> {
     }
     if (users.length < 200) return;
   }
+}
+
+/** The demo business owners that also send requests (planAnswerNotes), by username. */
+function ownerCustomerNames(plans: readonly PlannedRequest[]): string[] {
+  const names = new Set<string>();
+  for (const plan of plans) if (plan.customerUsername) names.add(plan.customerUsername);
+  for (const name of names) {
+    if (!/^seed_(rest_\d{3}|cook_\d+)$/.test(name)) {
+      throw new Error('Refusing to touch the requests of a non-seed account.');
+    }
+  }
+  return [...names];
+}
+
+/** Finds those owners and deletes the requests they SENT, so a re-run does not pile them up. */
+async function ownerCustomerIds(db: Db, names: readonly string[]): Promise<Map<string, string>> {
+  const ids = new Map<string, string>();
+  for (const name of names) {
+    const found = await db.from('profiles').select('id').eq('username', name).maybeSingle();
+    fail(found.error, `find ${name}`);
+    if (!found.data) {
+      throw new Error(`No demo account "${name}". Run scripts/seed/restaurants.ts first.`);
+    }
+    const removed = await db.from('pickup_requests').delete().eq('customer_id', found.data.id);
+    fail(removed.error, `remove the requests ${name} sent`);
+    ids.set(name, found.data.id);
+  }
+  return ids;
 }
 
 async function createCustomers(db: Db): Promise<Record<CustomerKey, string>> {
@@ -143,7 +177,10 @@ async function main() {
     ...planSellerInbox(now),
     ...(inboxExtra ? planInboxExtra(now, inboxExtra) : []),
     ...(extra ? planExtraRequests(now, extra) : []),
+    // After everything else, so the earlier rows (and what the tests look up first) are unchanged.
+    ...planAnswerNotes(now),
   ];
+  const ownerIds = await ownerCustomerIds(db, ownerCustomerNames(plans));
   const targets = new Map<string, Target>();
   try {
     const rows: Database['public']['Tables']['pickup_requests']['Insert'][] = [];
@@ -177,7 +214,9 @@ async function main() {
       const orderText = plan.orderText ?? (items ? null : 'Two of whatever is good today');
       rows.push({
         business_id: target.business.id,
-        customer_id: customerIds[plan.customer ?? 'demo'],
+        customer_id: plan.customerUsername
+          ? (ownerIds.get(plan.customerUsername) as string)
+          : customerIds[plan.customer ?? 'demo'],
         status: plan.status,
         pickup_at: plan.pickupAt.toISOString(),
         items: items as unknown as Json,
@@ -188,6 +227,9 @@ async function main() {
         expires_at: plan.expiresAt.toISOString(),
         responded_at: plan.respondedAt ? plan.respondedAt.toISOString() : null,
         created_at: plan.createdAt.toISOString(),
+        // The seller's answer (spec 10b), as respond_to_request writes it.
+        decline_reason: plan.declineReason ?? null,
+        response_note: plan.responseNote ?? null,
         // The snapshot respond_to_request writes at Accept; never for a restaurant.
         accepted_address: needsAddressSnapshot(plan, now) ? target.address : null,
       });
@@ -214,6 +256,9 @@ async function main() {
   );
   console.log(`Customers: ${SEED_CUSTOMERS.map((c) => c.email).join(', ')}`);
   console.log('Seller inbox: seed-restaurant-001@example.com and seed-homemade-1@example.com.');
+  console.log(
+    'Both switches: seed-restaurant-001@example.com has Received (inbox) and Sent (as a customer).',
+  );
   console.log('Times are relative to now: re-run this seed for fresh times.');
 }
 

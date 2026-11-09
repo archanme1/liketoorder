@@ -49,6 +49,10 @@ export const size = {
 // Pressable feedback and inactive (disabled / loading) controls.
 export const opacity = { disabled: 0.5, pressed: 0.8 };
 
+// How far titles and labels may grow with the system text size (accessibility font scale), so
+// they wrap and stay whole instead of being cut. Body text is not capped.
+export const maxFontMultiplier = 1.6;
+
 // Border widths: a selected option gets a thicker border as well as a check icon.
 export const stroke = { selected: 2 };
 

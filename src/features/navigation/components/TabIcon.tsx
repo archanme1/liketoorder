@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { useTheme } from '@/theme/useTheme';
 
-export type TabIconName = 'restaurant' | 'home' | 'person' | 'storefront';
+export type TabIconName = 'restaurant' | 'home' | 'person' | 'storefront' | 'receipt';
 
 type TabIconProps = {
   name: TabIconName;

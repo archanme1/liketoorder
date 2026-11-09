@@ -31,3 +31,15 @@ const SEED_EMAIL = /^seed-[a-z0-9]+(-[a-z0-9]+)*@example\.com$/;
 export function isSeedEmail(email: string | undefined | null): boolean {
   return typeof email === 'string' && SEED_EMAIL.test(email);
 }
+
+const SEED_OWNER_USERNAME = /^seed_(rest_\d{3}|cook_\d+)$/;
+
+/**
+ * The seed deletes the requests a demo business owner SENT. A username that looks like a demo one
+ * is not enough (a real local account could hold it): the account must also have a seed email.
+ */
+export function assertSeedOwner(username: string, email: string | undefined | null): void {
+  if (!SEED_OWNER_USERNAME.test(username) || !isSeedEmail(email)) {
+    throw new Error('Refusing to touch the requests of a non-seed account.');
+  }
+}

@@ -19,6 +19,7 @@ import {
   type PickupAddress,
   type InboxFilter,
   type PickupRequest,
+  type RespondOptions,
   type RequestDetail,
   type RequestList,
   type SellerDecision,
@@ -38,6 +39,7 @@ export type RequestErrorCode =
   | 'invalid_pickup_time'
   | 'invalid_items'
   | 'invalid_text'
+  | 'decline_reason_required'
   | 'item_unavailable'
   | 'empty_order'
   | 'too_many_pending'
@@ -56,6 +58,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<RequestErrorCode>([
   'invalid_pickup_time',
   'invalid_items',
   'invalid_text',
+  'decline_reason_required',
   'item_unavailable',
   'empty_order',
   'too_many_pending',
@@ -192,13 +195,21 @@ export async function getBusinessRequest(requestId: string): Promise<SellerReque
   return parsed.data;
 }
 
+/**
+ * Accepts or declines. A decline carries one reason (and, for "other", the seller's own words as
+ * `note`); an accept may carry a note. Only the keys that are set are sent, so a plain accept is
+ * still the two-argument call. The server validates all of it (decline_reason_required, invalid_text).
+ */
 export async function respondToRequest(
   requestId: string,
   decision: SellerDecision,
+  options: RespondOptions = {},
 ): Promise<SellerRequest> {
   const { data, error } = await supabase.rpc('respond_to_request', {
     p_request_id: requestId,
     p_decision: decision,
+    ...(options.declineReason === undefined ? {} : { p_decline_reason: options.declineReason }),
+    ...(options.note === undefined ? {} : { p_note: options.note }),
   });
   if (error) throw mapRequestError(error);
   const parsed = sellerRequestSchema.safeParse(data);

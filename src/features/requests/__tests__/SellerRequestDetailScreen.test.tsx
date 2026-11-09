@@ -351,12 +351,17 @@ describe('Accept and Decline: a confirm step', () => {
     expect(screen.queryByText('Accept this request?')).not.toBeOnTheScreen();
   });
 
-  it('confirming Decline sends the decision and shows Declined', async () => {
+  it('confirming Decline sends the decision and the chosen reason, and shows Declined', async () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: /^Decline request/ }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Sold out' }));
     await fireEvent.press(screen.getByRole('button', { name: /^Yes, decline request/ }));
     expect(await screen.findByText('You declined this request')).toBeOnTheScreen();
-    expect(respondMock.mock.calls[0]).toEqual([REQUEST_ID, 'declined']);
+    expect(respondMock.mock.calls[0]).toEqual([
+      REQUEST_ID,
+      'declined',
+      { declineReason: 'sold_out' },
+    ]);
     expect(screen.getByText('Declined')).toBeOnTheScreen();
   });
 });
@@ -420,12 +425,16 @@ describe('while an action runs, and when it goes wrong', () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: /^Accept request/ }));
     await fireEvent.press(screen.getByRole('button', { name: /^Yes, accept request/ }));
-    expect(
-      await screen.findByText(/This request has changed .* Its current status is shown\./),
-    ).toBeOnTheScreen();
-    expect(
-      await screen.findByText('The customer cancelled this request', {}, { timeout: 5000 }),
-    ).toBeOnTheScreen();
+    // Each check asks the screen again until it is true. `expect(await findByText(..))` would hold
+    // on to one element, and the refetch that follows the failure can replace it before the check.
+    await waitFor(() =>
+      expect(
+        screen.getByText(/This request has changed .* Its current status is shown\./),
+      ).toBeOnTheScreen(),
+    );
+    await waitFor(() =>
+      expect(screen.getByText('The customer cancelled this request')).toBeOnTheScreen(),
+    );
     expect(screen.getByText('Cancelled')).toBeOnTheScreen();
     expect(button(/^Accept request/)).not.toBeOnTheScreen();
     expect(screen.queryByText('Accepted')).not.toBeOnTheScreen();
@@ -436,7 +445,7 @@ describe('while an action runs, and when it goes wrong', () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: /^Accept request/ }));
     await fireEvent.press(screen.getByRole('button', { name: /^Yes, accept request/ }));
-    expect(await screen.findByText(/Nothing was changed/)).toBeOnTheScreen();
+    await waitFor(() => expect(screen.getByText(/Nothing was changed/)).toBeOnTheScreen());
     expect(screen.getByText('Waiting')).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: /^Accept request/ })).toBeOnTheScreen();
   });
@@ -449,9 +458,9 @@ describe('while an action runs, and when it goes wrong', () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: /^Accept request/ }));
     await fireEvent.press(screen.getByRole('button', { name: /^Yes, accept request/ }));
-    expect(
-      await screen.findByText("We couldn't find that request.", {}, { timeout: 5000 }),
-    ).toBeOnTheScreen();
+    await waitFor(() =>
+      expect(screen.getByText("We couldn't find that request.")).toBeOnTheScreen(),
+    );
   });
 });
 

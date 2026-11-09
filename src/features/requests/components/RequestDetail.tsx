@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Banner, Button, Card, Text } from '@/components/ui';
 import { deviceLocale, useCurrencies } from '@/features/menu/hooks/useCurrencies';
+import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 import { useCancelPickupRequest } from '../hooks/useCancelPickupRequest';
@@ -13,10 +14,11 @@ import { statusSentence } from '../status';
 import { summarizeOrder } from '../summary';
 import { formatDateTime, type TimeOptions } from '../time';
 
+import { AnswerLines } from './AnswerLines';
 import { RequestAddressCard } from './RequestAddressCard';
 import { RequestStatusChip } from './RequestStatusChip';
 
-export const TITLE_MAX_FONT_MULTIPLIER = 1.6;
+export const TITLE_MAX_FONT_MULTIPLIER = maxFontMultiplier;
 
 type RequestDetailProps = TimeOptions & {
   request: PickupRequest;
@@ -62,6 +64,7 @@ export function RequestDetail({ request, timeZone, locale = deviceLocale() }: Re
         </Text>
         <RequestStatusChip status={status} />
         <Text variant="bodyLg">{statusSentence(status, request.business_name)}</Text>
+        <AnswerLines request={request} variant="bodyLg" />
         {status === 'pending' ? (
           <Text color="textMuted">
             {`If there is no answer by ${formatDateTime(request.expires_at, options)}, this request expires.`}

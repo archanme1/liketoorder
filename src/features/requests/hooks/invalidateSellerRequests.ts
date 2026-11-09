@@ -4,12 +4,14 @@ import type { SellerRequest, SellerRequestDetail } from '../schema';
 
 import { requestKeys } from './keys';
 
-/** Re-reads everything a seller action can change: the inbox (every filter), the request, the count. */
+/** Re-reads everything a seller action can change: the inbox (every filter), the request, the count, the Sent list. */
 export function invalidateSellerRequests(queryClient: QueryClient, requestId: string) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: requestKeys.inboxAll }),
     queryClient.invalidateQueries({ queryKey: requestKeys.businessDetail(requestId) }),
     queryClient.invalidateQueries({ queryKey: requestKeys.waitingCount }),
+    // The customer's own list (and the badge made from it) when seller and customer are one person.
+    queryClient.invalidateQueries({ queryKey: requestKeys.mine }),
   ]);
 }
 

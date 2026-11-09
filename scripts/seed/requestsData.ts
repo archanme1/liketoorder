@@ -59,7 +59,19 @@ export type PlannedRequest = {
   itemCount: number;
   orderText: string | null;
   note: string | null;
+  /** Why it was declined (spec 10b): only on a declined row. */
+  declineReason?: DeclineCode;
+  /** The seller's note on an answer; for a decline it is the words behind "other" only. */
+  responseNote?: string;
+  /**
+   * Sent by this existing demo account (a business owner) instead of one of the SEED_CUSTOMERS, to
+   * try the Sent and Received switches on one phone. Its requests are removed by the seed itself.
+   */
+  customerUsername?: string;
 };
+
+export type DeclineCode =
+  'sold_out' | 'closed_then' | 'too_busy' | 'cannot_prepare' | 'time_not_possible' | 'other';
 
 /** The server's rule: the earlier of created + 30 minutes and the pickup time. */
 export function expiryFor(createdAt: Date, pickupAt: Date): Date {
@@ -481,4 +493,138 @@ export function planInboxExtra(now: Date, count: number): PlannedRequest[] {
     });
   }
   return rows;
+}
+
+/**
+ * Answered requests for spec 10b: one declined request for each reason (and "other" with the
+ * seller's own words), accepted requests with a note, and a business owner (seed_rest_001) who is
+ * also a customer, so Requests shows Received and Sent on one account. The table checks are
+ * followed here (a reason only on a declined row, a fixed reason has no note, "other" has one, a
+ * note only on an answered row), because these rows are inserted directly. Pickup times are ahead,
+ * so the rows read as recent answers. Times are relative to `now`.
+ */
+export function planAnswerNotes(now: Date): PlannedRequest[] {
+  const at = (offset: number) => new Date(now.getTime() + offset);
+  const rest = (n: number): Target => ({
+    kind: 'restaurant',
+    ownerUsername: `seed_rest_${String(n).padStart(3, '0')}`,
+  });
+  const cook = (n: number): Target => ({ kind: 'homemade', ownerUsername: `seed_cook_${n}` });
+  const row = (
+    key: string,
+    purpose: string,
+    target: Target,
+    status: RequestStatus,
+    created: number,
+    pickup: number,
+    extra: Partial<
+      Pick<
+        PlannedRequest,
+        'customer' | 'customerUsername' | 'declineReason' | 'responseNote' | 'note' | 'orderText'
+      >
+    > & { responded?: number; itemCount?: number } = {},
+  ): PlannedRequest => {
+    const createdAt = at(created);
+    const pickupAt = at(pickup);
+    const { responded, itemCount, ...rest } = extra;
+    return {
+      key: `answer-${key}`,
+      purpose,
+      target,
+      status,
+      createdAt,
+      pickupAt,
+      expiresAt: expiryFor(createdAt, pickupAt),
+      respondedAt: responded === undefined ? null : at(responded),
+      itemCount: itemCount ?? 0,
+      orderText: rest.orderText ?? null,
+      note: rest.note ?? null,
+      ...(rest.customer ? { customer: rest.customer } : {}),
+      ...(rest.customerUsername ? { customerUsername: rest.customerUsername } : {}),
+      ...(rest.declineReason ? { declineReason: rest.declineReason } : {}),
+      ...(rest.responseNote ? { responseNote: rest.responseNote } : {}),
+    };
+  };
+  const declined = (reason: DeclineCode, n: number, responseNote?: string): PlannedRequest =>
+    row(
+      `declined-${reason}`,
+      responseNote
+        ? `DECLINED, "other": the seller's own words (${responseNote})`
+        : `DECLINED: ${reason.replace('_', ' ')}`,
+      rest(n),
+      'declined',
+      -50 * MINUTE,
+      3 * HOUR,
+      {
+        responded: -40 * MINUTE,
+        itemCount: 1,
+        declineReason: reason,
+        ...(responseNote ? { responseNote } : {}),
+      },
+    );
+
+  return [
+    declined('sold_out', 2),
+    declined('closed_then', 3),
+    declined('too_busy', 4),
+    declined('cannot_prepare', 5),
+    declined('time_not_possible', 6),
+    declined('other', 7, 'The oven is broken today, sorry'),
+    row(
+      'accepted-restaurant-note',
+      'ACCEPTED restaurant with a note ("Please bring a bag")',
+      rest(8),
+      'accepted',
+      -45 * MINUTE,
+      2 * HOUR,
+      { responded: -35 * MINUTE, itemCount: 2, responseNote: 'Please bring a bag' },
+    ),
+    row(
+      'accepted-homemade-note',
+      'ACCEPTED homemade with a note, pickup in 40 min (note and address visible)',
+      cook(3),
+      'accepted',
+      -30 * MINUTE,
+      40 * MINUTE,
+      { responded: -25 * MINUTE, itemCount: 1, responseNote: 'Ring the side bell, please' },
+    ),
+    // seed_rest_001 as a customer: its Requests tab then has Received (spec 10 rows) and Sent.
+    row(
+      'owner-sent-accepted',
+      'seed_rest_001 as a customer: ACCEPTED with a note',
+      rest(9),
+      'accepted',
+      -40 * MINUTE,
+      2 * HOUR,
+      {
+        customerUsername: 'seed_rest_001',
+        responded: -30 * MINUTE,
+        itemCount: 1,
+        responseNote: 'Ready 10 minutes early',
+      },
+    ),
+    row(
+      'owner-sent-declined',
+      'seed_rest_001 as a customer: DECLINED, sold out',
+      cook(4),
+      'declined',
+      -40 * MINUTE,
+      3 * HOUR,
+      {
+        customerUsername: 'seed_rest_001',
+        responded: -30 * MINUTE,
+        orderText: 'A tray of lasagne',
+        declineReason: 'sold_out',
+      },
+    ),
+    row(
+      'owner-sent-pending',
+      'seed_rest_001 as a customer: PENDING (fresh, 30 minutes to live)',
+      rest(10),
+      'pending',
+      0,
+      3 * HOUR,
+      { customerUsername: 'seed_rest_001', itemCount: 1 },
+    ),
+  ];
 }

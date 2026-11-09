@@ -1,4 +1,4 @@
-import { getHomeRoute, getPostAuthRoute, getRouteAccess } from '../routeAccess';
+import { getHomeRoute, getPostAuthRoute, getRouteAccess, getTabVisibility } from '../routeAccess';
 
 type Access = ReturnType<typeof getRouteAccess>;
 
@@ -269,5 +269,56 @@ describe('getRouteAccess: the seller screens', () => {
   ])('%s: app and Manage access', (_who, input, expected) => {
     const result = access(input);
     expect({ app: result.app, manage: result.manage }).toEqual(expected);
+  });
+});
+
+describe('getTabVisibility (spec 10b tab bar rules)', () => {
+  const visibility = (input: Parameters<typeof getRouteAccess>[0]) =>
+    getTabVisibility(getRouteAccess(input));
+
+  it('guest: the maps only; no Requests, no Manage', () => {
+    expect(visibility({ hasSession: false, isRecovering: false })).toEqual({
+      maps: true,
+      requests: false,
+      manage: false,
+    });
+  });
+
+  it('signed in, seller mode off: the maps and Requests; no Manage', () => {
+    expect(visibility({ hasSession: true, isRecovering: false, profileComplete: true })).toEqual({
+      maps: true,
+      requests: true,
+      manage: false,
+    });
+  });
+
+  it('signed in, seller mode on: Requests and Manage; the two maps are out of the way', () => {
+    expect(
+      visibility({ hasSession: true, isRecovering: false, profileComplete: true, isSeller: true }),
+    ).toEqual({ maps: false, requests: true, manage: true });
+  });
+
+  it('no Requests tab while the profile is incomplete or a password reset is under way', () => {
+    expect(
+      visibility({ hasSession: true, isRecovering: false, profileComplete: false, isSeller: true }),
+    ).toEqual({ maps: true, requests: false, manage: false });
+    expect(visibility({ hasSession: true, isRecovering: true, isSeller: true })).toEqual({
+      maps: true,
+      requests: false,
+      manage: false,
+    });
+  });
+
+  it('does not change the six access keys or where sign-in lands', () => {
+    const access = getRouteAccess({ hasSession: true, isRecovering: false, isSeller: true });
+    expect(Object.keys(access).sort()).toEqual([
+      'app',
+      'manage',
+      'resetPassword',
+      'setupProfile',
+      'signedOutScreens',
+      'tabs',
+    ]);
+    expect(getPostAuthRoute(access)).toBe('/profile');
   });
 });

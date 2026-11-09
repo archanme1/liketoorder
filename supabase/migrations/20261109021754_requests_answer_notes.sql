@@ -27,14 +27,12 @@ alter table public.pickup_requests
 alter table public.pickup_requests
   add constraint pickup_requests_other_has_note
     check (decline_reason is distinct from 'other' or response_note is not null);
--- A fixed reason never carries a note (Decision 15).
-alter table public.pickup_requests
-  add constraint pickup_requests_fixed_reason_no_note
-    check (decline_reason is null or decline_reason = 'other' or response_note is null);
--- A declined row with a note must be an 'other' decline.
+-- A declined row with a note must be an 'other' decline, so a fixed reason never carries a note
+-- (Decision 15). Together with the reason-on-declined check this covers every case. IS NOT DISTINCT
+-- FROM matters: with a null reason, "= 'other'" is NULL and a CHECK that is NULL passes.
 alter table public.pickup_requests
   add constraint pickup_requests_declined_note_is_other
-    check (status <> 'declined' or response_note is null or decline_reason = 'other');
+    check (status <> 'declined' or response_note is null or decline_reason is not distinct from 'other');
 
 -- Rows declined before this migration have no reason, and there is deliberately NO table check that a
 -- declined row has one: it would reject those rows' fixtures and seeds, and a cut-off time written into

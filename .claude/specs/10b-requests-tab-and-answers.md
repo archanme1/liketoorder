@@ -99,12 +99,14 @@ alter table public.pickup_requests
   --   response_note  is null or status in ('accepted','declined','completed','no_show')
   --                                                                -- a note only on answered rows (see below)
   --   decline_reason = 'other' implies response_note is not null  -- Other always carries its text
+  --   status = 'declined' and response_note is not null implies decline_reason is not distinct from 'other'
+  --                                                                -- a fixed reason never carries a note
   --   status = 'declined' implies decline_reason is not null, ONLY for rows answered after this migration
   --   (older declined rows have no reason: the check is `status <> 'declined' or decline_reason is not null
   --   or responded_at < <migration time>` or enforced by the function only; the plan decides, Decision 3)
 ```
 
-How the two fields map: **Other's written reason is stored in `response_note`** and `decline_reason = 'other'`; for the fixed reasons `response_note` must be null (Decision 15: the function refuses a note on a fixed reason, and a table check enforces it). So: declined + fixed reason → no note; declined + other → note required; accepted → note optional. The hidden-character regex is the same `c_ctrl` pattern as `note` and `order_text` (spec 09), written once in a comment and reused.
+How the two fields map: **Other's written reason is stored in `response_note`** and `decline_reason = 'other'`; for the fixed reasons `response_note` must be null (Decision 15: the function refuses a note on a fixed reason, and the table enforces it through two checks: a reason only on a declined row, and a declined row with a note must be `other`; there is no separate fixed-reason check, it would repeat those two). So: declined + fixed reason → no note; declined + other → note required; accepted → note optional. The hidden-character regex is the same `c_ctrl` pattern as `note` and `order_text` (spec 09), written once in a comment and reused.
 
 A note stays on a row after `accepted → completed | no_show`, so `response_note` is allowed on those statuses; `decline_reason` is only on `declined`.
 

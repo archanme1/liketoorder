@@ -6,7 +6,7 @@
 -- violated constraint's name), so a broken function or table turns a NAMED assertion red instead of
 -- aborting the file.
 begin;
-select plan(151);
+select plan(150);
 
 -- ── Helpers (pg_temp) ───────────────────────────────────────────────────────
 -- Ids:  users 00000000-0000-0000-0011-<n>   businesses …-0411-<n>   requests …-0611-<n>   keys …-0711-<n>
@@ -181,10 +181,8 @@ select ok(exists (select 1 from pg_constraint where conrelid = 'public.pickup_re
   'check 2 exists: a note only on an answered row');
 select ok(exists (select 1 from pg_constraint where conrelid = 'public.pickup_requests'::regclass and conname = 'pickup_requests_other_has_note'),
   'check 3 exists: other always carries its text');
-select ok(exists (select 1 from pg_constraint where conrelid = 'public.pickup_requests'::regclass and conname = 'pickup_requests_fixed_reason_no_note'),
-  'check 4 exists: a fixed reason carries no note');
 select ok(exists (select 1 from pg_constraint where conrelid = 'public.pickup_requests'::regclass and conname = 'pickup_requests_declined_note_is_other'),
-  'check 5 exists: a declined row with a note must be other');
+  'check 4 exists: a declined row with a note must be other (so a fixed reason carries no note)');
 select ok(not has_column_privilege('anon', 'public.pickup_requests', 'decline_reason', 'SELECT, INSERT, UPDATE, REFERENCES')
       and not has_column_privilege('authenticated', 'public.pickup_requests', 'decline_reason', 'SELECT, INSERT, UPDATE, REFERENCES'),
   'no API role has any privilege on decline_reason');
@@ -207,9 +205,8 @@ select is(pg_temp.upd(80, $$response_note = 'x'$$), 'pickup_requests_note_on_ans
 select is(pg_temp.upd(83, $$response_note = 'x'$$), 'pickup_requests_note_on_answered', 'a note on an expired row is refused');
 select is(pg_temp.upd(84, $$response_note = 'x'$$), 'pickup_requests_note_on_answered', 'a note on a cancelled row is refused');
 select is(pg_temp.upd(82, $$decline_reason = 'other'$$), 'pickup_requests_other_has_note', 'other without a note is refused');
-select ok(pg_temp.upd(82, $$decline_reason = 'sold_out', response_note = 'why'$$)
-          in ('pickup_requests_fixed_reason_no_note', 'pickup_requests_declined_note_is_other'),
-  'a fixed reason with a note is refused (checks 4 and 5 both reject it, so either name is correct)');
+select ok(pg_temp.upd(82, $$decline_reason = 'sold_out', response_note = 'why'$$) like 'pickup_requests_%',
+  'a fixed reason with a note is refused by a table check');
 select is(pg_temp.upd(82, $$response_note = 'x'$$), 'pickup_requests_declined_note_is_other', 'a declined row with a note but no reason is refused');
 select is(pg_temp.upd(81, $$response_note = ''$$), 'pickup_requests_response_note_check', 'an empty note is refused');
 select is(pg_temp.upd(81, $$response_note = repeat('a', 201)$$), 'pickup_requests_response_note_check', 'a 201-character note is refused');

@@ -57,15 +57,18 @@ describe('respondToRequest arguments (spec 10b)', () => {
 });
 
 describe('respondToRequest errors', () => {
-  it.each(['decline_reason_required', 'invalid_text', 'invalid_input', 'invalid_transition', 'not_found'])(
-    'maps %s to a coded error',
-    async (message) => {
-      db.rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message } });
-      await expect(respondToRequest(REQUEST_ID, 'declined')).rejects.toMatchObject({
-        code: message,
-      });
-    },
-  );
+  it.each([
+    'decline_reason_required',
+    'invalid_text',
+    'invalid_input',
+    'invalid_transition',
+    'not_found',
+  ])('maps %s to a coded error', async (message) => {
+    db.rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message } });
+    await expect(respondToRequest(REQUEST_ID, 'declined')).rejects.toMatchObject({
+      code: message,
+    });
+  });
 
   it('reads the answer keys back from the server', async () => {
     db.rpc.mockResolvedValue({

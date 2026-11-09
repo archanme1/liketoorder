@@ -49,6 +49,7 @@ afterEach(async () => {
 });
 
 async function renderScreen(ui: React.ReactElement) {
+  // gcTime Infinity: the screen's request stays cached while the test reads the screen.
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   return render(
     <QueryClientProvider client={client}>

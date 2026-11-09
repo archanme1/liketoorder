@@ -7,7 +7,12 @@ import { AuthContext, type AuthContextValue } from '@/features/auth/components/A
 import * as sellersApi from '@/features/sellers/api';
 import type { MyBusiness } from '@/features/sellers/schema';
 
-import { RequestAppError, cancelPickupRequest, countWaitingRequests, listMyPickupRequests } from '../api';
+import {
+  RequestAppError,
+  cancelPickupRequest,
+  countWaitingRequests,
+  listMyPickupRequests,
+} from '../api';
 import { requestKeys } from '../hooks/keys';
 import { useCancelPickupRequest } from '../hooks/useCancelPickupRequest';
 import { useRequestsBadge, useRequestsCounts } from '../hooks/useRequestsBadge';
@@ -183,6 +188,36 @@ describe('the customer badge (spec 10b Decision 7)', () => {
   });
 });
 
+describe('the stored copy cannot be read', () => {
+  it('shows no number, does not loop, and reads again when a screen mounts next', async () => {
+    serve(makeRequest({ id: 'a' }));
+    const getItem = jest.spyOn(AsyncStorage, 'getItem');
+    // Only the status memory's own key fails (the supabase client reads its own keys too).
+    getItem.mockImplementation(async (key) => {
+      if (key === memoryKey && reads === 0) {
+        reads += 1;
+        throw new Error('disk');
+      }
+      return null;
+    });
+    const memoryKey = `liketoorder.requests.seen.v1.${userId}`;
+    const memoryReads = () => getItem.mock.calls.filter(([key]) => key === memoryKey).length;
+    let reads = 0;
+    const first = await renderHook(() => useRequestsCounts(), { wrapper });
+    await waitFor(() => expect(memoryReads()).toBe(1));
+    await act(flush);
+    await act(flush);
+    expect(first.result.current.sent).toBeUndefined();
+    // One failed read, not a tight retry loop.
+    expect(memoryReads()).toBe(1);
+    await first.unmount();
+
+    const second = await renderHook(() => useRequestsCounts(), { wrapper });
+    await waitFor(() => expect(second.result.current.sent).toBe(0));
+    expect(memoryReads()).toBe(2);
+  });
+});
+
 describe('own cancel is not news (Decision 18)', () => {
   const useBoth = () => ({ counts: useRequestsCounts(), cancel: useCancelPickupRequest() });
 
@@ -293,5 +328,28 @@ describe('the business owner numbers', () => {
     await waitFor(() => expect(result.current.sent).toBe(0));
     await act(flush);
     expect(result.current.received).toBeUndefined();
+  });
+
+  it('shows no tab total when the waiting count failed, even with a Sent change to show', async () => {
+    businessMock.mockResolvedValue(ownerBusiness);
+    waitingMock.mockRejectedValue(new RequestAppError('network'));
+    serve(makeRequest({ id: 'a' }));
+    const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
+    await waitFor(() => expect(result.current.sent).toBe(0));
+    serve(makeRequest({ id: 'a', status: 'accepted', display_status: 'accepted' }));
+    await refetchList();
+    await settled(() => result.current.sent, 1);
+    // The Sent switch has its number, but the tab would say 1 when the real total is higher.
+    expect(result.current.received).toBeUndefined();
+    expect(result.current.total).toBeUndefined();
+  });
+
+  it('shows no tab total while the waiting count is still loading', async () => {
+    businessMock.mockResolvedValue(ownerBusiness);
+    waitingMock.mockReturnValue(new Promise(() => undefined));
+    serve(makeRequest({ id: 'a' }));
+    const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
+    await waitFor(() => expect(result.current.sent).toBe(0));
+    expect(result.current.total).toBeUndefined();
   });
 });

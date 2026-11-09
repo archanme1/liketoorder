@@ -45,7 +45,7 @@ import {
   type CustomerKey,
   type PlannedRequest,
 } from './requestsData';
-import { assertLocalUrl, isSeedEmail } from './safety';
+import { assertLocalUrl, assertSeedOwner, isSeedEmail } from './safety';
 
 type Db = SupabaseClient<Database>;
 type Target = {
@@ -100,6 +100,10 @@ async function ownerCustomerIds(db: Db, names: readonly string[]): Promise<Map<s
     if (!found.data) {
       throw new Error(`No demo account "${name}". Run scripts/seed/restaurants.ts first.`);
     }
+    // The username is not proof: only an account with a seed email may lose its requests.
+    const account = await db.auth.admin.getUserById(found.data.id);
+    fail(account.error, `find the account of ${name}`);
+    assertSeedOwner(name, account.data.user?.email);
     const removed = await db.from('pickup_requests').delete().eq('customer_id', found.data.id);
     fail(removed.error, `remove the requests ${name} sent`);
     ids.set(name, found.data.id);

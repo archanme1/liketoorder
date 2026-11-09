@@ -59,9 +59,9 @@ describe('the seller answer keys (spec 10b)', () => {
 describe('respondInputSchema (the dialogs)', () => {
   it('accepts an accept with no note, a note, and a note of exactly 200 characters', () => {
     expect(respondInputSchema.safeParse({ decision: 'accepted', note: '' }).success).toBe(true);
-    expect(respondInputSchema.safeParse({ decision: 'accepted', note: 'Bring a bag' }).success).toBe(
-      true,
-    );
+    expect(
+      respondInputSchema.safeParse({ decision: 'accepted', note: 'Bring a bag' }).success,
+    ).toBe(true);
     const edge = respondInputSchema.safeParse({
       decision: 'accepted',
       note: 'x'.repeat(MAX_ANSWER_NOTE),
@@ -111,9 +111,11 @@ describe('respondOptions (what is sent)', () => {
   });
 
   it('sends only the code for a fixed reason, even if text was typed before switching', () => {
-    expect(respondOptions({ decision: 'declined', reason: 'sold_out', text: 'left over' })).toEqual({
-      declineReason: 'sold_out',
-    });
+    expect(respondOptions({ decision: 'declined', reason: 'sold_out', text: 'left over' })).toEqual(
+      {
+        declineReason: 'sold_out',
+      },
+    );
   });
 
   it('sends the written words as the note for Other', () => {

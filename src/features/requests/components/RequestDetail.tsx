@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Banner, Button, Card, Text } from '@/components/ui';
 import { deviceLocale, useCurrencies } from '@/features/menu/hooks/useCurrencies';
+import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 import { useCancelPickupRequest } from '../hooks/useCancelPickupRequest';
@@ -17,7 +18,7 @@ import { AnswerLines } from './AnswerLines';
 import { RequestAddressCard } from './RequestAddressCard';
 import { RequestStatusChip } from './RequestStatusChip';
 
-export const TITLE_MAX_FONT_MULTIPLIER = 1.6;
+export const TITLE_MAX_FONT_MULTIPLIER = maxFontMultiplier;
 
 type RequestDetailProps = TimeOptions & {
   request: PickupRequest;

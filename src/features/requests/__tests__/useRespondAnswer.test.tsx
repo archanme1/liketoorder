@@ -24,6 +24,7 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
+  // gcTime Infinity: the tests read the cached waiting count back with no component observing it.
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } },
   });
@@ -46,7 +47,10 @@ describe('useRespondToRequest with an answer (spec 10b)', () => {
     respondMock.mockResolvedValue(makeSellerRequest({ status: 'declined' }));
     const { result } = await renderHook(() => useRespondToRequest(), { wrapper });
     await act(async () =>
-      result.current.respond(REQUEST_ID, 'declined', { declineReason: 'other', note: 'Oven broke' }),
+      result.current.respond(REQUEST_ID, 'declined', {
+        declineReason: 'other',
+        note: 'Oven broke',
+      }),
     );
     expect(respondMock.mock.calls[0]).toEqual([
       REQUEST_ID,
@@ -109,9 +113,13 @@ describe('useRespondToRequest with an answer (spec 10b)', () => {
     respondMock.mockRejectedValueOnce(new RequestAppError('decline_reason_required'));
     respondMock.mockResolvedValueOnce(makeSellerRequest({ status: 'declined' }));
     const { result } = await renderHook(() => useRespondToRequest(), { wrapper });
-    await act(async () => result.current.respond(REQUEST_ID, 'declined', { declineReason: 'sold_out' }));
+    await act(async () =>
+      result.current.respond(REQUEST_ID, 'declined', { declineReason: 'sold_out' }),
+    );
     await waitFor(() => expect(result.current.error?.code).toBe('decline_reason_required'));
-    await act(async () => result.current.respond(REQUEST_ID, 'declined', { declineReason: 'sold_out' }));
+    await act(async () =>
+      result.current.respond(REQUEST_ID, 'declined', { declineReason: 'sold_out' }),
+    );
     await waitFor(() => expect(respondMock).toHaveBeenCalledTimes(2));
   });
 });

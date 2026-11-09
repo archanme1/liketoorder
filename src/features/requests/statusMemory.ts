@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 import type { RequestStatus } from './schema';
 
@@ -49,7 +49,13 @@ const STATUSES: readonly string[] = [
 
 function parse(raw: string | null): Entry[] {
   if (raw === null) return [];
-  const value: unknown = JSON.parse(raw);
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    // A damaged copy counts as empty: the next write replaces it.
+    return [];
+  }
   if (!Array.isArray(value)) return [];
   const entries: Entry[] = [];
   for (const item of value) {
@@ -73,14 +79,21 @@ export function loadMemory(userId: string): Promise<void> {
       // Stored entries are oldest-last; the Map keeps oldest-first, so insert them reversed.
       const merged = new Map<string, RequestStatus>([...parse(raw)].reverse());
       // Anything written while the read was running is newer than what was stored.
-      states.get(userId)?.entries.forEach((status, id) => {
+      const early = states.get(userId)?.entries;
+      early?.forEach((status, id) => {
         merged.delete(id);
         merged.set(id, status);
       });
       set(userId, { phase: 'ready', entries: merged });
+      // An early write (the person's own cancel) was only kept in memory until the stored copy was
+      // known; now it is saved, so a restart cannot forget it.
+      if (early && early.size > 0) persist(userId, merged);
     })
     .catch(() => {
-      if (startedAt === epoch) set(userId, { phase: 'failed', entries: new Map() });
+      if (startedAt !== epoch) return;
+      set(userId, { phase: 'failed', entries: new Map() });
+      // Forget the failed read, so the next hook that mounts tries again.
+      loads.delete(userId);
     });
   loads.set(userId, load);
   return load;
@@ -186,8 +199,15 @@ export function useStatusMemory(userId: string | undefined): MemoryState {
     () => peekMemory(userId),
     () => EMPTY,
   );
+  // Reads the stored copy when a hook mounts (which also retries a failed read), and again if the
+  // memory was cleared while mounted. A read that fails is not retried in a loop.
+  const attempted = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (userId !== undefined) void loadMemory(userId);
-  }, [userId, state]);
+    if (userId === undefined) return;
+    if (attempted.current !== userId || state.phase === 'loading') {
+      attempted.current = userId;
+      void loadMemory(userId);
+    }
+  }, [userId, state.phase]);
   return state;
 }

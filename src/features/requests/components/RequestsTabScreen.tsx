@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Banner, Button, Text } from '@/components/ui';
 import { useIsSeller } from '@/features/navigation/hooks/useIsSeller';
 import { useMyBusiness } from '@/features/sellers/hooks/useMyBusiness';
+import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 import { requestKeys } from '../hooks/keys';
@@ -69,7 +70,7 @@ export function RequestsTabScreen({
   return (
     <SafeAreaView edges={['top']} style={styles.root}>
       <View style={{ paddingHorizontal: space.lg, paddingTop: space.lg, gap: space.md }}>
-        <Text variant="title" accessibilityRole="header" maxFontSizeMultiplier={1.6}>
+        <Text variant="title" accessibilityRole="header" maxFontSizeMultiplier={maxFontMultiplier}>
           Requests
         </Text>
         {business.isError && !isOwner ? (

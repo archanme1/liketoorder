@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text, TextField } from '@/components/ui';
+import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 import { DECLINE_REASON_ORDER, declineReasonText } from '../declineReasons';
@@ -25,7 +26,7 @@ export function DeclineReasonPicker({
   text,
   onTextChange,
 }: DeclineReasonPickerProps) {
-  const { colors, space, radius, size, type, weight } = useTheme();
+  const { colors, space, radius, size, stroke, type, weight } = useTheme();
   const length = text.length;
   const tooLong = length > MAX_ANSWER_NOTE;
   const error = tooLong ? `Shorten your reason to ${MAX_ANSWER_NOTE} characters` : undefined;
@@ -35,7 +36,7 @@ export function DeclineReasonPicker({
       <Text
         accessibilityRole="header"
         style={{ fontWeight: weight.semibold }}
-        maxFontSizeMultiplier={1.6}
+        maxFontSizeMultiplier={maxFontMultiplier}
       >
         {DECLINE_REASON_TITLE}
       </Text>
@@ -62,8 +63,9 @@ export function DeclineReasonPicker({
                   paddingHorizontal: space.md,
                   paddingVertical: space.sm,
                   borderRadius: radius.md,
+                  borderWidth: selected ? stroke.selected : StyleSheet.hairlineWidth,
                   borderColor: selected ? colors.primary : colors.border,
-                  backgroundColor: selected ? colors.surface : 'transparent',
+                  backgroundColor: selected ? colors.surface : undefined,
                 },
               ]}
             >
@@ -76,7 +78,7 @@ export function DeclineReasonPicker({
               />
               <Text
                 style={[styles.label, selected ? { fontWeight: weight.semibold } : undefined]}
-                maxFontSizeMultiplier={1.6}
+                maxFontSizeMultiplier={maxFontMultiplier}
               >
                 {label}
               </Text>
@@ -113,6 +115,6 @@ export function DeclineReasonPicker({
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', borderWidth: 1 },
+  row: { flexDirection: 'row', alignItems: 'center' },
   label: { flex: 1 },
 });

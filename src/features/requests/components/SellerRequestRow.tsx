@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui';
+import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 import { answerLines } from '../answerLines';
@@ -23,7 +24,7 @@ type SellerRequestRowProps = TimeOptions & {
   kind?: RequestKind;
 };
 
-export const ROW_TITLE_MAX_FONT_MULTIPLIER = 1.6;
+export const ROW_TITLE_MAX_FONT_MULTIPLIER = maxFontMultiplier;
 
 // One row of the seller's inbox (memoized: a poll or a new page re-renders only the rows that
 // changed). The status is the server's display_status as it comes; the phone never works out

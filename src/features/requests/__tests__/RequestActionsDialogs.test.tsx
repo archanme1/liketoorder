@@ -26,6 +26,7 @@ const homemadeRequest = () =>
 let client: QueryClient;
 async function renderActions(request: SellerRequest = makeSellerRequest()) {
   client = new QueryClient({
+    // gcTime Infinity: the answer a mutation writes is read back while nothing observes it.
     defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } },
   });
   const tree = (current: SellerRequest) => (

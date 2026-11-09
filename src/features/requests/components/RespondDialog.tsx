@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Text } from '@/components/ui';
-import { scrim } from '@/theme/tokens';
+import { scrim, maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 import {
@@ -94,7 +94,7 @@ export function RespondDialog({
         >
           <View accessibilityViewIsModal testID="respond-dialog">
             <Card style={{ gap: space.md }}>
-              <Text accessibilityRole="header" maxFontSizeMultiplier={1.6}>
+              <Text accessibilityRole="header" maxFontSizeMultiplier={maxFontMultiplier}>
                 {copy.title}
               </Text>
               <Text color="textMuted">{copy.body}</Text>

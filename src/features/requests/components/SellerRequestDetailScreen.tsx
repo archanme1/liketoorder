@@ -3,6 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button, Card, ErrorState, Skeleton, Text } from '@/components/ui';
 import { deviceLocale, useCurrencies } from '@/features/menu/hooks/useCurrencies';
+import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 import { useBusinessRequest } from '../hooks/useBusinessRequest';
@@ -23,7 +24,7 @@ import { AnswerLines } from './AnswerLines';
 import { RequestActions } from './RequestActions';
 import { RequestStatusChip } from './RequestStatusChip';
 
-const TITLE_MAX_FONT_MULTIPLIER = 1.6;
+const TITLE_MAX_FONT_MULTIPLIER = maxFontMultiplier;
 
 type SellerRequestDetailScreenProps = TimeOptions & {
   /** The request id, or null when the link had no valid id. */

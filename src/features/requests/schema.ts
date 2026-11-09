@@ -153,26 +153,30 @@ export function cleanText(text: string | undefined): string | undefined {
 // The form behind the Accept and Decline dialogs. Fast feedback only: respond_to_request judges.
 const answerText = z.string().transform((text) => cleanText(text) ?? '');
 
-export const respondInputSchema = z.discriminatedUnion('decision', [
-  z.object({
-    decision: z.literal('accepted'),
-    note: answerText.pipe(z.string().max(MAX_ANSWER_NOTE)),
-  }),
-  z.object({
-    decision: z.literal('declined'),
-    reason: declineReasonSchema,
-    // Only "other" has text; for a fixed reason it is dropped (the server refuses a note on one).
-    text: answerText.pipe(z.string().max(MAX_ANSWER_NOTE)),
-  }),
-]).superRefine((value, ctx) => {
-  if (value.decision === 'declined' && value.reason === 'other' && value.text === '') {
-    ctx.addIssue({ code: 'custom', path: ['text'], message: 'required' });
-  }
-});
+export const respondInputSchema = z
+  .discriminatedUnion('decision', [
+    z.object({
+      decision: z.literal('accepted'),
+      note: answerText.pipe(z.string().max(MAX_ANSWER_NOTE)),
+    }),
+    z.object({
+      decision: z.literal('declined'),
+      reason: declineReasonSchema,
+      // Only "other" has text; for a fixed reason it is dropped (the server refuses a note on one).
+      text: answerText.pipe(z.string().max(MAX_ANSWER_NOTE)),
+    }),
+  ])
+  .superRefine((value, ctx) => {
+    if (value.decision === 'declined' && value.reason === 'other' && value.text === '') {
+      ctx.addIssue({ code: 'custom', path: ['text'], message: 'required' });
+    }
+  });
 export type RespondInput = z.input<typeof respondInputSchema>;
 
 /** What to send for a valid answer form: nothing for an empty note, the text only for "other". */
-export function respondOptions(input: z.output<typeof respondInputSchema>): RespondOptions | undefined {
+export function respondOptions(
+  input: z.output<typeof respondInputSchema>,
+): RespondOptions | undefined {
   if (input.decision === 'accepted') return input.note === '' ? undefined : { note: input.note };
   return input.reason === 'other'
     ? { declineReason: 'other', note: input.text }

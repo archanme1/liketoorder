@@ -1,4 +1,5 @@
 import { Text } from '@/components/ui';
+import { maxFontMultiplier } from '@/theme/tokens';
 
 import { kindLabel, type RequestKind } from '../kind';
 
@@ -10,7 +11,7 @@ export function RequestKindLabel({ kind }: { kind: RequestKind }) {
       color="textMuted"
       accessibilityElementsHidden
       importantForAccessibility="no"
-      maxFontSizeMultiplier={1.6}
+      maxFontSizeMultiplier={maxFontMultiplier}
     >
       {kindLabel(kind)}
     </Text>

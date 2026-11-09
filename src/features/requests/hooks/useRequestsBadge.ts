@@ -11,7 +11,7 @@ export type RequestsCounts = {
   received: number | undefined;
   /** Own requests that changed since the Sent list was last opened. Undefined: show no number. */
   sent: number | undefined;
-  /** The Requests tab number: received + sent for an owner, sent for a customer. */
+  /** The Requests tab number: received + sent for an owner (both must be known), sent for a customer. */
   total: number | undefined;
   /** Marks every loaded request as seen (the Sent list calls this when it is on screen). */
   markSentSeen: () => void;
@@ -33,9 +33,12 @@ export function useRequestsCounts(): RequestsCounts {
   const received = isOwner === true && waiting.isSuccess ? waiting.data.waiting : undefined;
   const sent = updates.count;
 
+  // The total is a sum, so it is only shown when every part of it is known: a failed or loading
+  // waiting count would otherwise make "2" look right when the real number is higher. The switches
+  // keep their own numbers.
   let total: number | undefined;
   if (isOwner === true) {
-    total = received === undefined && sent === undefined ? undefined : (received ?? 0) + (sent ?? 0);
+    total = received !== undefined && sent !== undefined ? received + sent : undefined;
   } else if (isOwner === false) {
     total = sent;
   }

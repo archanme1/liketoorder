@@ -1,14 +1,6 @@
-import {
-  DECLINE_REASON_ORDER,
-  declineReasonLabel,
-  declineReasonText,
-} from '../declineReasons';
+import { DECLINE_REASON_ORDER, declineReasonLabel, declineReasonText } from '../declineReasons';
 import { declinedLine, sellerNoteLine } from '../messages';
-import {
-  ACCEPT_ADDRESS_HINT,
-  actionErrorMessage,
-  counterText,
-} from '../sellerMessages';
+import { ACCEPT_ADDRESS_HINT, actionErrorMessage, counterText } from '../sellerMessages';
 
 describe('declineReasons', () => {
   it('lists the six reasons in the picker order with Other last', () => {

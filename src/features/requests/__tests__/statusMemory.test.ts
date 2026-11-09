@@ -21,6 +21,10 @@ async function stored(userId: string) {
   return raw === null ? null : (JSON.parse(raw) as [string, RequestStatus][]);
 }
 
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
 beforeEach(async () => {
   clearStatusMemory();
   // Let every write still in flight from the last test land before the phone is wiped.
@@ -131,7 +135,6 @@ describe('statusMemory', () => {
     jest.spyOn(AsyncStorage, 'getItem').mockRejectedValueOnce(new Error('disk'));
     await loadMemory('u1');
     expect(peekMemory('u1').phase).toBe('failed');
-    jest.restoreAllMocks();
   });
 
   it('keeps working in memory when a write fails', async () => {
@@ -140,7 +143,6 @@ describe('statusMemory', () => {
     baseline('u1', [row('a', 'pending')]);
     await flush();
     expect(changedCount(peekMemory('u1'), [row('a', 'accepted')])).toBe(1);
-    jest.restoreAllMocks();
   });
 
   it('records an own cancel even before the phone copy was read, and it survives the read', async () => {
@@ -155,5 +157,45 @@ describe('statusMemory', () => {
     await loadMemory('u1');
     expect(peekMemory('u1').phase).toBe('ready');
     expect(changedCount(peekMemory('u1'), [row('a', 'accepted')])).toBe(0);
+  });
+  it('treats a stored value that is not JSON as empty, and the next write replaces it', async () => {
+    await AsyncStorage.setItem(KEY('u1'), 'not json');
+    await loadMemory('u1');
+    expect(peekMemory('u1').phase).toBe('ready');
+    expect(changedCount(peekMemory('u1'), [row('a', 'accepted')])).toBe(0);
+    baseline('u1', [row('a', 'pending')]);
+    await flush();
+    expect(await stored('u1')).toEqual([['a', 'pending']]);
+  });
+
+  it('saves an own cancel recorded before the phone copy was read, so a restart does not forget it', async () => {
+    await AsyncStorage.setItem(KEY('u1'), JSON.stringify([['a', 'pending']]));
+    markSeenAt('u1', 'a', 'cancelled');
+    await loadMemory('u1');
+    await flush();
+    expect(await stored('u1')).toEqual([['a', 'cancelled']]);
+
+    // The app is killed and started again: a new copy of the module, the same phone storage.
+    let restarted!: typeof import('../statusMemory');
+    jest.isolateModules(() => {
+      jest.doMock('@react-native-async-storage/async-storage', () => ({
+        __esModule: true,
+        default: AsyncStorage,
+      }));
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      restarted = require('../statusMemory');
+    });
+    await restarted.loadMemory('u1');
+    // The request now reads Cancelled from the server: no badge for the person's own cancel.
+    expect(restarted.changedCount(restarted.peekMemory('u1'), [row('a', 'cancelled')])).toBe(0);
+    jest.dontMock('@react-native-async-storage/async-storage');
+  });
+
+  it('tries the read again after it failed, instead of staying blank until a restart', async () => {
+    jest.spyOn(AsyncStorage, 'getItem').mockRejectedValueOnce(new Error('disk'));
+    await loadMemory('u1');
+    expect(peekMemory('u1').phase).toBe('failed');
+    await loadMemory('u1');
+    expect(peekMemory('u1').phase).toBe('ready');
   });
 });

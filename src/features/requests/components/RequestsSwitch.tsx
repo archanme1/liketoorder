@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui';
 import { formatBadge } from '@/features/navigation/components/TabBadge';
+import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 export type RequestsSide = 'received' | 'sent';
@@ -25,7 +26,7 @@ const SIDES: { value: RequestsSide; label: string; unit: string }[] = [
 // selected"), a check mark and bold text, never colour alone. The number is text too, in the
 // spoken label as well. Each target is at least 44 pt and the pair wraps at large text.
 export function RequestsSwitch({ value, onChange, receivedCount, sentCount }: RequestsSwitchProps) {
-  const { colors, space, radius, size, type, weight } = useTheme();
+  const { colors, space, radius, size, stroke, type, weight } = useTheme();
   return (
     <View
       accessibilityRole="radiogroup"
@@ -58,8 +59,9 @@ export function RequestsSwitch({ value, onChange, receivedCount, sentCount }: Re
                 paddingHorizontal: space.lg,
                 paddingVertical: space.sm,
                 borderRadius: radius.pill,
+                borderWidth: selected ? stroke.selected : StyleSheet.hairlineWidth,
                 borderColor: selected ? colors.primary : colors.border,
-                backgroundColor: selected ? colors.surface : 'transparent',
+                backgroundColor: selected ? colors.surface : undefined,
               },
             ]}
           >
@@ -73,7 +75,7 @@ export function RequestsSwitch({ value, onChange, receivedCount, sentCount }: Re
               />
             ) : null}
             <Text
-              maxFontSizeMultiplier={1.6}
+              maxFontSizeMultiplier={maxFontMultiplier}
               style={selected ? { fontWeight: weight.semibold } : undefined}
             >
               {side.label}
@@ -81,7 +83,7 @@ export function RequestsSwitch({ value, onChange, receivedCount, sentCount }: Re
             {shown ? (
               <Text
                 testID={`switch-count-${side.value}`}
-                maxFontSizeMultiplier={1.6}
+                maxFontSizeMultiplier={maxFontMultiplier}
                 style={{ fontWeight: weight.bold }}
                 color="primary"
               >
@@ -97,5 +99,5 @@ export function RequestsSwitch({ value, onChange, receivedCount, sentCount }: Re
 
 const styles = StyleSheet.create({
   group: { flexDirection: 'row', flexWrap: 'wrap' },
-  option: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  option: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
 });

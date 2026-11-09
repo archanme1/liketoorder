@@ -165,14 +165,14 @@ isOneToOne: false
                   ]
                 },"pickup_requests": {
                   Row: {
-                    "accepted_address": string | null,"business_id": string,"created_at": string,"currency_code": string | null,"customer_id": string,"expires_at": string,"id": string,"idempotency_key": string,"items": Json | null,"note": string | null,"order_text": string | null,"pickup_at": string,"responded_at": string | null,"status": string,"updated_at": string
+                    "accepted_address": string | null,"business_id": string,"created_at": string,"currency_code": string | null,"customer_id": string,"decline_reason": string | null,"expires_at": string,"id": string,"idempotency_key": string,"items": Json | null,"note": string | null,"order_text": string | null,"pickup_at": string,"responded_at": string | null,"response_note": string | null,"status": string,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "accepted_address"?: string | null,"business_id": string,"created_at"?: string,"currency_code"?: string | null,"customer_id": string,"expires_at": string,"id"?: string,"idempotency_key": string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at": string,"responded_at"?: string | null,"status"?: string,"updated_at"?: string
+                    "accepted_address"?: string | null,"business_id": string,"created_at"?: string,"currency_code"?: string | null,"customer_id": string,"decline_reason"?: string | null,"expires_at": string,"id"?: string,"idempotency_key": string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at": string,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"updated_at"?: string
                   }
                   Update: {
-                    "accepted_address"?: string | null,"business_id"?: string,"created_at"?: string,"currency_code"?: string | null,"customer_id"?: string,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at"?: string,"responded_at"?: string | null,"status"?: string,"updated_at"?: string
+                    "accepted_address"?: string | null,"business_id"?: string,"created_at"?: string,"currency_code"?: string | null,"customer_id"?: string,"decline_reason"?: string | null,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at"?: string,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"updated_at"?: string
                   }
                   Relationships: [
                     {
@@ -335,7 +335,7 @@ isOneToOne: false
 { Args: { "p_direction": string,"p_item_id": string }; Returns: undefined
                            },
 "respond_to_request":
-{ Args: { "p_decision": string,"p_request_id": string }; Returns: Json
+{ Args: { "p_decision": string,"p_decline_reason"?: string,"p_note"?: string,"p_request_id": string }; Returns: Json
                            },
 "set_business_location":
 { Args: { "p_formatted_address": string,"p_lat": number,"p_lng": number,"p_owner_id": string,"p_place_id": string }; Returns: Json

@@ -5,7 +5,7 @@
 - PR 2 (the app: shared paged hook, Request table, Requests tab integration, I've arrived, jest tests): `feature/table-requests-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (Navigation), §8 (Pickup requests, for the shared rules), §9 (Table requests), §12 (notifications, for what is NOT built here), §14 row 11, §16 (paged-list copy, seller inbox keyset cursor, request row kind label, function privileges, lists rule)
 **Plan mode:** required — adds a table with RLS, adds and changes Postgres functions and the shared request objects (a contract change on every request object), adds a route, and touches well over ~5 files.
-**Status:** 📝 Spec written
+**Status:** 🚧 In progress (PR 1, backend, built; PR 2, the app, not started)
 
 ## Overview
 After this ships, a signed-in customer opens a restaurant that accepts tables, taps **Request table**, picks a day, a time, a party size and an optional note, and sends it. It appears in **Sent** in the Requests tab with a "Table" label. The restaurant owner sees it in **Received** (seller mode on or off) next to pickup requests, and accepts it (with an optional note), or declines it with a reason. The customer sees the answer as for pickup. On an accepted table request the customer can tap **I've arrived** once, from 2 hours before the table time until 4 hours after it; the seller then sees "Customer has arrived". The push notification for it is spec 12 (not built).

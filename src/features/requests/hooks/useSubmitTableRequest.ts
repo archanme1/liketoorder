@@ -38,6 +38,8 @@ export function useSubmitTableRequest() {
       }
       return submitTableRequest({ ...input, idempotencyKey: attempt.current.key });
     },
+    // Only the customer's own side: a business owner cannot ask their own business (own_business),
+    // so a submit never changes Received, the waiting count or an inbox.
     onSuccess: async (request) => {
       attempt.current = null;
       await Promise.all([

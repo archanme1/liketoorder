@@ -280,7 +280,7 @@ export function TableRequestForm({
         </View>
 
         <Text variant="caption" color="textMuted">
-          The restaurant will answer this request. Until it does, nothing is reserved.
+          {TABLE_SENT_NOTE}
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

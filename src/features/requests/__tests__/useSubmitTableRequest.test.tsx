@@ -51,7 +51,8 @@ describe('useSubmitTableRequest', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     const [first, second] = keysSent();
-    expect(first).toBeTruthy();
+    // A real uuid (expo-crypto randomUUID), and the same one again.
+    expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     expect(second).toBe(first);
   });
 

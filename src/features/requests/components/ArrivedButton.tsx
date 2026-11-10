@@ -23,7 +23,7 @@ type ArrivedButtonProps = {
 // any answer the request is re-read, so the screen shows the real state. No location is read.
 export function ArrivedButton({ request, serverNow, fetchedAt }: ArrivedButtonProps) {
   const { space } = useTheme();
-  const window = useArrivalWindow(request.table_at, serverNow, fetchedAt);
+  const arrivalState = useArrivalWindow(request.table_at, serverNow, fetchedAt);
   const mark = useMarkArrived();
 
   const done = request.arrived_at !== null || mark.isSuccess;
@@ -37,7 +37,7 @@ export function ArrivedButton({ request, serverNow, fetchedAt }: ArrivedButtonPr
   // Only an accepted request inside the window shows the button. A refused tap leaves its message
   // up even if the re-read request no longer qualifies.
   const error = mark.error ? requestErrorMessage(mark.error.code) : null;
-  if (request.display_status !== 'accepted' || window !== 'open') {
+  if (request.display_status !== 'accepted' || arrivalState !== 'open') {
     return error ? <Banner message={error} /> : null;
   }
 

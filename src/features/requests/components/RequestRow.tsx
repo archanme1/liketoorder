@@ -32,8 +32,9 @@ export function orderPreview(request: Pick<PickupRequest, 'items' | 'order_text'
   return [items, text].filter(Boolean).join(' · ');
 }
 
-// One row of My requests (memoized: a poll or a new page re-renders only the rows that changed). The status is the server's display_status, shown as it comes: the phone
-// never works out "expired" for itself (a wrong phone clock must not change what is shown).
+// One row of My requests (memoized: a poll or a new page re-renders only the rows that changed).
+// The status is the server's display_status, shown as it comes: the phone never works out
+// "expired" for itself (a wrong phone clock must not change what is shown).
 export const RequestRow = memo(function RequestRow({
   request,
   onPress,

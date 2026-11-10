@@ -50,8 +50,8 @@ type PickupTimePickerProps = TimeOptions & {
   /** What is being picked. The default is a pickup time. */
   kind?: keyof typeof COPY;
   /** The times offered. The default is the pickup window (15 minutes to 7 days). */
-  window?: TimeWindow;
-  /** "Now" on the phone; the earliest time offered comes after it (see `window`). */
+  offeredTimes?: TimeWindow;
+  /** "Now" on the phone; the earliest time offered comes after it (see `offeredTimes`). */
   now: Date;
   value: Date | null;
   /** Read-only, e.g. while the request is being sent. */
@@ -75,7 +75,7 @@ type PickupTimePickerProps = TimeOptions & {
 // to the native picker when it was given explicitly).
 export function PickupTimePicker({
   kind = 'pickup',
-  window = PICKUP_WINDOW,
+  offeredTimes = PICKUP_WINDOW,
   now,
   value,
   onChange,
@@ -93,8 +93,8 @@ export function PickupTimePicker({
     kind === 'table'
       ? formatDateTimeWithZone(date, { timeZone: zone, locale })
       : formatDateTime(date, { timeZone: zone, locale });
-  const earliest = window.earliest(now);
-  const latest = window.latest(now);
+  const earliest = offeredTimes.earliest(now);
+  const latest = offeredTimes.latest(now);
   const base = value ?? earliest;
 
   const [open, setOpen] = useState(false);
@@ -105,7 +105,7 @@ export function PickupTimePicker({
   const titleRef = useRef<ComponentRef<typeof View>>(null);
 
   const finish = (picked: Date, at: Date = now) => {
-    const { value: next, problem } = clampToWindow(picked, at, window);
+    const { value: next, problem } = clampToWindow(picked, at, offeredTimes);
     onChange(next, problem);
   };
 
@@ -113,12 +113,12 @@ export function PickupTimePicker({
     const at = onOpen ? onOpen() : now;
     if (Platform.OS === 'android') {
       // The dialogs open straight away, so they use the fresh time directly.
-      const openBase = value ?? window.earliest(at);
+      const openBase = value ?? offeredTimes.earliest(at);
       DateTimePickerAndroid.open({
         mode: 'date',
         value: openBase,
-        minimumDate: window.earliest(at),
-        maximumDate: window.latest(at),
+        minimumDate: offeredTimes.earliest(at),
+        maximumDate: offeredTimes.latest(at),
         timeZoneName: timeZone,
         onValueChange: (_event, pickedDay) => {
           // Keep the wall-clock time already chosen, on the new day, whatever the dialog returned.

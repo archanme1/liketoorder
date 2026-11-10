@@ -1,7 +1,7 @@
-// Where to send a guest after they sign in: set by the "Request pickup" and "Request table" buttons, read by the root
-// navigator once the profile is complete, cleared by the form when it opens, and cleared when the
-// sign-in screens close without a session (useClearReturnToOnLeave). Kept in memory only:
-// if the app is killed mid-sign-in (say during email verification) the guest lands on Profile.
+// Where to send a guest after they sign in: set by the Request pickup and Request table buttons,
+// read by the root navigator once the profile is complete, cleared by the form when it opens, and
+// cleared when the sign-in screens close without a session (useClearReturnToOnLeave). Kept in
+// memory only: if the app is killed mid-sign-in the guest lands on Profile.
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 // Only the pickup or table request form for a business id. Anything else is refused, so a crafted

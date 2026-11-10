@@ -6,7 +6,13 @@ import { getCurrencies } from '@/features/menu/api';
 
 import { dump } from '../__fixtures__/dump';
 import { makeRequest, REQUEST_ID } from '../__fixtures__/requests';
-import { cancelPickupRequest, getMyPickupAddress, getPickupRequest, RequestAppError } from '../api';
+import {
+  cancelPickupRequest,
+  getMyPickupAddress,
+  getMyTableRequest,
+  getPickupRequest,
+  RequestAppError,
+} from '../api';
 import { ADDRESS_UNAVAILABLE } from '../components/RequestAddressCard';
 import { RequestDetailScreen } from '../components/RequestDetailScreen';
 import { requestKeys } from '../hooks/keys';
@@ -23,11 +29,13 @@ jest.mock('../api', () => ({
   getPickupRequest: jest.fn(),
   cancelPickupRequest: jest.fn(),
   getMyPickupAddress: jest.fn(),
+  getMyTableRequest: jest.fn(),
 }));
 
 const getMock = jest.mocked(getPickupRequest);
 const cancelMock = jest.mocked(cancelPickupRequest);
 const addressMock = jest.mocked(getMyPickupAddress);
+const tableMock = jest.mocked(getMyTableRequest);
 const onBack = jest.fn();
 
 const SERVER_NOW = '2026-11-08T17:00:00Z';
@@ -67,7 +75,7 @@ const serve = (request: ReturnType<typeof makeRequest> | null) =>
 
 beforeEach(() => {
   jest.clearAllMocks();
-  [getMock, cancelMock, addressMock].forEach((mock) => mock.mockReset());
+  [getMock, cancelMock, addressMock, tableMock].forEach((mock) => mock.mockReset());
   jest
     .mocked(getCurrencies)
     .mockResolvedValue([{ code: 'CAD', name: 'Canadian dollar', minor_units: 2 }]);
@@ -87,6 +95,8 @@ describe('states', () => {
 
   it('not found (unknown, someone else, or a bad link): one calm message', async () => {
     serve(null);
+    // With no kind hint both reads are tried, pickup first: not found for both is not found.
+    tableMock.mockResolvedValue({ server_now: SERVER_NOW, request: null });
     await renderScreen();
     expect(await screen.findByText("We couldn't find that request.")).toBeOnTheScreen();
     await fireEvent.press(screen.getByRole('button', { name: 'Close' }));

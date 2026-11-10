@@ -16,8 +16,8 @@ export default function RequestsRoute() {
   );
   // Stable, so the memoized rows below do not re-render on every render of this screen.
   const onOpenSent = useCallback(
-    (request: { id: string }) =>
-      router.push({ pathname: '/requests/[id]', params: { id: request.id } }),
+    (request: { id: string; kind: 'pickup' | 'table' }) =>
+      router.push({ pathname: '/requests/[id]', params: { id: request.id, kind: request.kind } }),
     [router],
   );
   const onOpenReceived = useCallback(

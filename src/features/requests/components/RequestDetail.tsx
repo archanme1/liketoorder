@@ -9,7 +9,7 @@ import { useTheme } from '@/theme/useTheme';
 import { useCancelPickupRequest } from '../hooks/useCancelPickupRequest';
 import { canShowAddress, useAddressCacheGuard } from '../hooks/usePickupAddress';
 import { NO_PRICE_NOTE, PAY_NOTE, requestErrorMessage } from '../messages';
-import type { PickupRequest } from '../schema';
+import type { CustomerRequest, PickupRequest } from '../schema';
 import { statusSentence } from '../status';
 import { summarizeOrder } from '../summary';
 import { formatDateTime, type TimeOptions } from '../time';
@@ -17,16 +17,30 @@ import { formatDateTime, type TimeOptions } from '../time';
 import { AnswerLines } from './AnswerLines';
 import { RequestAddressCard } from './RequestAddressCard';
 import { RequestStatusChip } from './RequestStatusChip';
+import { TableRequestDetail } from './TableRequestDetail';
 
 export const TITLE_MAX_FONT_MULTIPLIER = maxFontMultiplier;
 
 type RequestDetailProps = TimeOptions & {
-  request: PickupRequest;
+  request: CustomerRequest;
 };
 
-// One request: the server's status, what was asked, when, and (pending only) a Cancel with a
+/** One request, by kind: a pickup order or a table. */
+export function RequestDetail({ request, ...time }: RequestDetailProps) {
+  return request.kind === 'table' ? (
+    <TableRequestDetail request={request} {...time} />
+  ) : (
+    <PickupRequestDetail request={request} {...time} />
+  );
+}
+
+// One pickup request: the server's status, what was asked, when, and (pending only) a Cancel with a
 // confirm step. For an accepted or completed homemade request, the cook's exact address.
-export function RequestDetail({ request, timeZone, locale = deviceLocale() }: RequestDetailProps) {
+function PickupRequestDetail({
+  request,
+  timeZone,
+  locale = deviceLocale(),
+}: TimeOptions & { request: PickupRequest }) {
   const { space } = useTheme();
   const cancel = useCancelPickupRequest();
   useAddressCacheGuard(request.id, request);

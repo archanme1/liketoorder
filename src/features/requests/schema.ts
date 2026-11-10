@@ -12,6 +12,11 @@ export const MIN_QUANTITY = 1;
 export const MAX_QUANTITY = 20;
 export const MIN_LEAD_MINUTES = 15;
 export const MAX_LEAD_DAYS = 7;
+// Table requests (spec 11): a party of 1 to 20, a table time from 30 minutes to 30 days ahead.
+export const MIN_PARTY_SIZE = 1;
+export const MAX_PARTY_SIZE = 20;
+export const MIN_TABLE_LEAD_MINUTES = 30;
+export const MAX_TABLE_LEAD_DAYS = 30;
 
 export const REQUEST_STATUSES = [
   'pending',
@@ -34,6 +39,17 @@ export const DECLINE_REASONS = [
 ] as const;
 export const declineReasonSchema = z.enum(DECLINE_REASONS);
 export type DeclineReason = z.output<typeof declineReasonSchema>;
+
+// A restaurant declining a table has its own list (spec 11). "other" is the only one with text.
+export const TABLE_DECLINE_REASONS = [
+  'fully_booked',
+  'closed_then',
+  'too_busy',
+  'time_not_possible',
+  'other',
+] as const;
+export const tableDeclineReasonSchema = z.enum(TABLE_DECLINE_REASONS);
+export type TableDeclineReason = z.output<typeof tableDeclineReasonSchema>;
 
 const timestamp = z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'bad timestamp');
 
@@ -70,17 +86,44 @@ export const pickupRequestSchema = z.strictObject({
   response_note: z.string().max(MAX_ANSWER_NOTE).nullable(),
 });
 
+// The customer's table request (15 keys). Strict like the pickup one: no customer id, no place_id,
+// no address, no coordinates.
+export const tableRequestSchema = z.strictObject({
+  id: z.string().min(1),
+  kind: z.literal('table'),
+  business_id: z.string().min(1),
+  business_name: z.string(),
+  business_type: z.enum(['restaurant', 'homemade']),
+  status: z.enum(REQUEST_STATUSES),
+  display_status: z.enum(REQUEST_STATUSES),
+  table_at: timestamp,
+  party_size: z.number().int().min(MIN_PARTY_SIZE).max(MAX_PARTY_SIZE),
+  note: z.string().nullable(),
+  expires_at: timestamp,
+  created_at: timestamp,
+  decline_reason: tableDeclineReasonSchema.nullable(),
+  response_note: z.string().max(MAX_ANSWER_NOTE).nullable(),
+  // Set once, by the server, when the customer taps "I've arrived".
+  arrived_at: timestamp.nullable(),
+});
+
+/** A request in the customer's lists and detail: one kind or the other, told apart by `kind`. */
+export const customerRequestSchema = z.discriminatedUnion('kind', [
+  pickupRequestSchema,
+  tableRequestSchema,
+]);
+
 // next_cursor is the server's own text ("<created_at, microseconds>|<id>"), sent back untouched;
 // null on the last page.
 export const requestListSchema = z.strictObject({
   server_now: timestamp,
-  requests: z.array(pickupRequestSchema),
+  requests: z.array(customerRequestSchema),
   next_cursor: z.string().min(1).nullable(),
 });
 
 export const requestDetailSchema = z.strictObject({
   server_now: timestamp,
-  request: pickupRequestSchema.nullable(),
+  request: customerRequestSchema.nullable(),
 });
 
 export const pickupAddressSchema = z.strictObject({ formatted_address: z.string().min(1) });
@@ -118,6 +161,8 @@ export type SellerOutcome = 'completed' | 'no_show';
 export type RespondOptions = { declineReason?: DeclineReason; note?: string };
 
 export type PickupRequest = z.output<typeof pickupRequestSchema>;
+export type TableRequest = z.output<typeof tableRequestSchema>;
+export type CustomerRequest = z.output<typeof customerRequestSchema>;
 export type SellerRequest = z.output<typeof sellerRequestSchema>;
 export type SellerRequestList = z.output<typeof sellerRequestListSchema>;
 export type SellerRequestDetail = z.output<typeof sellerRequestDetailSchema>;
@@ -219,6 +264,34 @@ export function pickupTimeProblem(pickupAt: Date, now: Date): PickupTimeProblem 
   if (ahead > MAX_LEAD_DAYS * 24 * 60 * MINUTE) return 'too_far';
   return null;
 }
+
+// ── Table time and the table form ───────────────────────────────────────────────────────────
+export type TableTimeProblem = 'too_soon' | 'too_far';
+
+/** The server's rule: at least 30 minutes ahead and at most 30 days. Null when fine. */
+export function tableTimeProblem(tableAt: Date, now: Date): TableTimeProblem | null {
+  const ahead = tableAt.getTime() - now.getTime();
+  if (ahead < MIN_TABLE_LEAD_MINUTES * MINUTE) return 'too_soon';
+  if (ahead > MAX_TABLE_LEAD_DAYS * 24 * 60 * MINUTE) return 'too_far';
+  return null;
+}
+
+// The table form's fields (react-hook-form + zod). Fast feedback only: submit_table_request judges.
+// The time is checked against the clock when Send is pressed (tableTimeProblem), not here.
+export const tableFormSchema = z.object({
+  tableAt: z.date({ error: 'Choose a table time' }),
+  partySize: z
+    .number()
+    .int()
+    .min(MIN_PARTY_SIZE, 'Choose at least 1 person')
+    .max(MAX_PARTY_SIZE, `Choose at most ${MAX_PARTY_SIZE} people`),
+  note: z
+    .string()
+    .transform((text) => cleanText(text) ?? '')
+    .pipe(z.string().max(MAX_NOTE, `Keep your note to ${MAX_NOTE} characters.`)),
+});
+export type TableFormInput = z.input<typeof tableFormSchema>;
+export type TableFormValues = z.output<typeof tableFormSchema>;
 
 // ── The form ─────────────────────────────────────────────────────────────────────────────────
 export type OrderDraft = {

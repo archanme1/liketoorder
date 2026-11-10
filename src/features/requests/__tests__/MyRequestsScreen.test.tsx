@@ -106,13 +106,21 @@ describe('states', () => {
     listMock.mockRejectedValueOnce(new RequestAppError('network'));
     await renderScreen();
     expect(await screen.findByText(/No connection/)).toBeOnTheScreen();
-    listMock.mockResolvedValueOnce({ server_now: SERVER_NOW, next_cursor: null, requests: [pending] });
+    listMock.mockResolvedValueOnce({
+      server_now: SERVER_NOW,
+      next_cursor: null,
+      requests: [pending],
+    });
     await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText("Joe's Pizza")).toBeOnTheScreen();
   });
 
   it('success: a row per request, newest first as the server sent them', async () => {
-    listMock.mockResolvedValue({ server_now: SERVER_NOW, next_cursor: null, requests: [pending, declined, accepted] });
+    listMock.mockResolvedValue({
+      server_now: SERVER_NOW,
+      next_cursor: null,
+      requests: [pending, declined, accepted],
+    });
     await renderScreen();
     await screen.findByText("Joe's Pizza");
     const rows = screen.getAllByRole('button', { name: /Status:/ });
@@ -173,7 +181,11 @@ describe('what a row says', () => {
 
   it('never shows an address, and never asks for one, in the list', async () => {
     addressMock.mockResolvedValue({ formatted_address: '12 Secret Lane, Oshawa' });
-    listMock.mockResolvedValue({ server_now: SERVER_NOW, next_cursor: null, requests: [accepted, declined] });
+    listMock.mockResolvedValue({
+      server_now: SERVER_NOW,
+      next_cursor: null,
+      requests: [accepted, declined],
+    });
     await renderScreen();
     await screen.findAllByText('Nonna Rosa');
     expect(addressMock).not.toHaveBeenCalled();
@@ -209,7 +221,11 @@ describe('the server decides the status, not the phone clock', () => {
       fakeClock(phone);
       // The server says: this one is still pending (expires 17:30, server now 17:00) and that one
       // expired. A phone 5 hours ahead would call both expired; 5 hours behind, both pending.
-      listMock.mockResolvedValue({ server_now: SERVER_NOW, next_cursor: null, requests: [pending, expired] });
+      listMock.mockResolvedValue({
+        server_now: SERVER_NOW,
+        next_cursor: null,
+        requests: [pending, expired],
+      });
       await renderScreen();
       await screen.findByText("Joe's Pizza");
       expect(

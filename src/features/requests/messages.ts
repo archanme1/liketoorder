@@ -4,12 +4,21 @@ export const PAY_NOTE = 'Estimated total. Pay the seller directly.';
 export const NO_PRICE_NOTE = 'Total excludes items without a price';
 export const NO_MENU_NOTE = "No menu items available. Describe what you'd like.";
 export const EMPTY_LIST = 'No requests yet. Find a place on the map and request pickup.';
+export const TABLE_SENT_NOTE =
+  'The restaurant will answer this request. Your table is not booked yet.';
+export const TABLE_UNAVAILABLE = "This restaurant doesn't take table requests right now.";
+export const ARRIVED_DONE = "You've told the restaurant you arrived";
 export const SENT_EMPTY = 'No requests yet. Requests you send will show up here.';
 export const BUSINESS_CHECK_ERROR = "Couldn't check your business, so Received is not shown.";
 export const NOT_AVAILABLE = "This place isn't available right now.";
 
 export function sentMessage(sellerName: string): string {
   return `Waiting for ${sellerName} to respond.`;
+}
+
+/** After a table request is sent. Pending is never worded as booked or confirmed. */
+export function tableSentMessage(sellerName: string): string {
+  return `Table request waiting for ${sellerName}.`;
 }
 
 /** What the person is told for each failure. Never says why a business is unavailable. */
@@ -26,6 +35,14 @@ export function requestErrorMessage(code: RequestErrorCode): string {
       return "You can't request from your own business.";
     case 'invalid_pickup_time':
       return 'Pick a later time';
+    case 'invalid_table_time':
+      return 'Pick a table time between 30 minutes and 30 days from now.';
+    case 'invalid_party_size':
+      return 'Choose a party of 1 to 20 people.';
+    case 'already_arrived':
+      return "You've already told the restaurant you arrived.";
+    case 'arrival_window':
+      return "You can tell the restaurant you've arrived from 2 hours before the table time until 4 hours after it.";
     case 'invalid_items':
       return 'Something is wrong with your items. Check the quantities and try again.';
     case 'item_unavailable':

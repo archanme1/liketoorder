@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Button, Screen, Text } from '@/components/ui';
 
-import type { PickupRequest } from '../schema';
+import type { CustomerRequest } from '../schema';
 import type { TimeOptions } from '../time';
 
 import { MyRequestsList } from './MyRequestsList';
@@ -11,7 +11,7 @@ export { LOAD_MORE_ERROR, REFRESH_ERROR } from './MyRequestsList';
 
 type MyRequestsScreenProps = TimeOptions & {
   onBack: () => void;
-  onOpen: (request: PickupRequest) => void;
+  onOpen: (request: CustomerRequest) => void;
   onFindPlace: () => void;
 };
 

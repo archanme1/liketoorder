@@ -1,7 +1,7 @@
 import type { InfiniteData } from '@tanstack/react-query';
 
 import { listMyRequests } from '../api';
-import type { PickupRequest, RequestList } from '../schema';
+import type { CustomerRequest, RequestList } from '../schema';
 
 import { requestKeys } from './keys';
 import { flattenRequestPages, usePagedRequests, type PagedCursor } from './usePagedRequests';
@@ -11,8 +11,8 @@ export type RequestsCursor = PagedCursor;
 /** All loaded pages as one list, newest first, each request once (first occurrence wins). */
 export function flattenPages(
   data: InfiniteData<RequestList, RequestsCursor> | undefined,
-): PickupRequest[] {
-  return flattenRequestPages<PickupRequest, RequestList>(data);
+): CustomerRequest[] {
+  return flattenRequestPages<CustomerRequest, RequestList>(data);
 }
 
 const nextCursor = (last: RequestList) => last.next_cursor ?? undefined;
@@ -23,7 +23,7 @@ const nextCursor = (last: RequestList) => last.next_cursor ?? undefined;
  * one is loaded. The paging itself is `usePagedRequests`.
  */
 export function useMyRequests(options: { enabled?: boolean } = {}) {
-  return usePagedRequests<PickupRequest, RequestList>({
+  return usePagedRequests<CustomerRequest, RequestList>({
     queryKey: requestKeys.mine,
     fetchPage: listMyRequests,
     nextCursor,

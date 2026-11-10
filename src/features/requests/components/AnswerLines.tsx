@@ -4,14 +4,14 @@ import { Text } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
 
 import { answerLines } from '../answerLines';
-import type { PickupRequest } from '../schema';
+import type { CustomerRequest } from '../schema';
 
 /** "Declined: Sold out" and "Seller's note: ..." as plain text (no links, no markup). */
 export function AnswerLines({
   request,
   variant = 'body',
 }: {
-  request: Pick<PickupRequest, 'status' | 'decline_reason' | 'response_note'>;
+  request: Pick<CustomerRequest, 'kind' | 'status' | 'decline_reason' | 'response_note'>;
   variant?: 'body' | 'bodyLg';
 }) {
   const { space } = useTheme();

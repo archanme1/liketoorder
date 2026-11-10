@@ -2,8 +2,8 @@ import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { makeRows, pagedServer } from '../__fixtures__/pagedServer';
-import { RequestAppError, listMyPickupRequests } from '../api';
+import { cursorOf, makeRows, pagedServer } from '../__fixtures__/pagedServer';
+import { RequestAppError, listMyRequests } from '../api';
 import { MyRequestsScreen } from '../components/MyRequestsScreen';
 import { RequestRow } from '../components/RequestRow';
 
@@ -12,10 +12,10 @@ jest.mock('@/lib/supabase', () => ({
 }));
 jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
-  listMyPickupRequests: jest.fn(),
+  listMyRequests: jest.fn(),
 }));
 
-const listMock = jest.mocked(listMyPickupRequests);
+const listMock = jest.mocked(listMyRequests);
 const server = { rows: makeRows(120) };
 let client: QueryClient;
 
@@ -56,7 +56,7 @@ describe('loading more as you scroll', () => {
     expect(listMock).toHaveBeenCalledTimes(1);
     await endReached();
     await waitFor(() => expect(listMock).toHaveBeenCalledTimes(2));
-    expect(listMock).toHaveBeenLastCalledWith(server.rows[49].created_at);
+    expect(listMock).toHaveBeenLastCalledWith(cursorOf(server.rows[49]));
   });
 
   it('does not ask again while a page is loading, and shows a footer spinner', async () => {
@@ -67,7 +67,11 @@ describe('loading more as you scroll', () => {
       () =>
         new Promise((resolve) => {
           finish = () =>
-            resolve({ server_now: '2026-11-08T17:00:00Z', requests: server.rows.slice(50, 100) });
+            resolve({
+              server_now: '2026-11-08T17:00:00Z',
+              requests: server.rows.slice(50, 100),
+              next_cursor: cursorOf(server.rows[99]),
+            });
         }),
     );
     await endReached();
@@ -118,7 +122,7 @@ describe('when a page fails', () => {
     await waitFor(() =>
       expect(screen.queryByText("Couldn't load more requests.")).not.toBeOnTheScreen(),
     );
-    expect(listMock).toHaveBeenLastCalledWith(server.rows[49].created_at);
+    expect(listMock).toHaveBeenLastCalledWith(cursorOf(server.rows[49]));
   });
 
   it('a failed refresh with rows on screen: a small banner, the list stays', async () => {
@@ -182,6 +186,6 @@ describe('pull to refresh', () => {
     await act(async () => undefined);
     await endReached();
     await waitFor(() => expect(listMock).toHaveBeenCalledTimes(2));
-    expect(listMock).toHaveBeenLastCalledWith(server.rows[49].created_at);
+    expect(listMock).toHaveBeenLastCalledWith(cursorOf(server.rows[49]));
   });
 });

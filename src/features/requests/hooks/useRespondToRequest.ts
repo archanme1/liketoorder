@@ -2,7 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useRef } from 'react';
 
 import { respondToRequest, type RequestAppError } from '../api';
-import type { RespondOptions, SellerDecision, SellerRequest, WaitingCount } from '../schema';
+import type { RequestKind } from '../kind';
+import type { BusinessRequest, RespondOptions, SellerDecision, WaitingCount } from '../schema';
 
 import { invalidateSellerRequests, writeAnswer } from './invalidateSellerRequests';
 import { requestKeys } from './keys';
@@ -10,20 +11,22 @@ import { requestKeys } from './keys';
 type Variables = { requestId: string; decision: SellerDecision; answer?: RespondOptions };
 
 /**
- * Accepts or declines a pending request. `respond` ignores a second call while one is running, so a
+ * Accepts or declines a pending request of this kind (a pickup unless told otherwise). `respond` ignores a second call while one is running, so a
  * double tap sends one decision. After ANY outcome (also not_found / invalid_transition) the inbox,
  * the request and the waiting count are re-read, so the screen shows the real current status.
  */
-export function useRespondToRequest() {
+export function useRespondToRequest(kind: RequestKind = 'pickup') {
   const queryClient = useQueryClient();
   const inFlight = useRef(false);
-  const mutation = useMutation<SellerRequest, RequestAppError, Variables>({
-    // The third argument is passed only when there is something to send, so a plain accept is the
-    // same two-argument call as before spec 10b.
-    mutationFn: ({ requestId, decision, answer }) =>
-      answer
+  const mutation = useMutation<BusinessRequest, RequestAppError, Variables>({
+    mutationFn: ({ requestId, decision, answer }) => {
+      if (kind === 'table') return respondToRequest(requestId, decision, answer ?? {}, kind);
+      // A pickup call stays exactly what it was before spec 10b / 11: the answer only when there
+      // is one, and no kind (the server defaults to pickup).
+      return answer
         ? respondToRequest(requestId, decision, answer)
-        : respondToRequest(requestId, decision),
+        : respondToRequest(requestId, decision);
+    },
     onSuccess: (request, { requestId }) => {
       writeAnswer(queryClient, requestId, request);
       // The Requests tab number drops at once; the refetch after this settles it for good.

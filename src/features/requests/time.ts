@@ -1,4 +1,10 @@
-import { MAX_LEAD_DAYS, MIN_LEAD_MINUTES, type PickupTimeProblem } from './schema';
+import {
+  MAX_LEAD_DAYS,
+  MAX_TABLE_LEAD_DAYS,
+  MIN_LEAD_MINUTES,
+  MIN_TABLE_LEAD_MINUTES,
+  type PickupTimeProblem,
+} from './schema';
 
 // Times arrive and are sent as UTC instants. They are shown, and worked on as calendar days and
 // wall-clock times, in a time zone that is always passed in explicitly: the phone's by default,
@@ -40,6 +46,21 @@ export function formatDateTime(value: string | Date, options: TimeOptions = {}):
   return `${formatDay(date, options)}, ${formatTime(date, options)}`;
 }
 
+/**
+ * The same with the zone's short name: "Sat, Nov 7, 7:00 PM EST". A table time is always shown this
+ * way (a customer abroad could otherwise read it in the wrong zone). The zone is explicit.
+ */
+export function formatDateTimeWithZone(value: string | Date, options: TimeOptions = {}): string {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  const zone = new Intl.DateTimeFormat(options.locale, {
+    timeZone: options.timeZone ?? deviceTimeZone(),
+    timeZoneName: 'short',
+  })
+    .formatToParts(date)
+    .find((part) => part.type === 'timeZoneName')?.value;
+  return zone ? `${formatDateTime(date, options)} ${zone}` : formatDateTime(date, options);
+}
+
 /** The first pickup time offered: now + 15 minutes (plus one minute of slack), rounded up. */
 export function earliestPickup(now: Date): Date {
   const wanted = now.getTime() + (MIN_LEAD_MINUTES + 1) * 60_000;
@@ -51,6 +72,23 @@ export function latestPickup(now: Date): Date {
   const wanted = now.getTime() + MAX_LEAD_DAYS * 24 * 60 * 60_000;
   return new Date(Math.floor(wanted / QUARTER_HOUR_MS) * QUARTER_HOUR_MS);
 }
+
+/** The first table time offered: now + 30 minutes (plus one minute of slack), rounded up. */
+export function earliestTable(now: Date): Date {
+  const wanted = now.getTime() + (MIN_TABLE_LEAD_MINUTES + 1) * 60_000;
+  return new Date(Math.ceil(wanted / QUARTER_HOUR_MS) * QUARTER_HOUR_MS);
+}
+
+/** The last table time offered: now + 30 days, rounded down. */
+export function latestTable(now: Date): Date {
+  const wanted = now.getTime() + MAX_TABLE_LEAD_DAYS * 24 * 60 * 60_000;
+  return new Date(Math.floor(wanted / QUARTER_HOUR_MS) * QUARTER_HOUR_MS);
+}
+
+/** The times a picker offers: the earliest and the latest, both counted from "now". */
+export type TimeWindow = { earliest: (now: Date) => Date; latest: (now: Date) => Date };
+export const PICKUP_WINDOW: TimeWindow = { earliest: earliestPickup, latest: latestPickup };
+export const TABLE_WINDOW: TimeWindow = { earliest: earliestTable, latest: latestTable };
 
 /** Rounds an instant to the nearest quarter hour. Every real zone's offset is a multiple of 15 minutes, so this is a quarter hour on the local clock too. */
 export function snapToQuarter(date: Date): Date {
@@ -66,10 +104,11 @@ export function snapToQuarter(date: Date): Date {
 export function clampToWindow(
   date: Date,
   now: Date,
+  window: TimeWindow = PICKUP_WINDOW,
 ): { value: Date; problem: PickupTimeProblem | null } {
   const snapped = snapToQuarter(date);
-  const earliest = earliestPickup(now);
-  const latest = latestPickup(now);
+  const earliest = window.earliest(now);
+  const latest = window.latest(now);
   if (snapped.getTime() < earliest.getTime()) return { value: earliest, problem: 'too_soon' };
   if (snapped.getTime() > latest.getTime()) return { value: latest, problem: 'too_far' };
   return { value: snapped, problem: null };

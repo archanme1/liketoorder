@@ -16,8 +16,11 @@ describe('response schemas (strict)', () => {
   it('accepts the server shape', () => {
     expect(pickupRequestSchema.safeParse(makeRequest()).success).toBe(true);
     expect(
-      requestListSchema.safeParse({ server_now: '2026-11-08T17:00:00Z', requests: [makeRequest()] })
-        .success,
+      requestListSchema.safeParse({
+        server_now: '2026-11-08T17:00:00Z',
+        requests: [makeRequest()],
+        next_cursor: null,
+      }).success,
     ).toBe(true);
     expect(
       requestDetailSchema.safeParse({ server_now: '2026-11-08T17:00:00Z', request: null }).success,
@@ -30,6 +33,14 @@ describe('response schemas (strict)', () => {
     ['map coordinates', { map_lat: 1, map_lng: 2 }],
   ])('refuses a request that carries %s', (_label, extra) => {
     expect(pickupRequestSchema.safeParse({ ...makeRequest(), ...extra }).success).toBe(false);
+  });
+
+  it('requires kind, and only knows pickup here', () => {
+    const { kind: _kind, ...withoutKind } = makeRequest();
+    expect(pickupRequestSchema.safeParse(withoutKind).success).toBe(false);
+    expect(pickupRequestSchema.safeParse({ ...makeRequest(), kind: 'delivery' }).success).toBe(
+      false,
+    );
   });
 
   it('refuses an unknown status and a bad timestamp', () => {

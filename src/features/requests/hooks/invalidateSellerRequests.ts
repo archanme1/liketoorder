@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 
-import type { SellerRequest, SellerRequestDetail } from '../schema';
+import type { BusinessRequest, SellerRequestDetail } from '../schema';
 
 import { requestKeys } from './keys';
 
@@ -21,7 +21,7 @@ export function invalidateSellerRequests(queryClient: QueryClient, requestId: st
  * the clock offset (pickup hint, expiry timer) is worked out from, and changing only one of them
  * would skew it until the refetch that follows.
  */
-export function writeAnswer(queryClient: QueryClient, requestId: string, request: SellerRequest) {
+export function writeAnswer(queryClient: QueryClient, requestId: string, request: BusinessRequest) {
   const key = requestKeys.businessDetail(requestId);
   const fetchedAt = queryClient.getQueryState<SellerRequestDetail>(key)?.dataUpdatedAt;
   queryClient.setQueryData<SellerRequestDetail>(

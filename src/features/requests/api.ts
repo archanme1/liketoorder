@@ -6,14 +6,16 @@ import {
 
 import { supabase } from '@/lib/supabase';
 
+import type { RequestKind } from './kind';
 import {
+  businessRequestSchema,
   pickupAddressSchema,
   pickupRequestSchema,
   requestDetailSchema,
   requestListSchema,
   sellerRequestDetailSchema,
   sellerRequestListSchema,
-  sellerRequestSchema,
+  tableRequestSchema,
   waitingCountSchema,
   type OrderLine,
   type PickupAddress,
@@ -24,9 +26,10 @@ import {
   type RequestList,
   type SellerDecision,
   type SellerOutcome,
-  type SellerRequest,
+  type BusinessRequest,
   type SellerRequestDetail,
   type SellerRequestList,
+  type TableRequest,
   type WaitingCount,
 } from './schema';
 
@@ -37,6 +40,10 @@ export type RequestErrorCode =
   | 'business_unavailable'
   | 'own_business'
   | 'invalid_pickup_time'
+  | 'invalid_table_time'
+  | 'invalid_party_size'
+  | 'already_arrived'
+  | 'arrival_window'
   | 'invalid_items'
   | 'invalid_text'
   | 'decline_reason_required'
@@ -56,6 +63,10 @@ const SERVER_CODES: ReadonlySet<string> = new Set<RequestErrorCode>([
   'business_unavailable',
   'own_business',
   'invalid_pickup_time',
+  'invalid_table_time',
+  'invalid_party_size',
+  'already_arrived',
+  'arrival_window',
   'invalid_items',
   'invalid_text',
   'decline_reason_required',
@@ -135,9 +146,64 @@ export async function cancelPickupRequest(requestId: string): Promise<PickupRequ
   return parsed.data;
 }
 
-/** One page (50) of the caller's requests, newest first; `before` is the last row's created_at. */
-export async function listMyPickupRequests(before?: string): Promise<RequestList> {
-  const { data, error } = await supabase.rpc('list_my_pickup_requests', { p_before: before });
+export type SubmitTableInput = {
+  businessId: string;
+  idempotencyKey: string;
+  tableAt: Date;
+  partySize: number;
+  note?: string;
+};
+
+export async function submitTableRequest(input: SubmitTableInput): Promise<TableRequest> {
+  const { data, error } = await supabase.rpc('submit_table_request', {
+    p_business_id: input.businessId,
+    p_idempotency_key: input.idempotencyKey,
+    p_table_at: input.tableAt.toISOString(),
+    p_party_size: input.partySize,
+    p_note: input.note,
+  });
+  if (error) throw mapRequestError(error);
+  const parsed = tableRequestSchema.safeParse(data);
+  if (!parsed.success) throw new RequestAppError('unknown');
+  return parsed.data;
+}
+
+export async function cancelTableRequest(requestId: string): Promise<TableRequest> {
+  const { data, error } = await supabase.rpc('cancel_table_request', {
+    p_request_id: requestId,
+  });
+  if (error) throw mapRequestError(error);
+  const parsed = tableRequestSchema.safeParse(data);
+  if (!parsed.success) throw new RequestAppError('unknown');
+  return parsed.data;
+}
+
+/** One of the caller's table requests; `request` is null for an unknown id and for someone else's. */
+export async function getMyTableRequest(requestId: string): Promise<RequestDetail> {
+  const { data, error } = await supabase.rpc('get_my_table_request', {
+    p_request_id: requestId,
+  });
+  if (error) throw mapRequestError(error);
+  const parsed = requestDetailSchema.safeParse(data);
+  if (!parsed.success) throw new RequestAppError('unknown');
+  return parsed.data;
+}
+
+/**
+ * "I've arrived": once, on an accepted table request, from 2 hours before the table time to 4
+ * hours after it by the SERVER's clock. Sends only the request id: no location, no client time.
+ */
+export async function markArrived(requestId: string): Promise<TableRequest> {
+  const { data, error } = await supabase.rpc('mark_arrived', { p_request_id: requestId });
+  if (error) throw mapRequestError(error);
+  const parsed = tableRequestSchema.safeParse(data);
+  if (!parsed.success) throw new RequestAppError('unknown');
+  return parsed.data;
+}
+
+/** One page (50) of the caller's requests, newest first; `before` is the server's own next_cursor text. */
+export async function listMyRequests(before?: string): Promise<RequestList> {
+  const { data, error } = await supabase.rpc('list_my_requests', { p_before: before });
   if (error) throw mapRequestError(error);
   const parsed = requestListSchema.safeParse(data);
   if (!parsed.success) throw new RequestAppError('unknown');
@@ -204,15 +270,18 @@ export async function respondToRequest(
   requestId: string,
   decision: SellerDecision,
   options: RespondOptions = {},
-): Promise<SellerRequest> {
+  kind: RequestKind = 'pickup',
+): Promise<BusinessRequest> {
   const { data, error } = await supabase.rpc('respond_to_request', {
     p_request_id: requestId,
     p_decision: decision,
     ...(options.declineReason === undefined ? {} : { p_decline_reason: options.declineReason }),
     ...(options.note === undefined ? {} : { p_note: options.note }),
+    // The server defaults to pickup, so a pickup call is exactly what it was before spec 11.
+    ...(kind === 'table' ? { p_kind: kind } : {}),
   });
   if (error) throw mapRequestError(error);
-  const parsed = sellerRequestSchema.safeParse(data);
+  const parsed = businessRequestSchema.safeParse(data);
   if (!parsed.success) throw new RequestAppError('unknown');
   return parsed.data;
 }
@@ -220,13 +289,15 @@ export async function respondToRequest(
 export async function markRequestOutcome(
   requestId: string,
   outcome: SellerOutcome,
-): Promise<SellerRequest> {
+  kind: RequestKind = 'pickup',
+): Promise<BusinessRequest> {
   const { data, error } = await supabase.rpc('mark_request_outcome', {
     p_request_id: requestId,
     p_outcome: outcome,
+    ...(kind === 'table' ? { p_kind: kind } : {}),
   });
   if (error) throw mapRequestError(error);
-  const parsed = sellerRequestSchema.safeParse(data);
+  const parsed = businessRequestSchema.safeParse(data);
   if (!parsed.success) throw new RequestAppError('unknown');
   return parsed.data;
 }

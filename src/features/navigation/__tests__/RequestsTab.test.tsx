@@ -94,8 +94,8 @@ function installDatabase() {
     switch (name) {
       case 'get_my_business':
         return { data: world.business, error: null };
-      case 'list_my_pickup_requests':
-        return { data: { server_now: NOW, requests: world.sent }, error: null };
+      case 'list_my_requests':
+        return { data: { server_now: NOW, requests: world.sent, next_cursor: null }, error: null };
       case 'get_my_pickup_request':
         return {
           data: {

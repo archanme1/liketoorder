@@ -6,7 +6,7 @@ import { Banner, Button, EmptyState, ErrorState, Skeleton } from '@/components/u
 import { useTheme } from '@/theme/useTheme';
 
 import { useBusinessRequests } from '../hooks/useBusinessRequests';
-import type { InboxFilter as Filter, SellerRequest } from '../schema';
+import type { InboxFilter as Filter, BusinessRequest } from '../schema';
 import {
   emptyMessage,
   inboxErrorMessage,
@@ -19,10 +19,10 @@ import { InboxFilter } from './InboxFilter';
 import { SellerRequestRow } from './SellerRequestRow';
 
 type SellerRequestsScreenProps = TimeOptions & {
-  onOpen: (request: SellerRequest) => void;
+  onOpen: (request: BusinessRequest) => void;
 };
 
-const requestKey = (request: SellerRequest) => request.id;
+const requestKey = (request: BusinessRequest) => request.id;
 
 // The seller's inbox, newest first. Opens on Waiting; All shows every request. Loading, empty,
 // error with Retry, or the list. More rows load as you scroll near the end (a footer spinner, or an
@@ -57,7 +57,7 @@ export function SellerRequestsScreen({ onOpen, timeZone, locale }: SellerRequest
   }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
   const onRefresh = useCallback(() => void refresh(), [refresh]);
   const renderItem = useCallback(
-    ({ item }: { item: SellerRequest }) => (
+    ({ item }: { item: BusinessRequest }) => (
       <SellerRequestRow request={item} onPress={onOpen} timeZone={timeZone} locale={locale} />
     ),
     [onOpen, timeZone, locale],

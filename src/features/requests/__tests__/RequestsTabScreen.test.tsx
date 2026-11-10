@@ -11,7 +11,7 @@ import {
   RequestAppError,
   countWaitingRequests,
   listBusinessRequests,
-  listMyPickupRequests,
+  listMyRequests,
 } from '../api';
 import { RequestsTabScreen } from '../components/RequestsTabScreen';
 import { clearStatusMemory } from '../statusMemory';
@@ -21,7 +21,7 @@ import { makeSellerRequest } from '../__fixtures__/sellerRequests';
 
 jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
-  listMyPickupRequests: jest.fn(),
+  listMyRequests: jest.fn(),
   listBusinessRequests: jest.fn(),
   countWaitingRequests: jest.fn(),
 }));
@@ -37,7 +37,7 @@ jest.mock('@/lib/supabase', () => ({
   supabase: { auth: { onAuthStateChange: jest.fn(), getSession: jest.fn() }, rpc: jest.fn() },
 }));
 
-const mineMock = jest.mocked(listMyPickupRequests);
+const mineMock = jest.mocked(listMyRequests);
 const inboxMock = jest.mocked(listBusinessRequests);
 const waitingMock = jest.mocked(countWaitingRequests);
 const businessMock = jest.mocked(sellersApi.getMyBusiness);
@@ -82,7 +82,7 @@ function tree(focused = true) {
 }
 
 const sentRows = (...rows: ReturnType<typeof makeRequest>[]) =>
-  mineMock.mockResolvedValue({ server_now: NOW, requests: rows });
+  mineMock.mockResolvedValue({ server_now: NOW, requests: rows, next_cursor: null });
 const inboxRows = (...rows: ReturnType<typeof makeSellerRequest>[]) =>
   inboxMock.mockResolvedValue({ server_now: NOW, requests: rows, next_cursor: null });
 
@@ -158,7 +158,8 @@ describe('a customer without a business', () => {
     await render(tree());
     const row = await screen.findByRole('button', { name: /Joe's Pizza/ });
     expect(screen.getByText('Pickup', { includeHiddenElements: true })).toBeTruthy();
-    expect(row.props.accessibilityValue).toEqual({ text: 'Pickup' });
+    // The kind is the first word of the spoken label (not a value read after it).
+    expect(row.props.accessibilityLabel).toMatch(/^Pickup\. Joe's Pizza\./);
   });
 
   it('opens a request with a tap', async () => {

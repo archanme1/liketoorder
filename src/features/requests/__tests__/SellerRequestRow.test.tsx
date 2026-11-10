@@ -21,7 +21,7 @@ describe('SellerRequestRow', () => {
     await renderRow({ pickup_at: '2026-11-08T18:00:00+00:00' });
     const row = screen.getByRole('button');
     expect(row.props.accessibilityLabel).toBe(
-      'Request from Sam Rivera. Status: Waiting. Waiting for your answer. 2 items. Pickup Mon, 9 Nov, 7:00 am',
+      'Pickup. Request from Sam Rivera. Status: Waiting. Waiting for your answer. 2 items. Pickup Mon, 9 Nov, 7:00 am',
     );
     expect(row.props.accessibilityHint).toBe('Opens the request');
   });
@@ -43,7 +43,9 @@ describe('SellerRequestRow', () => {
   it('falls back to "Customer" when the profile has no name', async () => {
     await renderRow({ customer_name: null });
     expect(screen.getByText('Customer')).toBeOnTheScreen();
-    expect(screen.getByRole('button').props.accessibilityLabel).toMatch(/^Request from Customer\./);
+    expect(screen.getByRole('button').props.accessibilityLabel).toMatch(
+      /^Pickup\. Request from Customer\./,
+    );
   });
 
   it('shows the written order when there are no items', async () => {

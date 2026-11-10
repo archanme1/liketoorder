@@ -2,7 +2,7 @@
 -- idempotency, limits, expiry, display_status, list/get/cancel, the accepted-request address, and
 -- that nothing private leaks. Own fixtures, one rolled-back transaction.
 begin;
-select plan(262);
+select plan(263);
 
 -- ── Helpers (pg_temp) ───────────────────────────────────────────────────────
 -- Ids:  users 00000000-0000-0000-0009-<n>   businesses …-0049-<n>   items …-0059-<n>
@@ -267,17 +267,17 @@ select is(
   (select coalesce(array_agg(p.proname::text order by p.proname::text), array[]::text[])
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and p.proname in ('submit_pickup_request', 'list_my_pickup_requests', 'get_my_pickup_request', 'cancel_pickup_request', 'get_my_pickup_address')
+      and p.proname in ('submit_pickup_request', 'get_my_pickup_request', 'cancel_pickup_request', 'get_my_pickup_address')
       and has_function_privilege('authenticated', p.oid, 'execute')),
-  array['cancel_pickup_request', 'get_my_pickup_address', 'get_my_pickup_request', 'list_my_pickup_requests', 'submit_pickup_request'],
-  'authenticated can execute all five pickup functions');
+  array['cancel_pickup_request', 'get_my_pickup_address', 'get_my_pickup_request', 'submit_pickup_request'],
+  'authenticated can execute all four pickup functions');
 select is_empty(
   $$ select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public'
-        and p.proname in ('submit_pickup_request', 'list_my_pickup_requests', 'get_my_pickup_request', 'cancel_pickup_request', 'get_my_pickup_address')
+        and p.proname in ('submit_pickup_request', 'get_my_pickup_request', 'cancel_pickup_request', 'get_my_pickup_address')
         and (has_function_privilege('anon', p.oid, 'execute')
              or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)) $$,
-  'anon and PUBLIC can execute none of the five pickup functions');
+  'anon and PUBLIC can execute none of the four pickup functions');
 select ok(not has_function_privilege('anon', 'private.expire_pickup_requests()', 'execute')
       and not has_function_privilege('authenticated', 'private.expire_pickup_requests()', 'execute')
       and not has_function_privilege('service_role', 'private.expire_pickup_requests()', 'execute'),
@@ -289,14 +289,13 @@ select ok(not has_function_privilege('anon', 'private.pickup_request_expiry(time
 select is_empty(
   $$ select p.oid::regprocedure::text from pg_proc p
       where p.oid in ('public.submit_pickup_request(uuid, uuid, timestamptz, jsonb, text, text)'::regprocedure,
-                      'public.list_my_pickup_requests(timestamptz)'::regprocedure,
                       'public.get_my_pickup_request(uuid)'::regprocedure,
                       'public.cancel_pickup_request(uuid)'::regprocedure,
                       'public.get_my_pickup_address(uuid)'::regprocedure,
                       'private.expire_pickup_requests()'::regprocedure,
                       'private.pickup_request_expiry(timestamptz, timestamptz)'::regprocedure)
         and (not p.prosecdef or p.proconfig is distinct from array['search_path=""']) $$,
-  'all seven new functions are security definer with an empty search_path');
+  'all six pickup functions are security definer with an empty search_path');
 
 -- The per-customer advisory lock is what keeps the limits and idempotency safe under parallel calls. pgTAP runs in one
 -- transaction and cannot race two calls, so this only proves the lock is there and comes first; the real race was run by
@@ -346,7 +345,7 @@ select throws_ok($$ update public.pickup_requests set status = 'cancelled' $$, '
 select throws_ok($$ delete from public.pickup_requests $$, '42501', null, 'anon cannot delete requests');
 select throws_ok($$ select public.submit_pickup_request(pg_temp.b(1), gen_random_uuid(), now() + interval '1 hour', null, 'x', null) $$,
   '42501', null, 'anon cannot call submit_pickup_request');
-select throws_ok($$ select public.list_my_pickup_requests() $$, '42501', null, 'anon cannot call list_my_pickup_requests');
+select throws_ok($$ select public.list_my_requests() $$, '42501', null, 'anon cannot call list_my_requests');
 select throws_ok($$ select public.get_my_pickup_request(pg_temp.r(1)) $$, '42501', null, 'anon cannot call get_my_pickup_request');
 select throws_ok($$ select public.cancel_pickup_request(pg_temp.r(1)) $$, '42501', null, 'anon cannot call cancel_pickup_request');
 select throws_ok($$ select public.get_my_pickup_address(pg_temp.r(2)) $$, '42501', null, 'anon cannot call get_my_pickup_address');
@@ -421,11 +420,11 @@ select pg_temp.as_user(37);
 insert into res select 'k_submit', public.submit_pickup_request(pg_temp.b(1), gen_random_uuid(), now() + interval '1 hour',
   jsonb_build_array(jsonb_build_object('item_id', pg_temp.i(1), 'quantity', 1)), 'with text', 'a note');
 insert into res select 'k_get', public.get_my_pickup_request((select (j ->> 'id')::uuid from res where label = 'k_submit')) -> 'request';
-insert into res select 'k_list', (public.list_my_pickup_requests() -> 'requests') -> 0;
+insert into res select 'k_list', (public.list_my_requests() -> 'requests') -> 0;
 select is(pg_temp.keys((select j from res where label = 'k_get')), pg_temp.keys((select j from res where label = 'k_submit')),
   'get_my_pickup_request has the same keys as submit_pickup_request');
 select is(pg_temp.keys((select j from res where label = 'k_list')), pg_temp.keys((select j from res where label = 'k_submit')),
-  'list_my_pickup_requests has the same keys as submit_pickup_request');
+  'list_my_requests has the same keys as submit_pickup_request');
 select is((select j from res where label = 'k_get'), (select j from res where label = 'k_submit'),
   'get returns exactly what submit returned');
 select is((select j from res where label = 'k_list'), (select j from res where label = 'k_submit'),
@@ -536,7 +535,7 @@ select pg_temp.as_user(31);
 select is(pg_temp.try(p_text := 'x', p_biz := pg_temp.b(2)), 'OK', 'a seller can request from a different business than their own');
 set local request.jwt.claims = '{"role":"authenticated"}';
 select is(pg_temp.try(p_text := 'x'), 'not_signed_in', 'a token with no user is not_signed_in');
-select throws_ok($$ select public.list_my_pickup_requests() $$, 'P0001', 'not_signed_in', 'list with no user is not_signed_in');
+select throws_ok($$ select public.list_my_requests() $$, 'P0001', 'not_signed_in', 'list with no user is not_signed_in');
 select throws_ok($$ select public.get_my_pickup_request(pg_temp.r(1)) $$, 'P0001', 'not_signed_in', 'get with no user is not_signed_in');
 select throws_ok($$ select public.cancel_pickup_request(pg_temp.r(1)) $$, 'P0001', 'not_signed_in', 'cancel with no user is not_signed_in');
 select throws_ok($$ select public.get_my_pickup_address(pg_temp.r(2)) $$, 'P0001', 'not_signed_in', 'address with no user is not_signed_in');
@@ -606,7 +605,7 @@ select lives_ok($$ select pg_temp.sub_biz(22) $$, 'pending 3 of 5 is accepted');
 select lives_ok($$ select pg_temp.sub_biz(23) $$, 'pending 4 of 5 is accepted');
 select lives_ok($$ select pg_temp.sub_biz(24) $$, 'pending 5 of 5 is accepted');
 select throws_ok($$ select pg_temp.sub_biz(25) $$, 'P0001', 'too_many_pending', 'a 6th pending request is too_many_pending');
-select lives_ok($$ select public.cancel_pickup_request((select (x ->> 'id')::uuid from jsonb_array_elements(public.list_my_pickup_requests() -> 'requests') x
+select lives_ok($$ select public.cancel_pickup_request((select (x ->> 'id')::uuid from jsonb_array_elements(public.list_my_requests() -> 'requests') x
                                                          where x ->> 'business_id' = pg_temp.b(20)::text)) $$, 'cancelling one frees a slot');
 select lives_ok($$ select pg_temp.sub_biz(25) $$, 'the 6th request is accepted after a cancel');
 select throws_ok($$ select pg_temp.sub_biz(20) $$, 'P0001', 'too_many_pending', 'back at five pending, another is too_many_pending');
@@ -660,36 +659,37 @@ select pg_temp.as_user(1);
 select is(public.get_my_pickup_request(pg_temp.r(11)) -> 'request' ->> 'display_status', 'expired',
   'a pending request past its expires_at shows expired before the job runs');
 select is(public.get_my_pickup_request(pg_temp.r(11)) -> 'request' ->> 'status', 'pending', 'and its stored status is still pending');
-select is((select x ->> 'display_status' from jsonb_array_elements(public.list_my_pickup_requests() -> 'requests') x
+select is((select x ->> 'display_status' from jsonb_array_elements(public.list_my_requests() -> 'requests') x
             where x ->> 'id' = pg_temp.r(11)::text), 'expired', 'the list shows it as expired too');
 select is(public.get_my_pickup_request(pg_temp.r(1)) -> 'request' ->> 'display_status', 'pending', 'a pending request with time left shows pending');
 select is(public.get_my_pickup_request(pg_temp.r(2)) -> 'request' ->> 'display_status', 'accepted', 'an accepted request shows accepted');
 select is(public.get_my_pickup_request(pg_temp.r(5)) -> 'request' ->> 'display_status', 'expired', 'a stored expired request shows expired');
 
 -- ── 10. List ────────────────────────────────────────────────────────────────
-select is(pg_temp.keys(public.list_my_pickup_requests()), array['requests', 'server_now'], 'the list answer has exactly requests and server_now');
-select is((public.list_my_pickup_requests() ->> 'server_now')::timestamptz, now(), 'server_now is the server''s clock');
+select is(pg_temp.keys(public.list_my_requests()), array['next_cursor', 'requests', 'server_now'], 'the list answer has exactly next_cursor, requests and server_now');
+select is((public.list_my_requests() ->> 'server_now')::timestamptz, now(), 'server_now is the server''s clock');
 select is(
-  (select array_agg((x ->> 'id')::uuid order by ord) from jsonb_array_elements(public.list_my_pickup_requests() -> 'requests') with ordinality t(x, ord)),
+  (select array_agg((x ->> 'id')::uuid order by ord) from jsonb_array_elements(public.list_my_requests() -> 'requests') with ordinality t(x, ord)),
   array[pg_temp.r(1), pg_temp.r(2), pg_temp.r(3), pg_temp.r(4), pg_temp.r(5), pg_temp.r(6), pg_temp.r(7), pg_temp.r(8), pg_temp.r(9),
         pg_temp.r(10), pg_temp.r(11), pg_temp.r(12)],
   'the list holds exactly the caller''s 12 requests, newest first');
 select pg_temp.as_user(2);
 select is(
-  (select array_agg((x ->> 'id')::uuid) from jsonb_array_elements(public.list_my_pickup_requests() -> 'requests') x),
+  (select array_agg((x ->> 'id')::uuid) from jsonb_array_elements(public.list_my_requests() -> 'requests') x),
   array[pg_temp.r(50)], 'another customer''s list holds only their own request');
 select pg_temp.as_user(7);
-select is(public.list_my_pickup_requests() -> 'requests', '[]'::jsonb, 'a customer with no requests gets an empty array');
+select is(public.list_my_requests() -> 'requests', '[]'::jsonb, 'a customer with no requests gets an empty array');
 select pg_temp.as_user(5);
-select is(public.list_my_pickup_requests() -> 'requests', '[]'::jsonb, 'a business owner''s list holds no customer requests');
+select is(public.list_my_requests() -> 'requests', '[]'::jsonb, 'a business owner''s list holds no customer requests');
 select pg_temp.as_user(32);
-select is(jsonb_array_length(public.list_my_pickup_requests() -> 'requests'), 50, 'a page holds 50 requests');
-select is(public.list_my_pickup_requests() -> 'requests' -> 0 ->> 'id', pg_temp.r(101)::text, 'the newest request is first');
+select is(jsonb_array_length(public.list_my_requests() -> 'requests'), 50, 'a page holds 50 requests');
+select is(public.list_my_requests() -> 'requests' -> 0 ->> 'id', pg_temp.r(101)::text, 'the newest request is first');
+select isnt(public.list_my_requests() ->> 'next_cursor', null, 'a full page of 50 with more behind it carries a next_cursor');
 select is(
   (select array_agg((x ->> 'id')::uuid)
-     from jsonb_array_elements(public.list_my_pickup_requests(now() - interval '50 minutes') -> 'requests') x),
-  array[pg_temp.r(151)], 'p_before returns only older requests: the 51st');
-select is(jsonb_array_length(public.list_my_pickup_requests(now() - interval '51 minutes') -> 'requests'), 0, 'nothing is older than the oldest');
+     from jsonb_array_elements(public.list_my_requests(public.list_my_requests() ->> 'next_cursor') -> 'requests') x),
+  array[pg_temp.r(151)], 'the next_cursor returns only older requests: the 51st');
+select is(public.list_my_requests(public.list_my_requests() ->> 'next_cursor') ->> 'next_cursor', null, 'the last page has a null next_cursor');
 
 -- ── 11. Get ─────────────────────────────────────────────────────────────────
 select pg_temp.as_user(1);
@@ -792,7 +792,7 @@ select ok(
   (select position('place_id' in t) = 0 and position('map_lat' in t) = 0 and position('map_lng' in t) = 0
       and position('Secret Rd' in t) = 0 and position('71.987654' in t) = 0 and position('101.123456' in t) = 0
       and position('customer_id' in t) = 0 and position('idempotency_key' in t) = 0 and position('responded_at' in t) = 0
-     from (select public.list_my_pickup_requests()::text || public.get_my_pickup_request(pg_temp.r(2))::text
+     from (select public.list_my_requests()::text || public.get_my_pickup_request(pg_temp.r(2))::text
                   || (select j::text from res where label = 'k_cancel') t) s),
   'list, get and the cancel answer contain no place_id, map point, exact coordinate, address, customer_id, idempotency_key or responded_at');
 select ok(

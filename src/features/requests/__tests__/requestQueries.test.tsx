@@ -6,7 +6,7 @@ import {
   cancelPickupRequest,
   getMyPickupAddress,
   getPickupRequest,
-  listMyPickupRequests,
+  listMyRequests,
   RequestAppError,
 } from '../api';
 import { requestKeys } from '../hooks/keys';
@@ -23,10 +23,10 @@ jest.mock('../api', () => ({
   cancelPickupRequest: jest.fn(),
   getMyPickupAddress: jest.fn(),
   getPickupRequest: jest.fn(),
-  listMyPickupRequests: jest.fn(),
+  listMyRequests: jest.fn(),
 }));
 
-const listMock = jest.mocked(listMyPickupRequests);
+const listMock = jest.mocked(listMyRequests);
 const getMock = jest.mocked(getPickupRequest);
 const addressMock = jest.mocked(getMyPickupAddress);
 const cancelMock = jest.mocked(cancelPickupRequest);
@@ -61,7 +61,7 @@ afterEach(() => {
 
 describe('useMyRequests', () => {
   it('loads the list', async () => {
-    listMock.mockResolvedValue({ server_now: SERVER_NOW, requests: [pending] });
+    listMock.mockResolvedValue({ server_now: SERVER_NOW, next_cursor: null, requests: [pending] });
     const { result } = await renderHook(() => all(useMyRequests()), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.requests).toEqual([pending]);
@@ -71,7 +71,7 @@ describe('useMyRequests', () => {
     listMock.mockRejectedValueOnce(new RequestAppError('network'));
     const { result } = await renderHook(() => all(useMyRequests()), { wrapper });
     await waitFor(() => expect(result.current.isError).toBe(true));
-    listMock.mockResolvedValueOnce({ server_now: SERVER_NOW, requests: [] });
+    listMock.mockResolvedValueOnce({ server_now: SERVER_NOW, next_cursor: null, requests: [] });
     await act(async () => {
       await result.current.refetch();
     });
@@ -80,7 +80,7 @@ describe('useMyRequests', () => {
 
   it('re-reads every 30 seconds while a pending request is visible', async () => {
     jest.useFakeTimers({ now: Date.parse(SERVER_NOW) });
-    listMock.mockResolvedValue({ server_now: SERVER_NOW, requests: [pending] });
+    listMock.mockResolvedValue({ server_now: SERVER_NOW, next_cursor: null, requests: [pending] });
     await renderHook(() => all(useMyRequests()), { wrapper });
     await act(async () => undefined);
     expect(listMock).toHaveBeenCalledTimes(1);
@@ -93,7 +93,7 @@ describe('useMyRequests', () => {
   it('does not poll when nothing is pending', async () => {
     jest.useFakeTimers({ now: Date.parse(SERVER_NOW) });
     const done = makeRequest({ status: 'declined', display_status: 'declined' });
-    listMock.mockResolvedValue({ server_now: SERVER_NOW, requests: [done] });
+    listMock.mockResolvedValue({ server_now: SERVER_NOW, next_cursor: null, requests: [done] });
     await renderHook(() => all(useMyRequests()), { wrapper });
     await act(async () => undefined);
     await act(async () => {

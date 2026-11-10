@@ -15,14 +15,14 @@ describe('declineReasons', () => {
   });
 
   it('labels a fixed reason by its words and Other by the seller words', () => {
-    expect(declineReasonLabel('too_busy', null)).toBe('Too busy right now');
-    expect(declineReasonLabel('other', 'Oven broke')).toBe('Oven broke');
-    expect(declineReasonLabel('other', null)).toBeNull();
+    expect(declineReasonLabel('pickup', 'too_busy', null)).toBe('Too busy right now');
+    expect(declineReasonLabel('pickup', 'other', 'Oven broke')).toBe('Oven broke');
+    expect(declineReasonLabel('pickup', 'other', null)).toBeNull();
   });
 
   it('has no reason for a request declined before spec 10b', () => {
-    expect(declineReasonLabel(null, null)).toBeNull();
-    expect(declinedLine(declineReasonLabel(null, null))).toBe('Declined');
+    expect(declineReasonLabel('pickup', null, null)).toBeNull();
+    expect(declinedLine(declineReasonLabel('pickup', null, null))).toBe('Declined');
   });
 });
 

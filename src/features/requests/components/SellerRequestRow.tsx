@@ -6,22 +6,20 @@ import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 import { answerLines } from '../answerLines';
-import { kindLabel, type RequestKind } from '../kind';
-import type { SellerRequest } from '../schema';
-import { customerLabel, sellerStatusSentence } from '../sellerMessages';
+import { kindLabel } from '../kind';
+import type { BusinessRequest } from '../schema';
+import { CUSTOMER_ARRIVED, customerLabel, sellerStatusSentence } from '../sellerMessages';
 import { STATUS_INFO } from '../status';
 import { formatDateTime, type TimeOptions } from '../time';
 
-import { orderPreview } from './RequestRow';
+import { orderPreview, partyText } from './RequestRow';
 import { AnswerLines } from './AnswerLines';
 import { RequestKindLabel } from './RequestKindLabel';
 import { RequestStatusChip } from './RequestStatusChip';
 
 type SellerRequestRowProps = TimeOptions & {
-  request: SellerRequest;
-  onPress: (request: SellerRequest) => void;
-  /** What kind of request this is; spec 11 adds table requests. */
-  kind?: RequestKind;
+  request: BusinessRequest;
+  onPress: (request: BusinessRequest) => void;
 };
 
 export const ROW_TITLE_MAX_FONT_MULTIPLIER = maxFontMultiplier;
@@ -32,24 +30,29 @@ export const ROW_TITLE_MAX_FONT_MULTIPLIER = maxFontMultiplier;
 export const SellerRequestRow = memo(function SellerRequestRow({
   request,
   onPress,
-  kind = 'pickup',
   timeZone,
   locale,
 }: SellerRequestRowProps) {
   const { colors, space, radius, size } = useTheme();
   const status = request.display_status;
   const name = customerLabel(request.customer_name);
-  const pickup = formatDateTime(request.pickup_at, { timeZone, locale });
-  const preview = orderPreview(request);
-  const sentence = sellerStatusSentence(status);
-  // One spoken line: who, the status as a word, what, and when.
+  const kind = request.kind;
+  const when =
+    request.kind === 'table'
+      ? `Table ${formatDateTime(request.table_at, { timeZone, locale })}`
+      : `Pickup ${formatDateTime(request.pickup_at, { timeZone, locale })}`;
+  const preview = request.kind === 'table' ? partyText(request.party_size) : orderPreview(request);
+  const sentence = sellerStatusSentence(status, kind);
+  // One spoken line, the kind FIRST: the kind, who, the status as a word, what, and when.
   const spoken = [
+    kindLabel(kind),
     `Request from ${name}`,
     `Status: ${STATUS_INFO[status].label}`,
     sentence,
     ...answerLines(request),
     preview || null,
-    `Pickup ${pickup}`,
+    request.kind === 'table' && request.arrived_at ? CUSTOMER_ARRIVED : null,
+    when,
   ]
     .filter(Boolean)
     .join('. ');
@@ -59,7 +62,6 @@ export const SellerRequestRow = memo(function SellerRequestRow({
       onPress={() => onPress(request)}
       accessibilityRole="button"
       accessibilityLabel={spoken}
-      accessibilityValue={{ text: kindLabel(kind) }}
       accessibilityHint="Opens the request"
       style={({ pressed }) => [
         styles.row,
@@ -88,7 +90,8 @@ export const SellerRequestRow = memo(function SellerRequestRow({
       <Text color="textMuted">{sentence}</Text>
       <AnswerLines request={request} />
       {preview ? <Text numberOfLines={2}>{preview}</Text> : null}
-      <Text color="textMuted">{`Pickup ${pickup}`}</Text>
+      {request.kind === 'table' && request.arrived_at ? <Text>{CUSTOMER_ARRIVED}</Text> : null}
+      <Text color="textMuted">{when}</Text>
     </Pressable>
   );
 });

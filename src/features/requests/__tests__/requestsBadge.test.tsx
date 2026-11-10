@@ -7,12 +7,7 @@ import { AuthContext, type AuthContextValue } from '@/features/auth/components/A
 import * as sellersApi from '@/features/sellers/api';
 import type { MyBusiness } from '@/features/sellers/schema';
 
-import {
-  RequestAppError,
-  cancelPickupRequest,
-  countWaitingRequests,
-  listMyPickupRequests,
-} from '../api';
+import { RequestAppError, cancelPickupRequest, countWaitingRequests, listMyRequests } from '../api';
 import { requestKeys } from '../hooks/keys';
 import { useCancelPickupRequest } from '../hooks/useCancelPickupRequest';
 import { useRequestsBadge, useRequestsCounts } from '../hooks/useRequestsBadge';
@@ -22,7 +17,7 @@ import { makeRequest } from '../__fixtures__/requests';
 
 jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
-  listMyPickupRequests: jest.fn(),
+  listMyRequests: jest.fn(),
   countWaitingRequests: jest.fn(),
   cancelPickupRequest: jest.fn(),
 }));
@@ -31,7 +26,7 @@ jest.mock('@/features/sellers/api', () => ({
   getMyBusiness: jest.fn(),
 }));
 
-const listMock = jest.mocked(listMyPickupRequests);
+const listMock = jest.mocked(listMyRequests);
 const waitingMock = jest.mocked(countWaitingRequests);
 const cancelMock = jest.mocked(cancelPickupRequest);
 const businessMock = jest.mocked(sellersApi.getMyBusiness);
@@ -67,7 +62,7 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 const serve = (...requests: ReturnType<typeof makeRequest>[]) =>
-  listMock.mockResolvedValue({ server_now: NOW, requests });
+  listMock.mockResolvedValue({ server_now: NOW, requests, next_cursor: null });
 // Waits for the value, then makes sure it stays: a number that flickers back is a failure too.
 async function settled(read: () => number | undefined, expected: number) {
   await waitFor(() => expect(read()).toBe(expected));

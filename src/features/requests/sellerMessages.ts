@@ -1,4 +1,5 @@
 import type { RequestErrorCode } from './api';
+import type { RequestKind } from './kind';
 import type { InboxFilter, RequestStatus } from './schema';
 
 // The seller's wording (messages.ts and statusSentence are written for the customer). A pending
@@ -13,6 +14,8 @@ export const NO_PRICE_NOTE = 'Total excludes items without a price';
 export const CUSTOMER_PAYS_NOTE = 'Estimated total. The customer pays you directly.';
 export const ACCEPT_ADDRESS_NOTICE =
   'Your exact address will be shown to the customer until 24 hours after the pickup time.';
+/** On a table request the customer has tapped "I've arrived". */
+export const CUSTOMER_ARRIVED = 'Customer has arrived';
 export const NOT_FOUND_MESSAGE = "We couldn't find that request.";
 export const NO_UNDO = "You can't undo this.";
 export const DECLINE_REASON_TITLE = 'Why are you declining?';
@@ -34,6 +37,7 @@ export type SellerAction = 'accepted' | 'declined' | 'completed' | 'no_show';
 export function confirmCopy(
   action: SellerAction,
   homemade: boolean,
+  kind: RequestKind,
 ): { title: string; body: string } {
   switch (action) {
     case 'accepted':
@@ -51,12 +55,18 @@ export function confirmCopy(
     case 'completed':
       return {
         title: 'Mark as completed?',
-        body: `Use this once the customer has picked up the order. ${NO_UNDO}`,
+        body:
+          kind === 'table'
+            ? `Use this once the customer has had their table. ${NO_UNDO}`
+            : `Use this once the customer has picked up the order. ${NO_UNDO}`,
       };
     case 'no_show':
       return {
         title: 'Mark as no-show?',
-        body: `Use this if the customer did not pick up the order. ${NO_UNDO}`,
+        body:
+          kind === 'table'
+            ? `Use this if the customer did not come for their table. ${NO_UNDO}`
+            : `Use this if the customer did not pick up the order. ${NO_UNDO}`,
       };
   }
 }
@@ -72,7 +82,9 @@ const STATUS_SENTENCE: Record<RequestStatus, string> = {
 };
 
 /** The sentence under a status for the seller. */
-export function sellerStatusSentence(status: RequestStatus): string {
+export function sellerStatusSentence(status: RequestStatus, kind: RequestKind): string {
+  if (kind === 'table' && status === 'completed') return 'Table visit completed';
+  if (kind === 'table' && status === 'no_show') return 'Marked as not arrived';
   return STATUS_SENTENCE[status];
 }
 

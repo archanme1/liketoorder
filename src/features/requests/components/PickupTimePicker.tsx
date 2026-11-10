@@ -20,10 +20,11 @@ import {
   clampToWindow,
   combineDateAndTime,
   deviceTimeZone,
-  earliestPickup,
   formatDateTime,
-  latestPickup,
+  formatDateTimeWithZone,
+  PICKUP_WINDOW,
   type TimeOptions,
+  type TimeWindow,
 } from '../time';
 
 /**
@@ -38,8 +39,19 @@ export function pickerDisplay(fontScale: number): 'inline' | 'spinner' {
   return fontScale >= SPINNER_FONT_SCALE ? 'spinner' : 'inline';
 }
 
+// The words around the picker: a pickup, or a table (spec 11). A table time is always shown with
+// the zone's name.
+const COPY = {
+  pickup: { noun: 'pickup', line: 'Pickup', title: 'Pickup time' },
+  table: { noun: 'table', line: 'Table time', title: 'Table time' },
+} as const;
+
 type PickupTimePickerProps = TimeOptions & {
-  /** "Now" on the phone; the earliest time offered is 15 minutes after it. */
+  /** What is being picked. The default is a pickup time. */
+  kind?: keyof typeof COPY;
+  /** The times offered. The default is the pickup window (15 minutes to 7 days). */
+  offeredTimes?: TimeWindow;
+  /** "Now" on the phone; the earliest time offered comes after it (see `offeredTimes`). */
   now: Date;
   value: Date | null;
   /** Read-only, e.g. while the request is being sent. */
@@ -62,6 +74,8 @@ type PickupTimePickerProps = TimeOptions & {
 // and what is shown is in `timeZone` (the phone's unless a test says otherwise: it is only handed
 // to the native picker when it was given explicitly).
 export function PickupTimePicker({
+  kind = 'pickup',
+  offeredTimes = PICKUP_WINDOW,
   now,
   value,
   onChange,
@@ -74,8 +88,13 @@ export function PickupTimePicker({
   const { height: windowHeight, fontScale } = useWindowDimensions();
   const reduceMotion = useReduceMotion();
   const zone = timeZone ?? deviceTimeZone();
-  const earliest = earliestPickup(now);
-  const latest = latestPickup(now);
+  const copy = COPY[kind];
+  const show = (date: Date) =>
+    kind === 'table'
+      ? formatDateTimeWithZone(date, { timeZone: zone, locale })
+      : formatDateTime(date, { timeZone: zone, locale });
+  const earliest = offeredTimes.earliest(now);
+  const latest = offeredTimes.latest(now);
   const base = value ?? earliest;
 
   const [open, setOpen] = useState(false);
@@ -86,7 +105,7 @@ export function PickupTimePicker({
   const titleRef = useRef<ComponentRef<typeof View>>(null);
 
   const finish = (picked: Date, at: Date = now) => {
-    const { value: next, problem } = clampToWindow(picked, at);
+    const { value: next, problem } = clampToWindow(picked, at, offeredTimes);
     onChange(next, problem);
   };
 
@@ -94,12 +113,12 @@ export function PickupTimePicker({
     const at = onOpen ? onOpen() : now;
     if (Platform.OS === 'android') {
       // The dialogs open straight away, so they use the fresh time directly.
-      const openBase = value ?? earliestPickup(at);
+      const openBase = value ?? offeredTimes.earliest(at);
       DateTimePickerAndroid.open({
         mode: 'date',
         value: openBase,
-        minimumDate: earliestPickup(at),
-        maximumDate: latestPickup(at),
+        minimumDate: offeredTimes.earliest(at),
+        maximumDate: offeredTimes.latest(at),
         timeZoneName: timeZone,
         onValueChange: (_event, pickedDay) => {
           // Keep the wall-clock time already chosen, on the new day, whatever the dialog returned.
@@ -127,14 +146,14 @@ export function PickupTimePicker({
     finish(shownDraft);
   };
 
-  const label = value ? 'Change pickup time' : 'Choose pickup time';
+  const label = value ? `Change ${copy.noun} time` : `Choose ${copy.noun} time`;
   const cardMaxHeight = windowHeight * 0.85;
   return (
     <View style={{ gap: space.md }}>
       {value ? (
-        <Text>{`Pickup: ${formatDateTime(value, { timeZone: zone, locale })}`}</Text>
+        <Text>{`${copy.line}: ${show(value)}`}</Text>
       ) : (
-        <Text color="textMuted">No pickup time chosen yet.</Text>
+        <Text color="textMuted">{`No ${copy.noun} time chosen yet.`}</Text>
       )}
       <Button
         title={label}
@@ -190,10 +209,10 @@ export function PickupTimePicker({
               >
                 <View ref={titleRef} accessible accessibilityRole="header">
                   <Text variant="title" maxFontSizeMultiplier={1.6}>
-                    Pickup time
+                    {copy.title}
                   </Text>
                 </View>
-                <Text color="textMuted">{`Selected: ${formatDateTime(shownDraft, { timeZone: zone, locale })}`}</Text>
+                <Text color="textMuted">{`Selected: ${show(shownDraft)}`}</Text>
                 <DateTimePicker
                   mode="datetime"
                   display={pickerDisplay(fontScale)}
@@ -221,14 +240,14 @@ export function PickupTimePicker({
                   <Button
                     title="Cancel"
                     variant="secondary"
-                    accessibilityLabel="Cancel, keep the current pickup time"
+                    accessibilityLabel={`Cancel, keep the current ${copy.noun} time`}
                     onPress={cancel}
                   />
                 </View>
                 <View style={[styles.cell, { minWidth: size.photoThumb }]}>
                   <Button
                     title="Done"
-                    accessibilityLabel="Done, use this pickup time"
+                    accessibilityLabel={`Done, use this ${copy.noun} time`}
                     onPress={done}
                   />
                 </View>

@@ -8,10 +8,12 @@ import { NO_PRICE_NOTE } from '../messages';
 type SendBarProps = {
   /** The seller's name, for the spoken label of the button. */
   businessName: string;
-  /** The formatted estimated total, or null when there is none to show. */
-  total: string | null;
+  /** The formatted estimated total, or null (the default) when there is none to show. */
+  total?: string | null;
   /** The total leaves out items that have no price. */
-  excludesUnpriced: boolean;
+  excludesUnpriced?: boolean;
+  /** What is being sent; it is spoken in the button's label. A pickup unless told otherwise. */
+  noun?: 'pickup' | 'table';
   /** The one thing to tell the person right now (a time, an order or a server problem). */
   error: string | null;
   sending: boolean;
@@ -23,8 +25,9 @@ type SendBarProps = {
 // fixed heights: at the largest text size the total takes its own line and Send drops below it.
 export function SendBar({
   businessName,
-  total,
-  excludesUnpriced,
+  total = null,
+  excludesUnpriced = false,
+  noun = 'pickup',
   error,
   sending,
   onSend,
@@ -46,7 +49,7 @@ export function SendBar({
         <View style={[styles.send, { minWidth: size.photoThumb }]}>
           <Button
             title="Send request"
-            accessibilityLabel={`Send pickup request to ${businessName}`}
+            accessibilityLabel={`Send ${noun} request to ${businessName}`}
             onPress={onSend}
             loading={sending}
             disabled={sending}

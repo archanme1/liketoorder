@@ -121,7 +121,7 @@ create function pg_temp.myget_j(p_id uuid) returns jsonb language plpgsql as $$
 begin return public.get_my_pickup_request(p_id) -> 'request';
 exception when others then return jsonb_build_object('error', sqlerrm); end $$;
 create function pg_temp.mylist_j() returns jsonb language plpgsql as $$
-begin return public.list_my_pickup_requests();
+begin return public.list_my_requests();
 exception when others then return jsonb_build_object('error', sqlerrm); end $$;
 create function pg_temp.mycancel_j(p_id uuid) returns jsonb language plpgsql as $$
 begin return public.cancel_pickup_request(p_id);

@@ -3,7 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import { Button, ErrorState, Screen, Skeleton, Text } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
 
-import { usePickupRequest } from '../hooks/usePickupRequest';
+import { useCustomerRequest } from '../hooks/useCustomerRequest';
+import type { RequestKind } from '../kind';
 import { loadErrorMessage } from '../messages';
 import type { TimeOptions } from '../time';
 
@@ -12,6 +13,8 @@ import { RequestDetail } from './RequestDetail';
 type RequestDetailScreenProps = TimeOptions & {
   /** The request id, or null when the link had no valid id. */
   requestId: string | null;
+  /** The kind the list row carried: a hint for which read to use, never an authority. */
+  kind?: RequestKind | null;
   onBack: () => void;
 };
 
@@ -44,12 +47,13 @@ function NotFound({ onBack }: { onBack: () => void }) {
 
 function Loaded({
   requestId,
+  kind = null,
   onBack,
   timeZone,
   locale,
 }: RequestDetailScreenProps & { requestId: string }) {
   const { space, type } = useTheme();
-  const query = usePickupRequest(requestId);
+  const query = useCustomerRequest(requestId, kind);
 
   if (query.isPending) {
     return (
@@ -76,7 +80,15 @@ function Loaded({
     );
   }
   if (query.data.request === null) return <NotFound onBack={onBack} />;
-  return <RequestDetail request={query.data.request} timeZone={timeZone} locale={locale} />;
+  return (
+    <RequestDetail
+      request={query.data.request}
+      serverNow={query.data.server_now}
+      fetchedAt={query.dataUpdatedAt}
+      timeZone={timeZone}
+      locale={locale}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

@@ -1,8 +1,8 @@
 import { declineReasonLabel } from './declineReasons';
 import { declinedLine, sellerNoteLine } from './messages';
-import type { PickupRequest } from './schema';
+import type { CustomerRequest } from './schema';
 
-type Answer = Pick<PickupRequest, 'status' | 'decline_reason' | 'response_note'>;
+type Answer = Pick<CustomerRequest, 'kind' | 'status' | 'decline_reason' | 'response_note'>;
 
 /**
  * What the seller said about a request, as plain words for both sides of the list and the detail:
@@ -13,7 +13,7 @@ type Answer = Pick<PickupRequest, 'status' | 'decline_reason' | 'response_note'>
  */
 export function answerLines(request: Answer): string[] {
   if (request.status === 'declined') {
-    const reason = declineReasonLabel(request.decline_reason, request.response_note);
+    const reason = declineReasonLabel(request.kind, request.decline_reason, request.response_note);
     return reason ? [declinedLine(reason)] : [];
   }
   if (

@@ -6,6 +6,7 @@ export const REQUEST_ID = '22222222-2222-4222-8222-222222222222';
 export function makeRequest(over: Partial<PickupRequest> = {}): PickupRequest {
   return {
     id: REQUEST_ID,
+    kind: 'pickup',
     business_id: BUSINESS_ID,
     business_name: "Joe's Pizza",
     business_type: 'restaurant',

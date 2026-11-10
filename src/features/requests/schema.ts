@@ -6,12 +6,17 @@ export const MAX_NOTE = 300;
 /** The seller's accept note and the written reason for "Other" (the table check allows 1 to 200). */
 export const MAX_ANSWER_NOTE = 200;
 export const MAX_LINES = 30;
-/** Rows per page of list_my_pickup_requests (the server's limit). A full page may have a next. */
+/** Rows per page of the request lists (the server's limit); the server says whether a next page exists. */
 export const PAGE_SIZE = 50;
 export const MIN_QUANTITY = 1;
 export const MAX_QUANTITY = 20;
 export const MIN_LEAD_MINUTES = 15;
 export const MAX_LEAD_DAYS = 7;
+// Table requests (spec 11): a party of 1 to 20, a table time from 30 minutes to 30 days ahead.
+export const MIN_PARTY_SIZE = 1;
+export const MAX_PARTY_SIZE = 20;
+export const MIN_TABLE_LEAD_MINUTES = 30;
+export const MAX_TABLE_LEAD_DAYS = 30;
 
 export const REQUEST_STATUSES = [
   'pending',
@@ -35,6 +40,20 @@ export const DECLINE_REASONS = [
 export const declineReasonSchema = z.enum(DECLINE_REASONS);
 export type DeclineReason = z.output<typeof declineReasonSchema>;
 
+// A restaurant declining a table has its own list (spec 11). "other" is the only one with text.
+export const TABLE_DECLINE_REASONS = [
+  'fully_booked',
+  'closed_then',
+  'too_busy',
+  'time_not_possible',
+  'other',
+] as const;
+export const tableDeclineReasonSchema = z.enum(TABLE_DECLINE_REASONS);
+export type TableDeclineReason = z.output<typeof tableDeclineReasonSchema>;
+/** A reason of either kind; the dialog offers its own kind's list and the server judges. */
+const anyDeclineReasonSchema = z.union([declineReasonSchema, tableDeclineReasonSchema]);
+export type AnyDeclineReason = DeclineReason | TableDeclineReason;
+
 const timestamp = z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'bad timestamp');
 
 // What the server wrote into `items` at submit: name and price are its own copies.
@@ -49,6 +68,8 @@ export const requestItemSchema = z.strictObject({
 // contract changed, and the app refuses it rather than carry private data around.
 export const pickupRequestSchema = z.strictObject({
   id: z.string().min(1),
+  // Which kind of request this is (spec 11). Always present on every request object.
+  kind: z.literal('pickup'),
   business_id: z.string().min(1),
   business_name: z.string(),
   business_type: z.enum(['restaurant', 'homemade']),
@@ -68,14 +89,44 @@ export const pickupRequestSchema = z.strictObject({
   response_note: z.string().max(MAX_ANSWER_NOTE).nullable(),
 });
 
+// The customer's table request (15 keys). Strict like the pickup one: no customer id, no place_id,
+// no address, no coordinates.
+export const tableRequestSchema = z.strictObject({
+  id: z.string().min(1),
+  kind: z.literal('table'),
+  business_id: z.string().min(1),
+  business_name: z.string(),
+  business_type: z.enum(['restaurant', 'homemade']),
+  status: z.enum(REQUEST_STATUSES),
+  display_status: z.enum(REQUEST_STATUSES),
+  table_at: timestamp,
+  party_size: z.number().int().min(MIN_PARTY_SIZE).max(MAX_PARTY_SIZE),
+  note: z.string().nullable(),
+  expires_at: timestamp,
+  created_at: timestamp,
+  decline_reason: tableDeclineReasonSchema.nullable(),
+  response_note: z.string().max(MAX_ANSWER_NOTE).nullable(),
+  // Set once, by the server, when the customer taps "I've arrived".
+  arrived_at: timestamp.nullable(),
+});
+
+/** A request in the customer's lists and detail: one kind or the other, told apart by `kind`. */
+export const customerRequestSchema = z.discriminatedUnion('kind', [
+  pickupRequestSchema,
+  tableRequestSchema,
+]);
+
+// next_cursor is the server's own text ("<created_at, microseconds>|<id>"), sent back untouched;
+// null on the last page.
 export const requestListSchema = z.strictObject({
   server_now: timestamp,
-  requests: z.array(pickupRequestSchema),
+  requests: z.array(customerRequestSchema),
+  next_cursor: z.string().min(1).nullable(),
 });
 
 export const requestDetailSchema = z.strictObject({
   server_now: timestamp,
-  request: pickupRequestSchema.nullable(),
+  request: customerRequestSchema.nullable(),
 });
 
 export const pickupAddressSchema = z.strictObject({ formatted_address: z.string().min(1) });
@@ -87,17 +138,30 @@ export const sellerRequestSchema = pickupRequestSchema.extend({
   responded_at: timestamp.nullable(),
 });
 
+// The seller's view of a table request (17 keys): the customer object plus the customer's name and
+// when it was answered. Strict, like the others.
+export const sellerTableRequestSchema = tableRequestSchema.extend({
+  customer_name: z.string().nullable(),
+  responded_at: timestamp.nullable(),
+});
+
+/** A request to the caller's business: one kind or the other, told apart by `kind`. */
+export const businessRequestSchema = z.discriminatedUnion('kind', [
+  sellerRequestSchema,
+  sellerTableRequestSchema,
+]);
+
 // next_cursor is the server's own text ("<created_at, microseconds>|<id>"), sent back untouched;
 // null on the last page.
 export const sellerRequestListSchema = z.strictObject({
   server_now: timestamp,
-  requests: z.array(sellerRequestSchema),
+  requests: z.array(businessRequestSchema),
   next_cursor: z.string().min(1).nullable(),
 });
 
 export const sellerRequestDetailSchema = z.strictObject({
   server_now: timestamp,
-  request: sellerRequestSchema.nullable(),
+  request: businessRequestSchema.nullable(),
 });
 
 export const waitingCountSchema = z.strictObject({
@@ -110,10 +174,15 @@ export type InboxFilter = 'waiting' | 'all';
 export type SellerDecision = 'accepted' | 'declined';
 export type SellerOutcome = 'completed' | 'no_show';
 /** What a seller may attach to an answer. Both are optional here; the server judges them. */
-export type RespondOptions = { declineReason?: DeclineReason; note?: string };
+export type RespondOptions = { declineReason?: AnyDeclineReason; note?: string };
 
 export type PickupRequest = z.output<typeof pickupRequestSchema>;
+export type TableRequest = z.output<typeof tableRequestSchema>;
+export type CustomerRequest = z.output<typeof customerRequestSchema>;
 export type SellerRequest = z.output<typeof sellerRequestSchema>;
+export type SellerTableRequest = z.output<typeof sellerTableRequestSchema>;
+/** A request to the caller's business, pickup or table. */
+export type BusinessRequest = z.output<typeof businessRequestSchema>;
 export type SellerRequestList = z.output<typeof sellerRequestListSchema>;
 export type SellerRequestDetail = z.output<typeof sellerRequestDetailSchema>;
 export type WaitingCount = z.output<typeof waitingCountSchema>;
@@ -161,7 +230,7 @@ export const respondInputSchema = z
     }),
     z.object({
       decision: z.literal('declined'),
-      reason: declineReasonSchema,
+      reason: anyDeclineReasonSchema,
       // Only "other" has text; for a fixed reason it is dropped (the server refuses a note on one).
       text: answerText.pipe(z.string().max(MAX_ANSWER_NOTE)),
     }),
@@ -214,6 +283,34 @@ export function pickupTimeProblem(pickupAt: Date, now: Date): PickupTimeProblem 
   if (ahead > MAX_LEAD_DAYS * 24 * 60 * MINUTE) return 'too_far';
   return null;
 }
+
+// -- Table time and the table form -------------------------------------------------------------
+export type TableTimeProblem = 'too_soon' | 'too_far';
+
+/** The server's rule: at least 30 minutes ahead and at most 30 days. Null when fine. */
+export function tableTimeProblem(tableAt: Date, now: Date): TableTimeProblem | null {
+  const ahead = tableAt.getTime() - now.getTime();
+  if (ahead < MIN_TABLE_LEAD_MINUTES * MINUTE) return 'too_soon';
+  if (ahead > MAX_TABLE_LEAD_DAYS * 24 * 60 * MINUTE) return 'too_far';
+  return null;
+}
+
+// The table form's fields (react-hook-form + zod). Fast feedback only: submit_table_request judges.
+// The time is checked against the clock when Send is pressed (tableTimeProblem), not here.
+export const tableFormSchema = z.object({
+  tableAt: z.date({ error: 'Choose a table time' }),
+  partySize: z
+    .number()
+    .int()
+    .min(MIN_PARTY_SIZE, 'Choose at least 1 person')
+    .max(MAX_PARTY_SIZE, `Choose at most ${MAX_PARTY_SIZE} people`),
+  note: z
+    .string()
+    .transform((text) => cleanText(text) ?? '')
+    .pipe(z.string().max(MAX_NOTE, `Keep your note to ${MAX_NOTE} characters.`)),
+});
+export type TableFormInput = z.input<typeof tableFormSchema>;
+export type TableFormValues = z.output<typeof tableFormSchema>;
 
 // ── The form ─────────────────────────────────────────────────────────────────────────────────
 export type OrderDraft = {

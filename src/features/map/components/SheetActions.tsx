@@ -13,7 +13,13 @@ export type SheetActionsProps = { id: string };
 export function RestaurantSheetActions({ id }: SheetActionsProps) {
   const details = useRestaurantDetails(id);
   const actions = useSheetActions(
-    details.data ? { id: details.data.id, name: details.data.name } : null,
+    details.data
+      ? {
+          id: details.data.id,
+          name: details.data.name,
+          acceptsTableRequests: details.data.accepts_table_requests,
+        }
+      : null,
   );
   return <SheetActionRow actions={actions} />;
 }

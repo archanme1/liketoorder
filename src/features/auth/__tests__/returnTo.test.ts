@@ -4,6 +4,7 @@ import {
   requestFormHref,
   RETURN_TO_TTL_MS,
   setReturnTo,
+  tableRequestFormHref,
 } from '../returnTo';
 
 const ID = '11111111-1111-4111-8111-111111111111';
@@ -18,8 +19,16 @@ describe('returnTo', () => {
     expect(peekReturnTo()).toBe(`/requests/new?businessId=${ID}`);
   });
 
+  it('keeps the table request form for a business too', () => {
+    expect(setReturnTo(tableRequestFormHref(ID))).toBe(true);
+    expect(peekReturnTo()).toBe(`/requests/table/new?businessId=${ID}`);
+  });
+
   it.each([
     ['another path', '/profile'],
+    ['the table form with no id', '/requests/table/new'],
+    ['the table form with extra query', `/requests/table/new?businessId=${ID}&next=/profile`],
+    ['a deeper table path', `/requests/table/other/new?businessId=${ID}`],
     ['an external URL', 'https://evil.example/requests/new?businessId=' + ID],
     ['a scheme link', 'liketoorder://requests/new?businessId=' + ID],
     ['no id', '/requests/new'],

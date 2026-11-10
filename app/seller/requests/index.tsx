@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { useCallback } from 'react';
 
 import { SellerRequestsScreen } from '@/features/requests/components/SellerRequestsScreen';
-import type { SellerRequest } from '@/features/requests/schema';
+import type { BusinessRequest } from '@/features/requests/schema';
 import { SellerScreenGate } from '@/features/sellers/components/SellerScreenGate';
 
 // The seller's inbox. Signed in with a complete profile (root `app` guard); without a business the
@@ -13,7 +13,7 @@ export default function SellerRequestsRoute() {
   // Stable, so a re-render of this route does not rebuild the list's renderItem and re-render
   // every memoized row.
   const onOpen = useCallback(
-    (request: SellerRequest) =>
+    (request: BusinessRequest) =>
       router.push({ pathname: '/seller/requests/[id]', params: { id: request.id } }),
     [router],
   );

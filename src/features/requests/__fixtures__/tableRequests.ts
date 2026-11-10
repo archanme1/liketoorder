@@ -1,4 +1,4 @@
-import type { TableRequest } from '../schema';
+import type { SellerTableRequest, TableRequest } from '../schema';
 
 import { BUSINESS_ID } from './requests';
 
@@ -22,6 +22,16 @@ export function makeTableRequest(over: Partial<TableRequest> = {}): TableRequest
     decline_reason: null,
     response_note: null,
     arrived_at: null,
+    ...over,
+  };
+}
+
+/** The same request as the restaurant's owner reads it (17 keys). */
+export function makeSellerTableRequest(over: Partial<SellerTableRequest> = {}): SellerTableRequest {
+  return {
+    ...makeTableRequest(),
+    customer_name: 'Sam Rivera',
+    responded_at: null,
     ...over,
   };
 }

@@ -2,7 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useRef } from 'react';
 
 import { markRequestOutcome, type RequestAppError } from '../api';
-import type { SellerOutcome, SellerRequest } from '../schema';
+import type { RequestKind } from '../kind';
+import type { BusinessRequest, SellerOutcome } from '../schema';
 
 import { invalidateSellerRequests, writeAnswer } from './invalidateSellerRequests';
 
@@ -13,11 +14,14 @@ type Variables = { requestId: string; outcome: SellerOutcome };
  * `markOutcome` ignores a second call while one is running. Every outcome re-reads the inbox, the
  * request and the waiting count.
  */
-export function useMarkRequestOutcome() {
+export function useMarkRequestOutcome(kind: RequestKind = 'pickup') {
   const queryClient = useQueryClient();
   const inFlight = useRef(false);
-  const mutation = useMutation<SellerRequest, RequestAppError, Variables>({
-    mutationFn: ({ requestId, outcome }) => markRequestOutcome(requestId, outcome),
+  const mutation = useMutation<BusinessRequest, RequestAppError, Variables>({
+    mutationFn: ({ requestId, outcome }) =>
+      kind === 'table'
+        ? markRequestOutcome(requestId, outcome, kind)
+        : markRequestOutcome(requestId, outcome),
     onSuccess: (request, { requestId }) => writeAnswer(queryClient, requestId, request),
     onSettled: async (_data, _error, { requestId }) => {
       inFlight.current = false;

@@ -50,6 +50,9 @@ export const TABLE_DECLINE_REASONS = [
 ] as const;
 export const tableDeclineReasonSchema = z.enum(TABLE_DECLINE_REASONS);
 export type TableDeclineReason = z.output<typeof tableDeclineReasonSchema>;
+/** A reason of either kind; the dialog offers its own kind's list and the server judges. */
+const anyDeclineReasonSchema = z.union([declineReasonSchema, tableDeclineReasonSchema]);
+export type AnyDeclineReason = DeclineReason | TableDeclineReason;
 
 const timestamp = z.string().refine((value) => !Number.isNaN(Date.parse(value)), 'bad timestamp');
 
@@ -135,17 +138,30 @@ export const sellerRequestSchema = pickupRequestSchema.extend({
   responded_at: timestamp.nullable(),
 });
 
+// The seller's view of a table request (17 keys): the customer object plus the customer's name and
+// when it was answered. Strict, like the others.
+export const sellerTableRequestSchema = tableRequestSchema.extend({
+  customer_name: z.string().nullable(),
+  responded_at: timestamp.nullable(),
+});
+
+/** A request to the caller's business: one kind or the other, told apart by `kind`. */
+export const businessRequestSchema = z.discriminatedUnion('kind', [
+  sellerRequestSchema,
+  sellerTableRequestSchema,
+]);
+
 // next_cursor is the server's own text ("<created_at, microseconds>|<id>"), sent back untouched;
 // null on the last page.
 export const sellerRequestListSchema = z.strictObject({
   server_now: timestamp,
-  requests: z.array(sellerRequestSchema),
+  requests: z.array(businessRequestSchema),
   next_cursor: z.string().min(1).nullable(),
 });
 
 export const sellerRequestDetailSchema = z.strictObject({
   server_now: timestamp,
-  request: sellerRequestSchema.nullable(),
+  request: businessRequestSchema.nullable(),
 });
 
 export const waitingCountSchema = z.strictObject({
@@ -158,12 +174,15 @@ export type InboxFilter = 'waiting' | 'all';
 export type SellerDecision = 'accepted' | 'declined';
 export type SellerOutcome = 'completed' | 'no_show';
 /** What a seller may attach to an answer. Both are optional here; the server judges them. */
-export type RespondOptions = { declineReason?: DeclineReason; note?: string };
+export type RespondOptions = { declineReason?: AnyDeclineReason; note?: string };
 
 export type PickupRequest = z.output<typeof pickupRequestSchema>;
 export type TableRequest = z.output<typeof tableRequestSchema>;
 export type CustomerRequest = z.output<typeof customerRequestSchema>;
 export type SellerRequest = z.output<typeof sellerRequestSchema>;
+export type SellerTableRequest = z.output<typeof sellerTableRequestSchema>;
+/** A request to the caller's business, pickup or table. */
+export type BusinessRequest = z.output<typeof businessRequestSchema>;
 export type SellerRequestList = z.output<typeof sellerRequestListSchema>;
 export type SellerRequestDetail = z.output<typeof sellerRequestDetailSchema>;
 export type WaitingCount = z.output<typeof waitingCountSchema>;
@@ -211,7 +230,7 @@ export const respondInputSchema = z
     }),
     z.object({
       decision: z.literal('declined'),
-      reason: declineReasonSchema,
+      reason: anyDeclineReasonSchema,
       // Only "other" has text; for a fixed reason it is dropped (the server refuses a note on one).
       text: answerText.pipe(z.string().max(MAX_ANSWER_NOTE)),
     }),

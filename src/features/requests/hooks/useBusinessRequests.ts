@@ -2,7 +2,7 @@ import type { InfiniteData } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
 import { listBusinessRequests } from '../api';
-import type { InboxFilter, SellerRequest, SellerRequestList } from '../schema';
+import type { InboxFilter, BusinessRequest, SellerRequestList } from '../schema';
 
 import { requestKeys } from './keys';
 import { flattenRequestPages, usePagedRequests, type PagedCursor } from './usePagedRequests';
@@ -12,8 +12,8 @@ export type InboxCursor = PagedCursor;
 /** All loaded pages as one list in the server's order, each request once (first occurrence wins). */
 export function flattenBusinessPages(
   data: InfiniteData<SellerRequestList, InboxCursor> | undefined,
-): SellerRequest[] {
-  return flattenRequestPages<SellerRequest, SellerRequestList>(data);
+): BusinessRequest[] {
+  return flattenRequestPages<BusinessRequest, SellerRequestList>(data);
 }
 
 const nextCursor = (last: SellerRequestList) => last.next_cursor ?? undefined;
@@ -30,7 +30,7 @@ export function useBusinessRequests(filter: InboxFilter) {
     (before: string | undefined) => listBusinessRequests(filter, before),
     [filter],
   );
-  return usePagedRequests<SellerRequest, SellerRequestList>({
+  return usePagedRequests<BusinessRequest, SellerRequestList>({
     queryKey,
     fetchPage,
     nextCursor,

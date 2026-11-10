@@ -158,7 +158,8 @@ describe('a customer without a business', () => {
     await render(tree());
     const row = await screen.findByRole('button', { name: /Joe's Pizza/ });
     expect(screen.getByText('Pickup', { includeHiddenElements: true })).toBeTruthy();
-    expect(row.props.accessibilityValue).toEqual({ text: 'Pickup' });
+    // The kind is the first word of the spoken label (not a value read after it).
+    expect(row.props.accessibilityLabel).toMatch(/^Pickup\. Joe's Pizza\./);
   });
 
   it('opens a request with a tap', async () => {

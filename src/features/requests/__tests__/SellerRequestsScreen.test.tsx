@@ -138,7 +138,7 @@ describe('states', () => {
     await renderScreen();
     await screen.findByText('Ana');
     expect(screen.getAllByText('Waiting').length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByRole('button', { name: /^Request from / })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /^Pickup\. Request from / })).toHaveLength(2);
   });
 
   it('a pending request is never described as accepted or confirmed anywhere on the list', async () => {
@@ -146,7 +146,7 @@ describe('states', () => {
     await renderScreen();
     await screen.findByText('Customer 1');
     expect(screen.queryByText(/accepted|confirm|book/i)).not.toBeOnTheScreen();
-    for (const row of screen.getAllByRole('button', { name: /^Request from / })) {
+    for (const row of screen.getAllByRole('button', { name: /^Pickup\. Request from / })) {
       expect(row.props.accessibilityLabel).not.toMatch(/accepted|confirm|book/i);
     }
   });
@@ -164,7 +164,7 @@ describe('states', () => {
     await fireEvent.press(await screen.findByRole('radio', { name: 'All' }));
     expect(await screen.findByText('Zed')).toBeOnTheScreen();
     expect(screen.getByText('Expired')).toBeOnTheScreen();
-    const label = screen.getByRole('button', { name: /^Request from Zed/ }).props
+    const label = screen.getByRole('button', { name: /^Pickup\. Request from Zed/ }).props
       .accessibilityLabel as string;
     expect(label).toContain('Status: Expired');
     expect(label).not.toContain('Waiting');
@@ -173,7 +173,9 @@ describe('states', () => {
   it('opens a request with a tap', async () => {
     const onOpen = jest.fn();
     await renderScreen(onOpen);
-    await fireEvent.press(await screen.findByRole('button', { name: /^Request from Ana/ }));
+    await fireEvent.press(
+      await screen.findByRole('button', { name: /^Pickup\. Request from Ana/ }),
+    );
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ customer_name: 'Ana' }));
   });
 });

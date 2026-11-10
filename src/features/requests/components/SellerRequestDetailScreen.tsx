@@ -8,8 +8,9 @@ import { useTheme } from '@/theme/useTheme';
 
 import { useBusinessRequest } from '../hooks/useBusinessRequest';
 import { usePickupPassed } from '../hooks/usePickupPassed';
-import type { SellerRequest } from '../schema';
+import type { BusinessRequest, SellerRequest } from '../schema';
 import {
+  CUSTOMER_ARRIVED,
   CUSTOMER_PAYS_NOTE,
   customerLabel,
   inboxErrorMessage,
@@ -18,9 +19,10 @@ import {
   sellerStatusSentence,
 } from '../sellerMessages';
 import { summarizeOrder } from '../summary';
-import { formatDateTime, type TimeOptions } from '../time';
+import { formatDateTime, formatDateTimeWithZone, type TimeOptions } from '../time';
 
 import { AnswerLines } from './AnswerLines';
+import { partyText } from './RequestRow';
 import { RequestActions } from './RequestActions';
 import { RequestStatusChip } from './RequestStatusChip';
 
@@ -112,7 +114,7 @@ function Loaded({
 }
 
 type RequestViewProps = TimeOptions & {
-  request: SellerRequest;
+  request: BusinessRequest;
   serverNow: string;
   fetchedAt: number;
 };
@@ -125,25 +127,14 @@ function RequestView({
   locale = deviceLocale(),
 }: RequestViewProps) {
   const { space } = useTheme();
-  const currencies = useCurrencies();
-  const pickupPassed = usePickupPassed(request.pickup_at, serverNow, fetchedAt);
+  // The pickup time, or the table time for a table: Completed / No-show wait for it (server clock).
+  const pickupPassed = usePickupPassed(
+    request.kind === 'table' ? request.table_at : request.pickup_at,
+    serverNow,
+    fetchedAt,
+  );
   const options = { timeZone, locale };
   const status = request.display_status;
-
-  const currency = (() => {
-    const found = currencies.data?.find((entry) => entry.code === request.currency_code);
-    return found ? { code: found.code, minorUnits: found.minor_units } : null;
-  })();
-  const summary = summarizeOrder(
-    (request.items ?? []).map((line) => ({
-      id: line.item_id,
-      name: line.name,
-      price_minor: line.unit_price_minor,
-    })),
-    Object.fromEntries((request.items ?? []).map((line) => [line.item_id, line.quantity])),
-    currency,
-    locale,
-  );
 
   return (
     <View style={[styles.root, { gap: space.md }]}>
@@ -156,8 +147,13 @@ function RequestView({
           {customerLabel(request.customer_name)}
         </Text>
         <RequestStatusChip status={status} />
-        <Text variant="bodyLg">{sellerStatusSentence(status)}</Text>
+        <Text variant="bodyLg">{sellerStatusSentence(status, request.kind)}</Text>
         <AnswerLines request={request} variant="bodyLg" />
+        {request.kind === 'table' && request.arrived_at ? (
+          <Text variant="bodyLg" accessibilityLiveRegion="polite">
+            {CUSTOMER_ARRIVED}
+          </Text>
+        ) : null}
       </View>
 
       <RequestActions
@@ -174,39 +170,11 @@ function RequestView({
           </Text>
         ) : null}
 
-        <Card style={{ gap: space.sm }}>
-          <Text accessibilityRole="header">Pickup</Text>
-          <Text>{formatDateTime(request.pickup_at, options)}</Text>
-          <Text color="textMuted">{`Sent ${formatDateTime(request.created_at, options)}`}</Text>
-          {request.responded_at ? (
-            <Text color="textMuted">{`Answered ${formatDateTime(request.responded_at, options)}`}</Text>
-          ) : null}
-        </Card>
-
-        <Card style={{ gap: space.sm }}>
-          <Text accessibilityRole="header">Order</Text>
-          {summary.lines.map((line) => (
-            <View key={line.itemId} style={[styles.line, { gap: space.md }]}>
-              <Text style={styles.grow}>{`${line.quantity} × ${line.name}`}</Text>
-              {line.price ? <Text>{line.price}</Text> : null}
-            </View>
-          ))}
-          {request.order_text ? <Text>{request.order_text}</Text> : null}
-          {summary.total ? (
-            <View style={{ gap: space.xs }}>
-              <Text>{`Estimated total: ${summary.total}`}</Text>
-              {summary.excludesUnpriced ? <Text color="textMuted">{NO_PRICE_NOTE}</Text> : null}
-              <Text color="textMuted">{CUSTOMER_PAYS_NOTE}</Text>
-            </View>
-          ) : null}
-        </Card>
-
-        {request.note ? (
-          <Card style={{ gap: space.xs }}>
-            <Text accessibilityRole="header">Customer note</Text>
-            <Text>{request.note}</Text>
-          </Card>
-        ) : null}
+        {request.kind === 'table' ? (
+          <TableBody request={request} options={options} />
+        ) : (
+          <PickupBody request={request} options={options} locale={locale} />
+        )}
       </ScrollView>
     </View>
   );
@@ -217,3 +185,89 @@ const styles = StyleSheet.create({
   line: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   grow: { flex: 1 },
 });
+
+type BodyProps<T> = { request: T; options: TimeOptions };
+
+// What the customer asked for, table: the table time WITH its zone name, the party, and the note.
+function TableBody({ request, options }: BodyProps<Extract<BusinessRequest, { kind: 'table' }>>) {
+  const { space } = useTheme();
+  return (
+    <>
+      <Card style={{ gap: space.sm }}>
+        <Text accessibilityRole="header">Table</Text>
+        <Text>{formatDateTimeWithZone(request.table_at, options)}</Text>
+        <Text>{partyText(request.party_size)}</Text>
+        <Text color="textMuted">{`Sent ${formatDateTime(request.created_at, options)}`}</Text>
+        {request.responded_at ? (
+          <Text color="textMuted">{`Answered ${formatDateTime(request.responded_at, options)}`}</Text>
+        ) : null}
+        {request.arrived_at ? (
+          <Text color="textMuted">{`Arrived ${formatDateTime(request.arrived_at, options)}`}</Text>
+        ) : null}
+      </Card>
+      {request.note ? (
+        <Card style={{ gap: space.xs }}>
+          <Text accessibilityRole="header">Customer note</Text>
+          <Text>{request.note}</Text>
+        </Card>
+      ) : null}
+    </>
+  );
+}
+
+// What the customer asked for, pickup: when, the order and the note.
+function PickupBody({ request, options, locale }: BodyProps<SellerRequest> & { locale: string }) {
+  const { space } = useTheme();
+  const currencies = useCurrencies();
+  const currency = (() => {
+    const found = currencies.data?.find((entry) => entry.code === request.currency_code);
+    return found ? { code: found.code, minorUnits: found.minor_units } : null;
+  })();
+  const summary = summarizeOrder(
+    (request.items ?? []).map((line) => ({
+      id: line.item_id,
+      name: line.name,
+      price_minor: line.unit_price_minor,
+    })),
+    Object.fromEntries((request.items ?? []).map((line) => [line.item_id, line.quantity])),
+    currency,
+    locale,
+  );
+  return (
+    <>
+      <Card style={{ gap: space.sm }}>
+        <Text accessibilityRole="header">Pickup</Text>
+        <Text>{formatDateTime(request.pickup_at, options)}</Text>
+        <Text color="textMuted">{`Sent ${formatDateTime(request.created_at, options)}`}</Text>
+        {request.responded_at ? (
+          <Text color="textMuted">{`Answered ${formatDateTime(request.responded_at, options)}`}</Text>
+        ) : null}
+      </Card>
+
+      <Card style={{ gap: space.sm }}>
+        <Text accessibilityRole="header">Order</Text>
+        {summary.lines.map((line) => (
+          <View key={line.itemId} style={[styles.line, { gap: space.md }]}>
+            <Text style={styles.grow}>{`${line.quantity} \u00D7 ${line.name}`}</Text>
+            {line.price ? <Text>{line.price}</Text> : null}
+          </View>
+        ))}
+        {request.order_text ? <Text>{request.order_text}</Text> : null}
+        {summary.total ? (
+          <View style={{ gap: space.xs }}>
+            <Text>{`Estimated total: ${summary.total}`}</Text>
+            {summary.excludesUnpriced ? <Text color="textMuted">{NO_PRICE_NOTE}</Text> : null}
+            <Text color="textMuted">{CUSTOMER_PAYS_NOTE}</Text>
+          </View>
+        ) : null}
+      </Card>
+
+      {request.note ? (
+        <Card style={{ gap: space.xs }}>
+          <Text accessibilityRole="header">Customer note</Text>
+          <Text>{request.note}</Text>
+        </Card>
+      ) : null}
+    </>
+  );
+}

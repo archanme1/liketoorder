@@ -6,14 +6,15 @@ import {
 
 import { supabase } from '@/lib/supabase';
 
+import type { RequestKind } from './kind';
 import {
+  businessRequestSchema,
   pickupAddressSchema,
   pickupRequestSchema,
   requestDetailSchema,
   requestListSchema,
   sellerRequestDetailSchema,
   sellerRequestListSchema,
-  sellerRequestSchema,
   tableRequestSchema,
   waitingCountSchema,
   type OrderLine,
@@ -25,7 +26,7 @@ import {
   type RequestList,
   type SellerDecision,
   type SellerOutcome,
-  type SellerRequest,
+  type BusinessRequest,
   type SellerRequestDetail,
   type SellerRequestList,
   type TableRequest,
@@ -269,15 +270,18 @@ export async function respondToRequest(
   requestId: string,
   decision: SellerDecision,
   options: RespondOptions = {},
-): Promise<SellerRequest> {
+  kind: RequestKind = 'pickup',
+): Promise<BusinessRequest> {
   const { data, error } = await supabase.rpc('respond_to_request', {
     p_request_id: requestId,
     p_decision: decision,
     ...(options.declineReason === undefined ? {} : { p_decline_reason: options.declineReason }),
     ...(options.note === undefined ? {} : { p_note: options.note }),
+    // The server defaults to pickup, so a pickup call is exactly what it was before spec 11.
+    ...(kind === 'table' ? { p_kind: kind } : {}),
   });
   if (error) throw mapRequestError(error);
-  const parsed = sellerRequestSchema.safeParse(data);
+  const parsed = businessRequestSchema.safeParse(data);
   if (!parsed.success) throw new RequestAppError('unknown');
   return parsed.data;
 }
@@ -285,13 +289,15 @@ export async function respondToRequest(
 export async function markRequestOutcome(
   requestId: string,
   outcome: SellerOutcome,
-): Promise<SellerRequest> {
+  kind: RequestKind = 'pickup',
+): Promise<BusinessRequest> {
   const { data, error } = await supabase.rpc('mark_request_outcome', {
     p_request_id: requestId,
     p_outcome: outcome,
+    ...(kind === 'table' ? { p_kind: kind } : {}),
   });
   if (error) throw mapRequestError(error);
-  const parsed = sellerRequestSchema.safeParse(data);
+  const parsed = businessRequestSchema.safeParse(data);
   if (!parsed.success) throw new RequestAppError('unknown');
   return parsed.data;
 }

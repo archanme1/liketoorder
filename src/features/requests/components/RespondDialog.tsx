@@ -5,10 +5,11 @@ import { Button, Card, Text } from '@/components/ui';
 import { scrim, maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
+import type { RequestKind } from '../kind';
 import {
   respondInputSchema,
   respondOptions,
-  type DeclineReason,
+  type AnyDeclineReason,
   type RespondOptions,
 } from '../schema';
 import { DECLINE_REASON_REQUIRED, OTHER_REASON_REQUIRED, confirmCopy } from '../sellerMessages';
@@ -18,6 +19,8 @@ import { DeclineReasonPicker } from './DeclineReasonPicker';
 
 type RespondDialogProps = {
   action: 'accepted' | 'declined';
+  /** A pickup unless told otherwise: a table has its own reasons and no address. */
+  kind?: RequestKind;
   homemade: boolean;
   /** The customer's name, for the confirm button's spoken label. */
   customer: string;
@@ -40,6 +43,7 @@ const CONFIRM_TITLE = {
 // that a refetch of the request does not touch.
 export function RespondDialog({
   action,
+  kind = 'pickup',
   homemade,
   customer,
   running,
@@ -48,9 +52,9 @@ export function RespondDialog({
   onCancel,
 }: RespondDialogProps) {
   const { space } = useTheme();
-  const copy = confirmCopy(action, homemade);
+  const copy = confirmCopy(action, homemade, kind);
   const [note, setNote] = useState('');
-  const [reason, setReason] = useState<DeclineReason | null>(null);
+  const [reason, setReason] = useState<AnyDeclineReason | null>(null);
   const [text, setText] = useState('');
 
   const input =
@@ -102,6 +106,7 @@ export function RespondDialog({
                 <AcceptNoteField value={note} onChange={setNote} homemade={homemade} />
               ) : (
                 <DeclineReasonPicker
+                  kind={kind}
                   reason={reason}
                   onReasonChange={setReason}
                   text={text}

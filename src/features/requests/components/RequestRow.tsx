@@ -49,9 +49,10 @@ export const RequestRow = memo(function RequestRow({
       ? `Table ${formatDateTime(request.table_at, { timeZone, locale })}`
       : `Pickup ${formatDateTime(request.pickup_at, { timeZone, locale })}`;
   const preview = request.kind === 'table' ? partyText(request.party_size) : orderPreview(request);
-  const sentence = statusSentence(status, request.business_name);
-  // One spoken line: who, the status as a word, what, and when.
+  const sentence = statusSentence(status, request.business_name, kind);
+  // One spoken line, the kind FIRST: the kind, who, the status as a word, what, and when.
   const spoken = [
+    kindLabel(kind),
     request.business_name,
     `Status: ${STATUS_INFO[status].label}`,
     sentence,
@@ -67,7 +68,6 @@ export const RequestRow = memo(function RequestRow({
       onPress={() => onPress(request)}
       accessibilityRole="button"
       accessibilityLabel={spoken}
-      accessibilityValue={{ text: kindLabel(kind) }}
       accessibilityHint="Opens the request"
       style={({ pressed }) => [
         styles.row,

@@ -7,7 +7,7 @@ import { useTheme } from '@/theme/useTheme';
 import type { RequestErrorCode } from '../api';
 import { useMarkRequestOutcome } from '../hooks/useMarkRequestOutcome';
 import { useRespondToRequest } from '../hooks/useRespondToRequest';
-import type { RespondOptions, SellerRequest } from '../schema';
+import type { BusinessRequest, RespondOptions } from '../schema';
 import {
   actionErrorMessage,
   confirmCopy,
@@ -19,8 +19,11 @@ import { formatDateTime, type TimeOptions } from '../time';
 import { RespondDialog } from './RespondDialog';
 
 type RequestActionsProps = TimeOptions & {
-  request: SellerRequest;
-  /** The server-corrected "pickup time has passed" hint. The server checks again. */
+  request: BusinessRequest;
+  /**
+   * The server-corrected "the pickup time (the table time, for a table) has passed" hint. The
+   * server checks again.
+   */
   pickupPassed: boolean;
 };
 
@@ -49,13 +52,17 @@ const CONFIRM_TITLE: Record<SellerAction, string> = {
 // and has none. Completed / No-show also wait for the pickup-time hint (the server re-checks).
 export function RequestActions({ request, pickupPassed, timeZone, locale }: RequestActionsProps) {
   const { space, size } = useTheme();
-  const respond = useRespondToRequest();
-  const outcome = useMarkRequestOutcome();
+  const respond = useRespondToRequest(request.kind);
+  const outcome = useMarkRequestOutcome(request.kind);
   const [confirming, setConfirming] = useState<SellerAction | null>(null);
 
   const running = respond.isPending || outcome.isPending;
   const name = customerLabel(request.customer_name);
-  const pickup = formatDateTime(request.pickup_at, { timeZone, locale });
+  const kindWord = request.kind === 'table' ? 'table' : 'pickup';
+  const pickup = formatDateTime(request.kind === 'table' ? request.table_at : request.pickup_at, {
+    timeZone,
+    locale,
+  });
   const status = request.display_status;
   const available: SellerAction[] =
     status === 'pending'
@@ -95,8 +102,8 @@ export function RequestActions({ request, pickupPassed, timeZone, locale }: Requ
   const primary: SellerAction = available[0];
   const label = (action: SellerAction) =>
     action === 'accepted' || action === 'declined'
-      ? `${BUTTON_TITLE[action]} request from ${name}, pickup ${pickup}`
-      : `${BUTTON_TITLE[action]} for request from ${name}, pickup ${pickup}`;
+      ? `${BUTTON_TITLE[action]} request from ${name}, ${kindWord} ${pickup}`
+      : `${BUTTON_TITLE[action]} for request from ${name}, ${kindWord} ${pickup}`;
 
   if (confirming && available.includes(confirming)) {
     if (confirming === 'accepted' || confirming === 'declined') {
@@ -105,6 +112,7 @@ export function RequestActions({ request, pickupPassed, timeZone, locale }: Requ
         <View testID="request-actions" style={{ gap: space.sm }}>
           <RespondDialog
             action={confirming}
+            kind={request.kind}
             homemade={request.business_type === 'homemade'}
             customer={name}
             running={running}
@@ -115,7 +123,7 @@ export function RequestActions({ request, pickupPassed, timeZone, locale }: Requ
         </View>
       );
     }
-    const copy = confirmCopy(confirming, request.business_type === 'homemade');
+    const copy = confirmCopy(confirming, request.business_type === 'homemade', request.kind);
     return (
       <View testID="request-actions" style={{ gap: space.sm }}>
         <Card style={{ gap: space.md }}>

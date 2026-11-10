@@ -1,5 +1,6 @@
 import type { StatusChipIcon, StatusChipTone } from '@/components/ui/StatusChip';
 
+import type { RequestKind } from './kind';
 import type { RequestStatus } from './schema';
 
 export type StatusInfo = {
@@ -23,7 +24,11 @@ export const STATUS_INFO: Record<RequestStatus, StatusInfo> = {
 };
 
 /** The sentence under a status on the detail screen and in the list. */
-export function statusSentence(status: RequestStatus, sellerName: string): string {
+export function statusSentence(
+  status: RequestStatus,
+  sellerName: string,
+  kind: RequestKind = 'pickup',
+): string {
   switch (status) {
     case 'pending':
       return `Waiting for ${sellerName} to respond`;
@@ -36,9 +41,9 @@ export function statusSentence(status: RequestStatus, sellerName: string): strin
     case 'cancelled':
       return 'You cancelled this request';
     case 'completed':
-      return 'Pickup completed';
+      return kind === 'table' ? 'Table visit completed' : 'Pickup completed';
     case 'no_show':
-      return 'Marked as not picked up';
+      return kind === 'table' ? 'Marked as not arrived' : 'Marked as not picked up';
   }
 }
 

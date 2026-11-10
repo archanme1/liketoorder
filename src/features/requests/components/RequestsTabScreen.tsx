@@ -12,7 +12,7 @@ import { useTheme } from '@/theme/useTheme';
 import { requestKeys } from '../hooks/keys';
 import { useRequestsCounts } from '../hooks/useRequestsBadge';
 import { SENT_EMPTY, BUSINESS_CHECK_ERROR } from '../messages';
-import type { CustomerRequest, SellerRequest } from '../schema';
+import type { BusinessRequest, CustomerRequest } from '../schema';
 import type { TimeOptions } from '../time';
 
 import { MyRequestsList } from './MyRequestsList';
@@ -23,7 +23,7 @@ type RequestsTabScreenProps = TimeOptions & {
   /** The tab is the one on screen. Reading the lists as seen, and refetching, follow this. */
   focused: boolean;
   onOpenSent: (request: CustomerRequest) => void;
-  onOpenReceived: (request: SellerRequest) => void;
+  onOpenReceived: (request: BusinessRequest) => void;
 };
 
 // The Requests tab. A customer sees the requests they sent. Anyone who owns a business (whatever

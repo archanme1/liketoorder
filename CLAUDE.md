@@ -186,6 +186,9 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 10 | seller-request-inbox | ✅ Shipped | .claude/specs/10-seller-request-inbox.md |
 | 10b | requests-tab-and-answers | ✅ Shipped | .claude/specs/10b-requests-tab-and-answers.md |
 | 11 | table-requests | 🚧 In progress | .claude/specs/11-table-requests.md |
+| 11b | request-limits | 📝 Planned (not started) | — |
+| 11c | requests-filters | 📝 Planned (not started) | — |
+| 11d | theme-refresh | 📝 Planned (not started) | — |
 | 12 | notifications | ⬜ Not started | — |
 | 13 | food-log-uploads | ⬜ Not started | — |
 | 14 | activity-grid | ⬜ Not started | — |
@@ -194,7 +197,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 17 | reports | ⬜ Not started | — |
 | 18 | legal-pages | ⬜ Not started | — |
 
-Status values: ⬜ Not started · 📝 Spec written · 🚧 In progress · ✅ Shipped
+Status values: ⬜ Not started · 📝 Planned (roadmap row only) or Spec written · 🚧 In progress · ✅ Shipped
 
 Roadmap notes (full detail in `docs/product/v1.md` §4 and §14):
 - **10b requests-tab-and-answers:** Requests tab (customers: sent requests; business owners: Received / Sent switches), badges, required decline reason and optional accept note, maps hidden in seller mode.

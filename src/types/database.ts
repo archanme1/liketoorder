@@ -351,9 +351,6 @@ isOneToOne: false
 "list_business_requests":
 { Args: { "p_before"?: string,"p_status"?: string }; Returns: Json
                            },
-"list_my_pickup_requests":
-{ Args: { "p_before"?: string }; Returns: Json
-                           },
 "list_my_requests":
 { Args: { "p_before"?: string }; Returns: Json
                            },

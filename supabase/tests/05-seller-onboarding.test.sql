@@ -176,7 +176,7 @@ select is(
   array['begin_photo_upload', 'cancel_pickup_request', 'cancel_table_request', 'claim_photo_cleanup', 'count_waiting_requests',
         'create_menu_item', 'create_my_business', 'delete_business_photo', 'delete_menu_item', 'finish_photo_upload',
         'get_business_request', 'get_homemade_details', 'get_my_business', 'get_my_pickup_address', 'get_my_pickup_request',
-        'get_my_table_request', 'get_restaurant_details', 'list_business_requests', 'list_my_pickup_requests', 'list_my_requests',
+        'get_my_table_request', 'get_restaurant_details', 'list_business_requests', 'list_my_requests',
         'map_homemade_in_bounds', 'map_restaurants_in_bounds', 'mark_arrived', 'mark_request_outcome', 'move_menu_item',
         'respond_to_request', 'set_menu_currency', 'set_seller_mode', 'submit_pickup_request', 'submit_table_request',
         'update_menu_item'],

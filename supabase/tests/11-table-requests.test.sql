@@ -343,7 +343,7 @@ select throws_ok($$ select public.get_my_table_request(pg_temp.r(1)) $$, 'P0001'
 select throws_ok($$ select public.mark_arrived(pg_temp.r(3)) $$, 'P0001', 'not_signed_in', 'no user: mark_arrived is not_signed_in');
 select throws_ok($$ select public.list_my_requests() $$, 'P0001', 'not_signed_in', 'no user: list_my_requests is not_signed_in');
 
--- -- 3. One overload each; the old pickup list is kept in this PR ------------
+-- -- 3. One overload each; the old pickup list is gone (PR 2) --------------
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname = 'respond_to_request'), 1, 'exactly one respond_to_request exists');
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -355,7 +355,7 @@ select is((select pronargdefaults::int from pg_proc where oid = 'public.respond_
 select is((select pronargdefaults::int from pg_proc where oid = 'public.mark_request_outcome(uuid, text, text)'::regprocedure),
   1, 'mark_request_outcome: kind defaults');
 select is((select pronargs::int from pg_proc where oid = 'public.mark_arrived(uuid)'::regprocedure), 1, 'mark_arrived takes only the request id (no location, no client time)');
-select ok(to_regprocedure('public.list_my_pickup_requests(timestamptz)') is not null, 'list_my_pickup_requests is kept in PR 1');
+select ok(to_regprocedure('public.list_my_pickup_requests(timestamptz)') is null, 'list_my_pickup_requests is dropped in PR 2');
 select ok(pg_temp.locks_first('public.respond_to_request(uuid, text, text, text, text)'::regprocedure, 't\.business_id = v_b\.id', 'table_requests'),
   'respond_to_request locks the table row before it updates it');
 select ok(pg_temp.locks_first('public.mark_request_outcome(uuid, text, text)'::regprocedure, 't\.business_id = v_biz', 'table_requests'),
@@ -735,10 +735,11 @@ select pg_temp.as_user(7);
 select is(pg_temp.my_list() -> 'requests', '[]'::jsonb, 'a customer with no requests gets an empty array');
 select pg_temp.as_user(4);
 select is(pg_temp.my_list() -> 'requests', '[]'::jsonb, 'a restaurant owner''s customer list holds no customer requests');
--- The old pickup list is kept and its objects gain kind.
+-- The merged list shows both kinds, each with kind.
 select pg_temp.as_user(33);
-select is((select array_agg(x ->> 'kind') from jsonb_array_elements(public.list_my_pickup_requests() -> 'requests') x), array['pickup', 'pickup'],
-  'list_my_pickup_requests still works and lists only pickup rows, with kind');
+select is((select array_agg(x ->> 'kind' order by x ->> 'kind') from jsonb_array_elements(public.list_my_requests() -> 'requests') x),
+  array['pickup', 'pickup', 'table', 'table'],
+  'list_my_requests lists this customer''s pickup and table rows, each with kind');
 
 -- Paging: customer 28 / business 14 holds 123 rows (120 share one created_at, kinds alternating by id); customer 29 / business 15 holds 100.
 insert into public.pickup_requests (id, business_id, customer_id, status, pickup_at, order_text, idempotency_key, expires_at, created_at)
@@ -881,7 +882,7 @@ select pg_temp.as_user(26);
 insert into res select 'k_pc_submit', public.submit_pickup_request(pg_temp.b(10), pg_temp.k(9501), now() + interval '2 hours', null, 'soup', null);
 insert into res select 'k_pc_get', public.get_my_pickup_request((select (j ->> 'id')::uuid from res where label = 'k_pc_submit')) -> 'request';
 insert into res select 'k_pc_cancel', public.cancel_pickup_request((select (j ->> 'id')::uuid from res where label = 'k_pc_submit'));
-insert into res select 'k_pc_oldlist', public.list_my_pickup_requests() -> 'requests' -> 0;
+insert into res select 'k_pc_oldlist', public.list_my_requests() -> 'requests' -> 0;
 select is(pg_temp.keys((select j from res where label = 'k_t_submit')),
   array['arrived_at', 'business_id', 'business_name', 'business_type', 'created_at', 'decline_reason', 'display_status', 'expires_at', 'id', 'kind',
         'note', 'party_size', 'response_note', 'status', 'table_at'], 'a table submit returns exactly the 15 customer keys');
@@ -898,7 +899,7 @@ select is(pg_temp.keys((select j from res where label = 'k_pc_submit')),
         'kind', 'note', 'order_text', 'pickup_at', 'response_note', 'status'], 'a pickup submit returns exactly the 16 customer keys');
 select is(pg_temp.keys((select j from res where label = 'k_pc_get')), pg_temp.keys((select j from res where label = 'k_pc_submit')), 'the pickup get has the same 16 keys');
 select is(pg_temp.keys((select j from res where label = 'k_pc_cancel')), pg_temp.keys((select j from res where label = 'k_pc_submit')), 'pickup cancel has the same 16 keys');
-select is(pg_temp.keys((select j from res where label = 'k_pc_oldlist')), pg_temp.keys((select j from res where label = 'k_pc_submit')), 'the kept list_my_pickup_requests row has the same 16 keys');
+select is(pg_temp.keys((select j from res where label = 'k_pc_oldlist')), pg_temp.keys((select j from res where label = 'k_pc_submit')), 'the list_my_requests pickup row has the same 16 keys');
 select is(pg_temp.keys((select j from res where label = 'k_ps_get')),
   array['business_id', 'business_name', 'business_type', 'created_at', 'currency_code', 'customer_name', 'decline_reason', 'display_status', 'expires_at',
         'id', 'items', 'kind', 'note', 'order_text', 'pickup_at', 'responded_at', 'response_note', 'status'], 'the seller pickup object has exactly the 18 keys');

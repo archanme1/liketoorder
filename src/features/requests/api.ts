@@ -135,9 +135,9 @@ export async function cancelPickupRequest(requestId: string): Promise<PickupRequ
   return parsed.data;
 }
 
-/** One page (50) of the caller's requests, newest first; `before` is the last row's created_at. */
-export async function listMyPickupRequests(before?: string): Promise<RequestList> {
-  const { data, error } = await supabase.rpc('list_my_pickup_requests', { p_before: before });
+/** One page (50) of the caller's requests, newest first; `before` is the server's own next_cursor text. */
+export async function listMyRequests(before?: string): Promise<RequestList> {
+  const { data, error } = await supabase.rpc('list_my_requests', { p_before: before });
   if (error) throw mapRequestError(error);
   const parsed = requestListSchema.safeParse(data);
   if (!parsed.success) throw new RequestAppError('unknown');

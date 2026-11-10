@@ -4,7 +4,7 @@ import {
   cancelPickupRequest,
   getMyPickupAddress,
   getPickupRequest,
-  listMyPickupRequests,
+  listMyRequests,
   mapRequestError,
   submitPickupRequest,
 } from '../api';
@@ -114,13 +114,17 @@ describe('cancelPickupRequest', () => {
 
 describe('reads', () => {
   it('lists with an optional cursor', async () => {
-    const data = { server_now: '2026-11-08T17:00:00Z', requests: [makeRequest()] };
+    const data = {
+      server_now: '2026-11-08T17:00:00Z',
+      requests: [makeRequest()],
+      next_cursor: null,
+    };
     db.rpc.mockResolvedValue({ data, error: null });
-    await expect(listMyPickupRequests()).resolves.toEqual(data);
-    expect(db.rpc).toHaveBeenLastCalledWith('list_my_pickup_requests', { p_before: undefined });
-    await listMyPickupRequests('2026-11-08T17:00:00Z');
-    expect(db.rpc).toHaveBeenLastCalledWith('list_my_pickup_requests', {
-      p_before: '2026-11-08T17:00:00Z',
+    await expect(listMyRequests()).resolves.toEqual(data);
+    expect(db.rpc).toHaveBeenLastCalledWith('list_my_requests', { p_before: undefined });
+    await listMyRequests('2026-11-08T17:00:00.123456Z|22222222-2222-4222-8222-222222222222');
+    expect(db.rpc).toHaveBeenLastCalledWith('list_my_requests', {
+      p_before: '2026-11-08T17:00:00.123456Z|22222222-2222-4222-8222-222222222222',
     });
   });
 

@@ -6,7 +6,7 @@ export const MAX_NOTE = 300;
 /** The seller's accept note and the written reason for "Other" (the table check allows 1 to 200). */
 export const MAX_ANSWER_NOTE = 200;
 export const MAX_LINES = 30;
-/** Rows per page of list_my_pickup_requests (the server's limit). A full page may have a next. */
+/** Rows per page of the request lists (the server's limit); the server says whether a next page exists. */
 export const PAGE_SIZE = 50;
 export const MIN_QUANTITY = 1;
 export const MAX_QUANTITY = 20;
@@ -49,6 +49,8 @@ export const requestItemSchema = z.strictObject({
 // contract changed, and the app refuses it rather than carry private data around.
 export const pickupRequestSchema = z.strictObject({
   id: z.string().min(1),
+  // Which kind of request this is (spec 11). Always present on every request object.
+  kind: z.literal('pickup'),
   business_id: z.string().min(1),
   business_name: z.string(),
   business_type: z.enum(['restaurant', 'homemade']),
@@ -68,9 +70,12 @@ export const pickupRequestSchema = z.strictObject({
   response_note: z.string().max(MAX_ANSWER_NOTE).nullable(),
 });
 
+// next_cursor is the server's own text ("<created_at, microseconds>|<id>"), sent back untouched;
+// null on the last page.
 export const requestListSchema = z.strictObject({
   server_now: timestamp,
   requests: z.array(pickupRequestSchema),
+  next_cursor: z.string().min(1).nullable(),
 });
 
 export const requestDetailSchema = z.strictObject({

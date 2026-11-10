@@ -2,17 +2,17 @@ import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
-import { makeRows, pagedServer } from '../__fixtures__/pagedServer';
-import { RequestAppError, listMyPickupRequests } from '../api';
+import { cursorOf, makeRows, pagedServer } from '../__fixtures__/pagedServer';
+import { RequestAppError, listMyRequests } from '../api';
 import { requestKeys } from '../hooks/keys';
 import { flattenPages, useMyRequests } from '../hooks/useMyRequests';
 
 jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
-  listMyPickupRequests: jest.fn(),
+  listMyRequests: jest.fn(),
 }));
 
-const listMock = jest.mocked(listMyPickupRequests);
+const listMock = jest.mocked(listMyRequests);
 const server = { rows: makeRows(120) };
 
 let client: QueryClient;
@@ -47,7 +47,7 @@ async function loadAll(result: { current: ReturnType<typeof useMyRequests> }) {
 }
 
 describe('paging', () => {
-  it("loads 50, then the next 50 from the last row's created_at, exactly as the server wrote it", async () => {
+  it("loads 50, then the next 50 from the server's next_cursor, exactly as the server wrote it", async () => {
     const { result } = await setup();
     await waitFor(() => expect(result.current.requests).toHaveLength(50));
     expect(listMock).toHaveBeenLastCalledWith(undefined);
@@ -58,8 +58,8 @@ describe('paging', () => {
     });
     await waitFor(() => expect(result.current.requests).toHaveLength(100));
     // The microseconds are kept: the cursor is the server's text, not a parsed Date.
-    expect(listMock).toHaveBeenLastCalledWith(server.rows[49].created_at);
-    expect(listMock.mock.calls.at(-1)?.[0]).toMatch(/\.123456\+00:00$/);
+    expect(listMock).toHaveBeenLastCalledWith(cursorOf(server.rows[49]));
+    expect(listMock.mock.calls.at(-1)?.[0]).toMatch(/\.123456Z\|[0-9a-f-]{36}$/);
   });
 
   it('shows every request once and in order, across all pages', async () => {
@@ -82,15 +82,16 @@ describe('paging', () => {
     expect(listMock.mock.calls.length).toBe(calls);
   });
 
-  it('exactly 50 requests: one more (empty) read ends the list', async () => {
+  it('exactly 50 requests: the list ends at once, with no extra read', async () => {
     server.rows = makeRows(50);
     const { result } = await setup();
     await waitFor(() => expect(result.current.requests).toHaveLength(50));
-    expect(result.current.hasNextPage).toBe(true);
+    // next_cursor is null on the last page, so there is nothing to ask for.
+    expect(result.current.hasNextPage).toBe(false);
     await act(async () => {
       await result.current.fetchNextPage();
     });
-    await waitFor(() => expect(result.current.hasNextPage).toBe(false));
+    expect(listMock).toHaveBeenCalledTimes(1);
     expect(result.current.requests).toHaveLength(50);
   });
 
@@ -98,8 +99,8 @@ describe('paging', () => {
     const rows = makeRows(3);
     const data = {
       pages: [
-        { server_now: 'x', requests: rows.slice(0, 2) },
-        { server_now: 'x', requests: rows.slice(1, 3) },
+        { server_now: 'x', requests: rows.slice(0, 2), next_cursor: 'x' },
+        { server_now: 'x', requests: rows.slice(1, 3), next_cursor: null },
       ],
       pageParams: [{}, { before: 'x' }],
     };
@@ -246,7 +247,11 @@ describe('refresh: nothing is thrown away until page 1 has loaded', () => {
       () =>
         new Promise((resolve) => {
           late = () =>
-            resolve({ server_now: '2026-11-08T17:00:00Z', requests: server.rows.slice(50, 100) });
+            resolve({
+              server_now: '2026-11-08T17:00:00Z',
+              requests: server.rows.slice(50, 100),
+              next_cursor: cursorOf(server.rows[99]),
+            });
         }),
     );
     await act(async () => {
@@ -270,7 +275,11 @@ describe('refresh: nothing is thrown away until page 1 has loaded', () => {
       () =>
         new Promise((resolve) => {
           finish = () =>
-            resolve({ server_now: '2026-11-08T17:00:00Z', requests: server.rows.slice(0, 50) });
+            resolve({
+              server_now: '2026-11-08T17:00:00Z',
+              requests: server.rows.slice(0, 50),
+              next_cursor: cursorOf(server.rows[49]),
+            });
         }),
     );
     await act(async () => {

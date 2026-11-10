@@ -1,4 +1,4 @@
--- Spec 11 (PR 1): table requests backend — the closed table_requests table, function privileges,
+-- Spec 11 (PR 1): table requests backend - the closed table_requests table, function privileges,
 -- submit rules and limits, expiry, get/cancel, kind-aware respond_to_request and
 -- mark_request_outcome, mark_arrived (window edges, once only, check order), the merged keyset
 -- lists, the request-object key sets, and that outsiders see and change nothing.
@@ -7,15 +7,18 @@
 -- helpers that return the error text, so a broken function turns a NAMED assertion red instead of
 -- aborting the file. Hidden characters are built with chr(), never typed.
 begin;
-select plan(338);
+select plan(352);
 
--- ── Helpers (pg_temp) ───────────────────────────────────────────────────────
--- Ids:  users 00000000-0000-0000-0012-<n>   businesses …-0412-<n>   table requests …-0612-<n>
---       keys …-0712-<n>                      pickup requests …-0812-<n>
+-- -- Helpers (pg_temp) -------------------------------------------------------
+-- Ids:  users 00000000-0000-0000-0012-<n>   businesses ...-0412-<n>   table requests ...-0612-<n>
+--       keys ...-0712-<n>                      pickup requests ...-0812-<n>
 create function pg_temp.u(n int) returns uuid language sql immutable as $$ select ('00000000-0000-0000-0012-' || lpad(n::text, 12, '0'))::uuid $$;
 create function pg_temp.b(n int) returns uuid language sql immutable as $$ select ('00000000-0000-0000-0412-' || lpad(n::text, 12, '0'))::uuid $$;
 create function pg_temp.r(n int) returns uuid language sql immutable as $$ select ('00000000-0000-0000-0612-' || lpad(n::text, 12, '0'))::uuid $$;
 create function pg_temp.k(n int) returns uuid language sql immutable as $$ select ('00000000-0000-0000-0712-' || lpad(n::text, 12, '0'))::uuid $$;
+-- One id space for both kinds in the paging fixtures, so rows that share a created_at alternate
+-- between pickup and table when ordered by id.
+create function pg_temp.sid(n int) returns uuid language sql immutable as $$ select ('00000000-0000-0000-0912-' || lpad(n::text, 12, '0'))::uuid $$;
 create function pg_temp.pr(n int) returns uuid language sql immutable as $$ select ('00000000-0000-0000-0812-' || lpad(n::text, 12, '0'))::uuid $$;
 
 create function pg_temp.as_user(n int) returns void language plpgsql as $$
@@ -185,7 +188,7 @@ create function pg_temp.locks_first(p_fn regprocedure, p_filter text, p_table te
     from m;
 $$;
 
--- ── Fixtures (as postgres) ──────────────────────────────────────────────────
+-- -- Fixtures (as postgres) --------------------------------------------------
 -- Users:  1 C1 (fixture requests)   2 C2   3 no username   4 owner b1   5 owner b2   6 owner b3   7 outsider
 --         8 owner b8   9 owner b9   10 owner b10   14/15/16 owners b14/b15/b16   20 rate limit   21 pending limit
 --         22 validation   23 idempotency   24 one pending per business   25 expiry job   26 key sets
@@ -195,7 +198,7 @@ $$;
 --   9 stale 31 d restaurant (accepts)   10 second restaurant (accepts)   14, 15, 16 restaurants (accepts)   30..35 restaurants (accept)
 insert into auth.users (id, email)
 select pg_temp.u(n), 'p11_' || n || '@example.test'
-  from unnest(array[1,2,3,4,5,6,7,8,9,10,14,15,16,20,21,22,23,24,25,26,27,28,29,33,40,41,50,51,52,53,54,55]) n;
+  from unnest(array[1,2,3,4,5,6,7,8,9,10,14,15,16,20,21,22,23,24,25,26,27,28,29,30,31,32,33,40,41,50,51,52,53,54,55]) n;
 update public.profiles set username = 'p11_' || right(id::text, 3) where id::text like '00000000-0000-0000-0012-%';
 update public.profiles set username = null where id = pg_temp.u(3);
 
@@ -221,7 +224,7 @@ select b.id, 'p11_' || right(b.id::text, 3), b.public_address, b.map_lat, b.map_
 create temp table res (label text primary key, j jsonb);
 grant all on res to public;
 
--- ── 1. The closed table: RLS, no policy, no grant ───────────────────────────
+-- -- 1. The closed table: RLS, no policy, no grant ---------------------------
 select ok((select relrowsecurity from pg_class where oid = 'public.table_requests'::regclass), 'table_requests has row level security on');
 select is((select count(*)::int from pg_policies where schemaname = 'public' and tablename = 'table_requests'), 0, 'table_requests has no policy');
 select is_empty(
@@ -269,6 +272,8 @@ select is(pg_temp.upd(1, 'arrived_at = now()'), 'table_requests_arrived_status',
 select is(pg_temp.upd(3, 'arrived_at = now()'), 'OK', 'arrived_at on an accepted row is accepted');
 select is(pg_temp.upd(3, $$status = 'completed', arrived_at = now()$$), 'OK', 'arrived_at on a completed row is accepted');
 select is(pg_temp.upd(1, 'note = repeat(''a'', 300)'), 'OK', 'a 300 character note is accepted by the table');
+select is(pg_temp.upd(1, 'note = ''a'''), 'OK', 'a 1 character note is accepted by the table');
+select is(pg_temp.upd(3, 'response_note = ''a'''), 'OK', 'a 1 character response note is accepted by the table');
 select is(pg_temp.upd(1, 'note = repeat(''a'', 301)'), 'table_requests_note_check', 'a 301 character note is refused by the table');
 select is(pg_temp.upd(1, $$note = ' padded'$$), 'table_requests_note_check', 'a note with a leading space is refused by the table');
 select is(pg_temp.upd(3, 'response_note = repeat(''a'', 201)'), 'table_requests_response_note_check', 'a 201 character response note is refused by the table');
@@ -280,7 +285,7 @@ select is(pg_temp.try($$ insert into public.table_requests (customer_id, busines
                          values (pg_temp.u(1), pg_temp.b(1), pg_temp.k(1), now() + interval '2 hours', 2, now() + interval '1 hour') $$),
   'table_requests_idem', 'the same customer and key twice is refused by the table');
 
--- ── 2. Function privileges ──────────────────────────────────────────────────
+-- -- 2. Function privileges --------------------------------------------------
 select is(
   (select coalesce(array_agg(p.proname::text order by p.proname::text), array[]::text[])
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -338,7 +343,7 @@ select throws_ok($$ select public.get_my_table_request(pg_temp.r(1)) $$, 'P0001'
 select throws_ok($$ select public.mark_arrived(pg_temp.r(3)) $$, 'P0001', 'not_signed_in', 'no user: mark_arrived is not_signed_in');
 select throws_ok($$ select public.list_my_requests() $$, 'P0001', 'not_signed_in', 'no user: list_my_requests is not_signed_in');
 
--- ── 3. One overload each; the old pickup list is kept in this PR ────────────
+-- -- 3. One overload each; the old pickup list is kept in this PR ------------
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname = 'respond_to_request'), 1, 'exactly one respond_to_request exists');
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -360,7 +365,7 @@ select ok(pg_temp.locks_first('public.cancel_table_request(uuid)'::regprocedure,
 select ok(pg_temp.locks_first('public.mark_arrived(uuid)'::regprocedure, 't\.customer_id = v_uid', 'table_requests'),
   'mark_arrived locks the row before it updates it');
 
--- ── 4. Submit: happy path, replay, refusals ─────────────────────────────────
+-- -- 4. Submit: happy path, replay, refusals ---------------------------------
 select pg_temp.as_user(22);
 insert into res select 'sub1', pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9001), now() + interval '2 hours', 4, E'  Window seat \n');
 select is((select j ->> 'status' from res where label = 'sub1'), 'pending', 'a new table request is pending');
@@ -413,6 +418,7 @@ select is(pg_temp.try_sub(pg_temp.b(1), now() + interval '30 minutes', 2), 'OK',
 select is(pg_temp.try_sub(pg_temp.b(1), now() + interval '30 days', 2), 'OK', 'a table time exactly 30 days ahead is accepted');
 select is(pg_temp.try_sub(pg_temp.b(1), now() + interval '30 days' + interval '1 second', 2), 'invalid_table_time', 'a table time one second past 30 days is refused');
 select is(pg_temp.try_sub(pg_temp.b(1), now() - interval '1 hour', 2), 'invalid_table_time', 'a table time in the past is refused');
+select is(pg_temp.try_sub(pg_temp.b(1), now() + interval '2 hours', 2, 'a'), 'OK', 'a 1 character note is accepted');
 select is(pg_temp.try_sub(pg_temp.b(1), now() + interval '2 hours', 2, repeat('a', 300)), 'OK', 'a 300 character note is accepted');
 select is(pg_temp.try_sub(pg_temp.b(1), now() + interval '2 hours', 2, repeat('a', 301)), 'invalid_text', 'a 301 character note is refused');
 select is(pg_temp.try_sub(pg_temp.b(1), now() + interval '2 hours', 2, E'line one\nline two'), 'OK', 'a note with a newline is accepted');
@@ -464,7 +470,21 @@ select pg_temp.mkp(5400 + i, 30 + (i % 6), 23, 'cancelled', interval '20 minutes
 select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9403), now() + interval '2 hours', 2) ? 'error', false,
   'ten pickup rows in an hour do not rate-limit a table request');
 
--- ── 5. Expiry ───────────────────────────────────────────────────────────────
+-- Expired pending rows stay out of the 5-total count; the other kind at the same business does not block.
+select pg_temp.as_user(30);
+select pg_temp.mk(5500 + i, 30 + i, 30, 'pending', interval '1 hour', interval '-1 minute') from generate_series(0, 4) i;
+select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9600), now() + interval '2 hours', 2) ? 'error', false,
+  'five expired pending rows do not count toward the 5-total cap');
+select pg_temp.as_user(31);
+select pg_temp.mkp(5600, 1, 31, 'pending', interval '20 minutes');
+select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9601), now() + interval '2 hours', 2) ? 'error', false,
+  'a pending pickup at a business does not block a table request to the same business');
+select pg_temp.as_user(32);
+select is(pg_temp.sub_j(pg_temp.b(10), pg_temp.k(9602), now() + interval '2 hours', 2) ? 'error', false, 'a table request to a business is accepted');
+select is((public.submit_pickup_request(pg_temp.b(10), pg_temp.k(9603), now() + interval '2 hours', null, 'soup', null) ->> 'status'), 'pending',
+  'and a pending table request at a business does not block a pickup request to the same business');
+
+-- -- 5. Expiry ---------------------------------------------------------------
 select is(private.table_request_expiry(now() + interval '1 hour', now()), now() + interval '1 hour', 'the expiry is the table time when it is within 24 hours');
 select is(private.table_request_expiry(now() + interval '3 days', now()), now() + interval '24 hours', 'the expiry is 24 hours after the request otherwise');
 select is(private.pickup_request_expiry(now() + interval '3 days', now()), now() + interval '30 minutes', 'the pickup expiry helper is unchanged: 30 minutes');
@@ -498,7 +518,7 @@ select is(pg_temp.pst(521), 'pending', 'and still leaves a pickup request with a
 select is((select accepted_address from public.pickup_requests where id = pg_temp.pr(530)), null, 'the job still clears a pickup address snapshot at 24 hours');
 select is((select accepted_address from public.pickup_requests where id = pg_temp.pr(531)), '2 Secret Rd', 'and keeps one a second short of 24 hours');
 
--- ── 6. Get and cancel ───────────────────────────────────────────────────────
+-- -- 6. Get and cancel -------------------------------------------------------
 select pg_temp.mk(400, 1, 1, 'pending',   interval '3 hours', interval '2 hours');
 select pg_temp.mk(401, 1, 1, 'pending',   interval '3 hours', interval '2 hours');
 select pg_temp.mk(402, 1, 1, 'accepted',  interval '3 hours');
@@ -528,7 +548,7 @@ select pg_temp.as_user(4);
 select is(pg_temp.cancel_t(401), 'not_found', 'the restaurant''s owner cannot cancel a customer''s request');
 select is(pg_temp.st(401), 'pending', 'and it is unchanged');
 
--- ── 7. Respond (table) ──────────────────────────────────────────────────────
+-- -- 7. Respond (table) ------------------------------------------------------
 select pg_temp.mk(n, 1, 1, 'pending', interval '3 hours', interval '2 hours') from generate_series(100, 140) n;
 select pg_temp.mk(150, 10, 1, 'pending', interval '3 hours', interval '2 hours');   -- another restaurant's
 select pg_temp.mk(151, 1, 1, 'pending', interval '1 hour', interval '-1 minute');   -- pending past expiry
@@ -554,6 +574,8 @@ select is(pg_temp.resp(110, 'declined', 'sold_out'), 'invalid_input', 'a pickup 
 select is(pg_temp.resp(110, 'declined', 'cannot_prepare'), 'invalid_input', 'a pickup reason (cannot_prepare) with table is invalid_input');
 select is(pg_temp.resp(110, 'declined', ' too_busy'), 'invalid_input', 'a reason with a leading space is not trimmed into a match');
 select is(pg_temp.resp(110, 'declined', 'TOO_BUSY'), 'invalid_input', 'a reason in capitals is not folded into a match');
+select is(pg_temp.resp(110, 'declined', chr(160) || chr(12288)), 'decline_reason_required', 'a reason of only no-break and ideographic spaces is decline_reason_required');
+select is(pg_temp.resp(110, 'declined', 'other', chr(160) || chr(12288)), 'decline_reason_required', 'other with a note of only no-break and ideographic spaces is decline_reason_required');
 select is(pg_temp.resp(110, 'declined', 'other'), 'decline_reason_required', 'other without text is decline_reason_required');
 select is(pg_temp.resp(110, 'declined', 'other', '   '), 'decline_reason_required', 'other with a blank note is decline_reason_required');
 select is(pg_temp.resp(110, 'declined', 'too_busy', 'a note'), 'invalid_input', 'a fixed reason with a note is invalid_input');
@@ -570,6 +592,10 @@ select is_empty(
   'every hidden-character class is refused in an accept note');
 select ok(pg_temp.untouched(110), 'and the request stayed pending after every refusal');
 select is(pg_temp.resp(111, 'accepted', null, repeat('a', 200)), 'OK', 'a 200 character accept note is accepted');
+select is(pg_temp.resp(113, 'accepted', null, chr(160) || 'x' || chr(12288)), 'OK', 'an accept note padded with no-break and ideographic spaces is accepted');
+select is(pg_temp.sig(113), 'accepted|-|x|true', 'and it is stored trimmed of those spaces');
+select is(pg_temp.resp(114, 'accepted', null, 'a'), 'OK', 'a 1 character accept note is accepted');
+select is(pg_temp.sig(114), 'accepted|-|a|true', 'and it is stored');
 select is(pg_temp.resp(100, 'declined', 'too_busy'), 'invalid_transition', 'a second answer is invalid_transition');
 select is(pg_temp.sig(100), 'accepted|-|-|true', 'and the first answer stands');
 select is(pg_temp.resp(151, 'accepted'), 'invalid_transition', 'answering a pending request past its expiry is invalid_transition');
@@ -609,7 +635,7 @@ select pg_temp.as_user(1);
 select is(pg_temp.cancel_t(131), 'invalid_transition', 'race: the customer then loses');
 select is(array[pg_temp.st(130), pg_temp.st(131)], array['cancelled', 'accepted'], 'race: each first move stands');
 
--- ── 8. Completed and no-show ────────────────────────────────────────────────
+-- -- 8. Completed and no-show ------------------------------------------------
 select pg_temp.mk(200, 1, 1, 'accepted', interval '-1 hour');
 select pg_temp.mk(201, 1, 1, 'accepted', interval '0 seconds');
 select pg_temp.mk(202, 1, 1, 'accepted', interval '1 second', interval '1 second');
@@ -638,7 +664,7 @@ select pg_temp.as_user(1);
 select is(pg_temp.outc(205, 'completed'), 'not_found', 'the customer cannot mark the outcome');
 select is(pg_temp.st(205), 'accepted', 'and it is unchanged');
 
--- ── 9. mark_arrived ─────────────────────────────────────────────────────────
+-- -- 9. mark_arrived ---------------------------------------------------------
 -- now() is frozen, so the window edges are exact. Customer 1 owns these accepted rows.
 select pg_temp.mk(300, 1, 1, 'accepted', interval '2 hours');                      -- exactly 2 h before: allowed
 select pg_temp.mk(301, 1, 1, 'accepted', interval '2 hours 1 second');             -- 2 h + 1 s before: too early
@@ -688,7 +714,7 @@ select is((pg_temp.get_biz(pg_temp.r(310)) -> 'request' ->> 'arrived_at')::times
 select is(pg_temp.get_biz(pg_temp.r(309)) -> 'request' ->> 'arrived_at', null, 'and shows null for a request that has not arrived');
 select is(pg_temp.outc(300, 'completed'), 'invalid_transition', 'a table time two hours away cannot be completed yet, even after arrival');
 
--- ── 10. Lists ───────────────────────────────────────────────────────────────
+-- -- 10. Lists ---------------------------------------------------------------
 -- A mixed list for customer 33, newest first.
 select pg_temp.mkp(701, 1, 33, 'pending', interval '20 minutes', now() - interval '1 minute');
 select pg_temp.mk(702, 1, 33, 'pending', interval '3 hours', interval '2 hours', now() - interval '2 minutes');
@@ -714,20 +740,20 @@ select pg_temp.as_user(33);
 select is((select array_agg(x ->> 'kind') from jsonb_array_elements(public.list_my_pickup_requests() -> 'requests') x), array['pickup', 'pickup'],
   'list_my_pickup_requests still works and lists only pickup rows, with kind');
 
--- Paging: customer 28 / business 14 holds 123 rows (120 share one created_at, kinds mixed); customer 29 / business 15 holds 100.
+-- Paging: customer 28 / business 14 holds 123 rows (120 share one created_at, kinds alternating by id); customer 29 / business 15 holds 100.
 insert into public.pickup_requests (id, business_id, customer_id, status, pickup_at, order_text, idempotency_key, expires_at, created_at)
-select pg_temp.pr(1000 + n), pg_temp.b(14), pg_temp.u(28), 'cancelled', now() + interval '1 day', 'paging', pg_temp.k(1000 + n), now() + interval '1 hour',
+select pg_temp.sid(1000 + n), pg_temp.b(14), pg_temp.u(28), 'cancelled', now() + interval '1 day', 'paging', pg_temp.k(1000 + n), now() + interval '1 hour',
        case when n <= 120 then now() - interval '1 hour' else now() - (n - 120) * interval '1 minute' end
   from generate_series(1, 123) n where n % 2 = 1;
 insert into public.table_requests (id, business_id, customer_id, status, table_at, party_size, expires_at, idempotency_key, created_at)
-select pg_temp.r(1000 + n), pg_temp.b(14), pg_temp.u(28), 'cancelled', now() + interval '1 day', 2, now() + interval '1 hour', pg_temp.k(1000 + n),
+select pg_temp.sid(1000 + n), pg_temp.b(14), pg_temp.u(28), 'cancelled', now() + interval '1 day', 2, now() + interval '1 hour', pg_temp.k(1000 + n),
        case when n <= 120 then now() - interval '1 hour' else now() - (n - 120) * interval '1 minute' end
   from generate_series(1, 123) n where n % 2 = 0;
 insert into public.pickup_requests (id, business_id, customer_id, status, pickup_at, order_text, idempotency_key, expires_at, created_at)
-select pg_temp.pr(2000 + n), pg_temp.b(15), pg_temp.u(29), 'cancelled', now() + interval '1 day', 'paging', pg_temp.k(2000 + n), now() + interval '1 hour', now() - interval '2 hours'
+select pg_temp.sid(2000 + n), pg_temp.b(15), pg_temp.u(29), 'cancelled', now() + interval '1 day', 'paging', pg_temp.k(2000 + n), now() + interval '1 hour', now() - interval '2 hours'
   from generate_series(1, 100) n where n % 2 = 1;
 insert into public.table_requests (id, business_id, customer_id, status, table_at, party_size, expires_at, idempotency_key, created_at)
-select pg_temp.r(2000 + n), pg_temp.b(15), pg_temp.u(29), 'cancelled', now() + interval '1 day', 2, now() + interval '1 hour', pg_temp.k(2000 + n), now() - interval '2 hours'
+select pg_temp.sid(2000 + n), pg_temp.b(15), pg_temp.u(29), 'cancelled', now() + interval '1 day', 2, now() + interval '1 hour', pg_temp.k(2000 + n), now() - interval '2 hours'
   from generate_series(1, 100) n where n % 2 = 0;
 
 create function pg_temp.expected_ids(p_cust uuid) returns text[] language sql as $$
@@ -759,6 +785,12 @@ select is((select j ->> 'next_cursor' from res where label = 'my_first'),
     order by created_at desc, id desc offset 49 limit 1),
   'the first cursor is the 50th row''s own created_at and id');
 select is(jsonb_array_length((select j -> 'requests' from res where label = 'my_first')), 50, 'a page holds 50 rows');
+select ok((select bool_and(q.kind is distinct from q.prev)
+             from (select x ->> 'kind' as kind, lag(x ->> 'kind') over (order by ord) as prev
+                     from jsonb_array_elements(pg_temp.my_list((select j ->> 'next_cursor' from res where label = 'my_first')) -> 'requests')
+                          with ordinality t(x, ord)) q
+            where q.prev is not null),
+  'the tied rows alternate between pickup and table, so the page edges at 50 and 100 cross a kind change');
 select pg_temp.as_user(29);
 insert into res select 'w_my100', pg_temp.walk('my');
 select is((select j -> 'sizes' from res where label = 'w_my100'), '[50, 50]'::jsonb, 'Sent, exactly 100 rows: two pages of 50');
@@ -829,7 +861,7 @@ select is(jsonb_typeof(pg_temp.get_biz(pg_temp.r(999999)) -> 'request'), 'null',
 select pg_temp.as_user(1);
 select is(jsonb_typeof(pg_temp.get_biz(pg_temp.r(600)) -> 'request'), 'null', 'the customer gets request null through the seller function');
 
--- ── 11. Request objects: key sets and forbidden keys ────────────────────────
+-- -- 11. Request objects: key sets and forbidden keys ------------------------
 select pg_temp.as_user(26);
 insert into res select 'k_t_submit', pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9500), now() + interval '2 hours', 3, 'note');
 insert into res select 'k_t_get', pg_temp.get_my((select (j ->> 'id')::uuid from res where label = 'k_t_submit')) -> 'request';
@@ -884,7 +916,7 @@ select is_empty(
   'and the seller view never contains the customer''s id');
 select is(pg_temp.keys((select j from res where label = 'k_s_listkeys')), array['next_cursor', 'requests', 'server_now'], 'the seller list answer has exactly requests, next_cursor and server_now');
 
--- ── 12. Outsiders see and change nothing ────────────────────────────────────
+-- -- 12. Outsiders see and change nothing ------------------------------------
 select pg_temp.mk(900, 1, 1, 'accepted', interval '1 hour');
 select pg_temp.mk(901, 1, 1, 'pending', interval '3 hours', interval '2 hours');
 select pg_temp.as_user(2);

@@ -341,7 +341,7 @@ declare
   v_note   text;
   v_codes  text[];
   c_ctrl   constant text := '[\x00-\x09\x0B-\x1F\u007F-\u009F\u200B-\u200D\u202A-\u202E\u2066-\u2069\uFEFF]';
-  c_edge   constant text := '^[ \n ᅟᅠ  -     　ㅤﾠ]+|[ \n ᅟᅠ  -     　ㅤﾠ]+$';
+  c_edge   constant text := '^[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+|[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+$';
 begin
   if v_uid is null then raise exception 'not_signed_in'; end if;
   if p_kind is null or p_kind not in ('pickup', 'table') then raise exception 'invalid_input'; end if;

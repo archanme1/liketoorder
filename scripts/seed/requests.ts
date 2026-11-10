@@ -14,6 +14,11 @@
  *   seed_cook_1 (seed-homemade-1@example.com): pending, accepted with a passed pickup time, and
  *   answered requests, from three customers. Add `--inbox-extra` (or `--inbox-extra N`, default
  *   60) to give seed_rest_001 that many older requests, to scroll its inbox past 50.
+ * - Also seeds TABLE requests (spec 11) to the two restaurants that accept them (seed_rest_001 and
+ *   seed_rest_004): every status, a decline for each of the five table reasons, and for "I've
+ *   arrived" one accepted request inside the window (table in 20 minutes), one too early (in 3
+ *   days), one too late (5 hours ago) and one already arrived. Their times are relative to when you
+ *   run this, so RE-RUN IT right before trying "I've arrived".
  * - Also seeds answered requests (spec 10b): a decline for each reason, accepted requests with a
  *   note, and seed_rest_001 (seed-restaurant-001@example.com) as a CUSTOMER with sent requests, so
  *   its Requests tab shows both Received and Sent. Those sent requests belong to a seller account the
@@ -46,6 +51,7 @@ import {
   type PlannedRequest,
 } from './requestsData';
 import { assertLocalUrl, assertSeedOwner, isSeedEmail } from './safety';
+import { planTableRequests, type PlannedTableRequest } from './tableRequestsData';
 
 type Db = SupabaseClient<Database>;
 type Target = {
@@ -157,6 +163,66 @@ async function findBusiness(db: Db, plan: PlannedRequest) {
   return business.data;
 }
 
+/** The business of an accepting restaurant's owner, by the owner's profile username. */
+async function findRestaurant(db: Db, ownerUsername: string) {
+  const owner = await db.from('profiles').select('id').eq('username', ownerUsername).maybeSingle();
+  fail(owner.error, `find ${ownerUsername}`);
+  if (!owner.data) {
+    throw new Error(`No demo account "${ownerUsername}". Run scripts/seed/restaurants.ts first.`);
+  }
+  const business = await db
+    .from('businesses')
+    .select('id, name, accepts_table_requests')
+    .eq('owner_id', owner.data.id)
+    .eq('type', 'restaurant')
+    .maybeSingle();
+  fail(business.error, `find the restaurant of ${ownerUsername}`);
+  if (!business.data) throw new Error(`"${ownerUsername}" has no restaurant.`);
+  if (!business.data.accepts_table_requests) {
+    throw new Error(
+      `"${business.data.name}" does not accept table requests; re-run restaurants.ts.`,
+    );
+  }
+  return business.data;
+}
+
+/** Inserts the planned table requests (directly: they follow the table checks themselves). */
+async function seedTableRequests(
+  db: Db,
+  plans: readonly PlannedTableRequest[],
+  customerIds: Record<CustomerKey, string>,
+): Promise<void> {
+  const businesses = new Map<string, { id: string; name: string }>();
+  const rows: Database['public']['Tables']['table_requests']['Insert'][] = [];
+  for (const plan of plans) {
+    let business = businesses.get(plan.ownerUsername);
+    if (!business) {
+      business = await findRestaurant(db, plan.ownerUsername);
+      businesses.set(plan.ownerUsername, business);
+    }
+    rows.push({
+      business_id: business.id,
+      customer_id: customerIds[plan.customer],
+      idempotency_key: randomUUID(),
+      status: plan.status,
+      table_at: plan.tableAt.toISOString(),
+      party_size: plan.partySize,
+      note: plan.note,
+      decline_reason: plan.declineReason,
+      response_note: plan.responseNote,
+      expires_at: plan.expiresAt.toISOString(),
+      responded_at: plan.respondedAt ? plan.respondedAt.toISOString() : null,
+      arrived_at: plan.arrivedAt ? plan.arrivedAt.toISOString() : null,
+      created_at: plan.createdAt.toISOString(),
+    });
+    console.log(`  ${plan.status.padEnd(9)} ${business.name} (table: ${plan.purpose})`);
+  }
+  for (let from = 0; from < rows.length; from += 50) {
+    const inserted = await db.from('table_requests').insert(rows.slice(from, from + 50));
+    fail(inserted.error, `table requests ${from + 1} to ${Math.min(from + 50, rows.length)}`);
+  }
+}
+
 async function main() {
   const url = assertLocalUrl(process.env.SEED_SUPABASE_URL ?? 'http://127.0.0.1:54321');
   const key = process.env.SEED_SERVICE_ROLE_KEY;
@@ -169,7 +235,7 @@ async function main() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  console.log(`Seeding pickup requests at ${url}`);
+  console.log(`Seeding pickup and table requests at ${url}`);
   await removeCustomers(db);
   const customerIds = await createCustomers(db);
 
@@ -245,6 +311,7 @@ async function main() {
       const inserted = await db.from('pickup_requests').insert(rows.slice(from, from + 50));
       fail(inserted.error, `requests ${from + 1} to ${Math.min(from + 50, rows.length)}`);
     }
+    await seedTableRequests(db, planTableRequests(now), customerIds);
   } catch (error) {
     console.error('Seeding failed; removing the demo customers so a re-run starts clean.');
     await removeCustomers(db).catch(() => undefined);
@@ -259,6 +326,9 @@ async function main() {
       '.',
   );
   console.log(`Customers: ${SEED_CUSTOMERS.map((c) => c.email).join(', ')}`);
+  console.log(
+    `Table requests: ${planTableRequests(now).length}, to seed-restaurant-001@example.com and seed-restaurant-004@example.com (the restaurants that accept tables). Re-run this seed right before trying "I've arrived".`,
+  );
   console.log('Seller inbox: seed-restaurant-001@example.com and seed-homemade-1@example.com.');
   console.log(
     'Both switches: seed-restaurant-001@example.com has Received (inbox) and Sent (as a customer).',

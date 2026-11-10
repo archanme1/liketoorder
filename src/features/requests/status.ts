@@ -27,7 +27,7 @@ export const STATUS_INFO: Record<RequestStatus, StatusInfo> = {
 export function statusSentence(
   status: RequestStatus,
   sellerName: string,
-  kind: RequestKind = 'pickup',
+  kind: RequestKind,
 ): string {
   switch (status) {
     case 'pending':

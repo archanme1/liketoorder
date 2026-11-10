@@ -37,7 +37,7 @@ export type SellerAction = 'accepted' | 'declined' | 'completed' | 'no_show';
 export function confirmCopy(
   action: SellerAction,
   homemade: boolean,
-  kind: RequestKind = 'pickup',
+  kind: RequestKind,
 ): { title: string; body: string } {
   switch (action) {
     case 'accepted':
@@ -82,7 +82,7 @@ const STATUS_SENTENCE: Record<RequestStatus, string> = {
 };
 
 /** The sentence under a status for the seller. */
-export function sellerStatusSentence(status: RequestStatus, kind: RequestKind = 'pickup'): string {
+export function sellerStatusSentence(status: RequestStatus, kind: RequestKind): string {
   if (kind === 'table' && status === 'completed') return 'Table visit completed';
   if (kind === 'table' && status === 'no_show') return 'Marked as not arrived';
   return STATUS_SENTENCE[status];

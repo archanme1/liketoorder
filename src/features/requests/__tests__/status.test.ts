@@ -12,14 +12,14 @@ describe('status wording', () => {
   });
 
   it('never reads as confirmed while pending', () => {
-    const pending = [STATUS_INFO.pending.label, statusSentence('pending', "Joe's")].join(' ');
+    const pending = [STATUS_INFO.pending.label, statusSentence('pending', "Joe's", 'pickup')].join(' ');
     expect(pending).toBe("Waiting Waiting for Joe's to respond");
     expect(pending).not.toMatch(/confirm|book|on its way|accepted/i);
   });
 
   it('has a sentence for every status', () => {
     for (const status of REQUEST_STATUSES) {
-      expect(statusSentence(status, 'Joe')).toBeTruthy();
+      expect(statusSentence(status, 'Joe', 'pickup')).toBeTruthy();
     }
   });
 });

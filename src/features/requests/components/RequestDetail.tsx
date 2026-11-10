@@ -80,7 +80,7 @@ function PickupRequestDetail({
           {request.business_name}
         </Text>
         <RequestStatusChip status={status} />
-        <Text variant="bodyLg">{statusSentence(status, request.business_name)}</Text>
+        <Text variant="bodyLg">{statusSentence(status, request.business_name, 'pickup')}</Text>
         <AnswerLines request={request} variant="bodyLg" />
         {status === 'pending' ? (
           <Text color="textMuted">

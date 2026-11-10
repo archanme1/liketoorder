@@ -144,6 +144,16 @@ describe('a table request: the detail', () => {
     expect(screen.queryByRole('button', { name: 'Cancel request' })).not.toBeOnTheScreen();
   });
 
+  it.each([
+    ['completed', 'Table visit completed'],
+    ['no_show', 'Marked as not arrived'],
+  ] as const)('%s reads in table words, never as a pickup', async (status, sentence) => {
+    serve(makeTableRequest({ status, display_status: status }));
+    await renderScreen();
+    expect(await screen.findByText(sentence)).toBeOnTheScreen();
+    expect(dump()).not.toMatch(/pickup|picked up/i);
+  });
+
   it('not found: one calm message', async () => {
     serve(null);
     await renderScreen();

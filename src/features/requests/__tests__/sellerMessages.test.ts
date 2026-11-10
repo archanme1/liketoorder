@@ -30,18 +30,18 @@ const CODES: RequestErrorCode[] = [
 
 describe('sellerStatusSentence', () => {
   it('has a sentence for every status', () => {
-    for (const status of REQUEST_STATUSES) expect(sellerStatusSentence(status)).toBeTruthy();
+    for (const status of REQUEST_STATUSES) expect(sellerStatusSentence(status, 'pickup')).toBeTruthy();
   });
 
   it.each(['pending', 'declined', 'expired', 'cancelled'] as const)(
     'never reads %s as accepted, confirmed or booked',
     (status) => {
-      expect(sellerStatusSentence(status)).not.toMatch(/accepted|confirm|book/i);
+      expect(sellerStatusSentence(status, 'pickup')).not.toMatch(/accepted|confirm|book/i);
     },
   );
 
   it('pending is waiting for the seller, not for the customer', () => {
-    expect(sellerStatusSentence('pending')).toBe('Waiting for your answer');
+    expect(sellerStatusSentence('pending', 'pickup')).toBe('Waiting for your answer');
   });
 });
 

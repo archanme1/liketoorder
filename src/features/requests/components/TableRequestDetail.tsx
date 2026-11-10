@@ -49,7 +49,7 @@ export function TableRequestDetail({
           {request.business_name}
         </Text>
         <RequestStatusChip status={status} />
-        <Text variant="bodyLg">{statusSentence(status, request.business_name)}</Text>
+        <Text variant="bodyLg">{statusSentence(status, request.business_name, request.kind)}</Text>
         <AnswerLines request={request} variant="bodyLg" />
         {status === 'pending' ? (
           <Text color="textMuted">

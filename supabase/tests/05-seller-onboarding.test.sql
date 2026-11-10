@@ -1,7 +1,7 @@
 -- Spec 05: seller onboarding — businesses, business_locations, places_rate_limits,
 -- column grants, function privileges, homemade approximate location and Places quota.
 begin;
-select plan(197);
+select plan(198);
 
 -- ── Fixtures (as postgres) ──────────────────────────────────────────────────
 -- 0501 A  restaurant, listed, with location (the public one)
@@ -173,13 +173,14 @@ select is(
     where n.nspname = 'public'
       and has_function_privilege('authenticated', p.oid, 'execute')
       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')),
-  array['begin_photo_upload', 'cancel_pickup_request', 'claim_photo_cleanup', 'count_waiting_requests', 'create_menu_item',
-        'create_my_business', 'delete_business_photo', 'delete_menu_item', 'finish_photo_upload',
+  array['begin_photo_upload', 'cancel_pickup_request', 'cancel_table_request', 'claim_photo_cleanup', 'count_waiting_requests',
+        'create_menu_item', 'create_my_business', 'delete_business_photo', 'delete_menu_item', 'finish_photo_upload',
         'get_business_request', 'get_homemade_details', 'get_my_business', 'get_my_pickup_address', 'get_my_pickup_request',
-        'get_restaurant_details', 'list_business_requests', 'list_my_pickup_requests', 'map_homemade_in_bounds',
-        'map_restaurants_in_bounds', 'mark_request_outcome', 'move_menu_item', 'respond_to_request',
-        'set_menu_currency', 'set_seller_mode', 'submit_pickup_request', 'update_menu_item'],
-  'only the allowlisted public functions (specs 05 to 10b) are executable by authenticated'
+        'get_my_table_request', 'get_restaurant_details', 'list_business_requests', 'list_my_pickup_requests', 'list_my_requests',
+        'map_homemade_in_bounds', 'map_restaurants_in_bounds', 'mark_arrived', 'mark_request_outcome', 'move_menu_item',
+        'respond_to_request', 'set_menu_currency', 'set_seller_mode', 'submit_pickup_request', 'submit_table_request',
+        'update_menu_item'],
+  'only the allowlisted public functions (specs 05 to 11) are executable by authenticated'
 );
 select is(
   (select coalesce(array_agg(distinct p.proname::text order by p.proname::text), array[]::text[])
@@ -196,6 +197,11 @@ select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'respond_to_request'),
   1, 'exactly one respond_to_request exists (the old two-argument form is gone)');
+-- Spec 11: the same for mark_request_outcome (its two-argument form is gone).
+select is(
+  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'mark_request_outcome'),
+  1, 'exactly one mark_request_outcome exists (the old two-argument form is gone)');
 
 -- Spec 06: RLS helpers live in `private`, which PostgREST does not expose.
 select is(
@@ -204,8 +210,9 @@ select is(
     where n.nspname = 'private'),
   array['business_is_public', 'caller_ip', 'cleanup_map_rate_limits', 'cleanup_places_refresh_quota', 'consume_map_quota',
         'expire_pickup_requests', 'homemade_is_fresh', 'invoke_places_refresh', 'owns_business', 'photo_is_live', 'photo_is_public',
-        'photo_upload_allowed', 'pickup_request_expiry', 'pickup_request_json', 'restaurant_is_fresh'],
-  'the private schema holds exactly the five RLS helpers, the six spec 07 map helpers, the spec 08 homemade_is_fresh, the two spec 09 pickup helpers and the spec 10 request-object builder'
+        'photo_upload_allowed', 'pickup_request_expiry', 'pickup_request_json', 'restaurant_is_fresh', 'table_request_expiry',
+        'table_request_json'],
+  'the private schema holds exactly the five RLS helpers, the six spec 07 map helpers, the spec 08 homemade_is_fresh, the two spec 09 pickup helpers, the spec 10 request-object builder and the two spec 11 table helpers'
 );
 select is_empty(
   $$ select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace

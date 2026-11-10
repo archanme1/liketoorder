@@ -251,6 +251,32 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"table_requests": {
+                  Row: {
+                    "arrived_at": string | null,"business_id": string,"created_at": string,"customer_id": string,"decline_reason": string | null,"expires_at": string,"id": string,"idempotency_key": string,"note": string | null,"party_size": number,"responded_at": string | null,"response_note": string | null,"status": string,"table_at": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "arrived_at"?: string | null,"business_id": string,"created_at"?: string,"customer_id": string,"decline_reason"?: string | null,"expires_at": string,"id"?: string,"idempotency_key": string,"note"?: string | null,"party_size": number,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"table_at": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "arrived_at"?: string | null,"business_id"?: string,"created_at"?: string,"customer_id"?: string,"decline_reason"?: string | null,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"note"?: string | null,"party_size"?: number,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"table_at"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "table_requests_business_id_fkey"
+      columns: ["business_id"]
+isOneToOne: false
+      referencedRelation: "businesses"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "table_requests_customer_id_fkey"
+      columns: ["customer_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {
@@ -267,6 +293,9 @@ isOneToOne: false
 { Args: { "p_owner_id": string }; Returns: Json
                            },
 "cancel_pickup_request":
+{ Args: { "p_request_id": string }; Returns: Json
+                           },
+"cancel_table_request":
 { Args: { "p_request_id": string }; Returns: Json
                            },
 "claim_photo_cleanup":
@@ -313,6 +342,9 @@ isOneToOne: false
 "get_my_pickup_request":
 { Args: { "p_request_id": string }; Returns: Json
                            },
+"get_my_table_request":
+{ Args: { "p_request_id": string }; Returns: Json
+                           },
 "get_restaurant_details":
 { Args: { "p_business_id": string }; Returns: Json
                            },
@@ -322,20 +354,26 @@ isOneToOne: false
 "list_my_pickup_requests":
 { Args: { "p_before"?: string }; Returns: Json
                            },
+"list_my_requests":
+{ Args: { "p_before"?: string }; Returns: Json
+                           },
 "map_homemade_in_bounds":
 { Args: { "p_max_lat": number,"p_max_lng": number,"p_min_lat": number,"p_min_lng": number }; Returns: Json
                            },
 "map_restaurants_in_bounds":
 { Args: { "p_max_lat": number,"p_max_lng": number,"p_min_lat": number,"p_min_lng": number }; Returns: Json
                            },
+"mark_arrived":
+{ Args: { "p_request_id": string }; Returns: Json
+                           },
 "mark_request_outcome":
-{ Args: { "p_outcome": string,"p_request_id": string }; Returns: Json
+{ Args: { "p_kind"?: string,"p_outcome": string,"p_request_id": string }; Returns: Json
                            },
 "move_menu_item":
 { Args: { "p_direction": string,"p_item_id": string }; Returns: undefined
                            },
 "respond_to_request":
-{ Args: { "p_decision": string,"p_decline_reason"?: string,"p_note"?: string,"p_request_id": string }; Returns: Json
+{ Args: { "p_decision": string,"p_decline_reason"?: string,"p_kind"?: string,"p_note"?: string,"p_request_id": string }; Returns: Json
                            },
 "set_business_location":
 { Args: { "p_formatted_address": string,"p_lat": number,"p_lng": number,"p_owner_id": string,"p_place_id": string }; Returns: Json
@@ -348,6 +386,9 @@ isOneToOne: false
                            },
 "submit_pickup_request":
 { Args: { "p_business_id": string,"p_idempotency_key": string,"p_items"?: Json,"p_note"?: string,"p_order_text"?: string,"p_pickup_at": string }; Returns: Json
+                           },
+"submit_table_request":
+{ Args: { "p_business_id": string,"p_idempotency_key": string,"p_note"?: string,"p_party_size": number,"p_table_at": string }; Returns: Json
                            },
 "update_menu_item":
 { Args: { "p_description": string,"p_is_available": boolean,"p_item_id": string,"p_name": string,"p_price_minor": number }; Returns: undefined

@@ -319,19 +319,19 @@ select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.
             where n.nspname = 'public' and p.proname = 'respond_to_request'),
   1, 'exactly one respond_to_request exists');
 select ok(to_regprocedure('public.respond_to_request(uuid, text)') is null, 'the old two-argument respond_to_request is gone');
-select ok(to_regprocedure('public.respond_to_request(uuid, text, text, text)') is not null, 'the four-argument respond_to_request exists');
-select is((select pronargdefaults::int from pg_proc where oid = 'public.respond_to_request(uuid, text, text, text)'::regprocedure),
-  2, 'the reason and the note both default to null');
+select ok(to_regprocedure('public.respond_to_request(uuid, text, text, text, text)') is not null, 'the four-argument respond_to_request exists');
+select is((select pronargdefaults::int from pg_proc where oid = 'public.respond_to_request(uuid, text, text, text, text)'::regprocedure),
+  3, 'the reason and the note both default to null');
 select ok((select prosecdef and proconfig = array['search_path=""'] from pg_proc
-            where oid = 'public.respond_to_request(uuid, text, text, text)'::regprocedure),
+            where oid = 'public.respond_to_request(uuid, text, text, text, text)'::regprocedure),
   'respond_to_request is security definer with an empty search_path');
-select ok(has_function_privilege('authenticated', 'public.respond_to_request(uuid, text, text, text)', 'execute'),
+select ok(has_function_privilege('authenticated', 'public.respond_to_request(uuid, text, text, text, text)', 'execute'),
   'authenticated can execute respond_to_request');
-select ok(not has_function_privilege('anon', 'public.respond_to_request(uuid, text, text, text)', 'execute')
+select ok(not has_function_privilege('anon', 'public.respond_to_request(uuid, text, text, text, text)', 'execute')
       and not exists (select 1 from pg_proc p, aclexplode(p.proacl) a
-                       where p.oid = 'public.respond_to_request(uuid, text, text, text)'::regprocedure and a.grantee = 0),
+                       where p.oid = 'public.respond_to_request(uuid, text, text, text, text)'::regprocedure and a.grantee = 0),
   'anon and PUBLIC cannot execute respond_to_request');
-select ok(pg_temp.locks_first('public.respond_to_request(uuid, text, text, text)'::regprocedure, 'r\.business_id = v_b\.id'),
+select ok(pg_temp.locks_first('public.respond_to_request(uuid, text, text, text, text)'::regprocedure, 'r\.business_id = v_b\.id'),
   'respond_to_request still locks the row before it updates');
 select ok(not has_function_privilege('anon', 'private.pickup_request_json(uuid, timestamptz, boolean)', 'execute')
       and not has_function_privilege('authenticated', 'private.pickup_request_json(uuid, timestamptz, boolean)', 'execute')
@@ -424,14 +424,14 @@ insert into res select 's_answered', pg_temp.get_ju(pg_temp.r(6));
 reset role;
 select is(pg_temp.keys((select j from res where label = 'c_submit')),
   array['business_id', 'business_name', 'business_type', 'created_at', 'currency_code', 'decline_reason', 'display_status',
-        'expires_at', 'id', 'items', 'note', 'order_text', 'pickup_at', 'response_note', 'status'],
+        'expires_at', 'id', 'items', 'kind', 'note', 'order_text', 'pickup_at', 'response_note', 'status'],
   'submit returns exactly the 15 customer keys');
 select is(pg_temp.keys((select j from res where label = 'c_get')), pg_temp.keys((select j from res where label = 'c_submit')), 'the customer get has the same 15 keys');
 select is(pg_temp.keys((select j from res where label = 'c_list')), pg_temp.keys((select j from res where label = 'c_submit')), 'the customer list rows have the same 15 keys');
 select is(pg_temp.keys((select j from res where label = 'c_cancel')), pg_temp.keys((select j from res where label = 'c_submit')), 'cancel returns the same 15 keys');
 select is(pg_temp.keys((select j from res where label = 's_get')),
   array['business_id', 'business_name', 'business_type', 'created_at', 'currency_code', 'customer_name', 'decline_reason', 'display_status',
-        'expires_at', 'id', 'items', 'note', 'order_text', 'pickup_at', 'responded_at', 'response_note', 'status'],
+        'expires_at', 'id', 'items', 'kind', 'note', 'order_text', 'pickup_at', 'responded_at', 'response_note', 'status'],
   'the seller get returns the 15 customer keys plus customer_name and responded_at');
 select is(pg_temp.keys((select j from res where label = 's_list')), pg_temp.keys((select j from res where label = 's_get')), 'the seller list rows have the same 17 keys');
 select is(pg_temp.keys((select j from res where label = 'dec6')), pg_temp.keys((select j from res where label = 's_get')), 'respond_to_request returns the same 17 keys');

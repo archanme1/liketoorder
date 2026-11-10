@@ -1,6 +1,6 @@
 # Spec 11: Table Requests
 
-**Branch:** `feature/table-requests` (two PRs from this one spec, same pattern as specs 06 to 10b)
+**Branch:** `feature/table-requests-backend` (PR 1, merged) and `feature/table-requests-app` (PR 2) (two PRs from this one spec, same pattern as specs 06 to 10b)
 - PR 1 (backend only: migration, pgTAP, types): `feature/table-requests` (renamed to `feature/table-requests-backend` before its first push)
 - PR 2 (the app: shared paged hook, Request table, Requests tab integration, I've arrived, jest tests): `feature/table-requests-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §3 (out of scope), §4 (Navigation), §8 (Pickup requests, for the shared rules), §9 (Table requests), §12 (notifications, for what is NOT built here), §14 row 11, §16 (paged-list copy, seller inbox keyset cursor, request row kind label, function privileges, lists rule)
@@ -209,7 +209,7 @@ Feature-specific:
 - **Stale lists.** Submit, cancel, answer, outcome and arrived invalidate both lists, the detail, the waiting count and the badge; error paths refetch.
 - **Never show a pending request as confirmed**, including row labels, badge wording and screen-reader strings.
 - **Time.** Stored UTC, shown in the phone's zone with explicit-zone tests; status words come from `display_status`.
-- **No third copy of the paging code;** `usePagedRequests` is extracted first with the existing paging tests green and unedited.
+- **No third copy of the paging code;** `usePagedRequests` is extracted first with the existing paging tests green and unedited (seller pair); the customer pair is edited afterwards only for the cursor change.
 - **Keyboard and large text.** The form and dialogs use `KeyboardAvoidingView` / scroll into view; titles capped (`maxFontSizeMultiplier` 1.6), body text wraps, no fixed heights.
 - **Privacy.** Notes are plain text, never logged, not put into notification text before spec 12 reviews it. No location is read or sent for arrival.
 - **Faithful fakes.** Use the existing `jest.setup` fakes, `pagedServer` fixtures and the official AsyncStorage mock; own `QueryClient` per test file (`retry: false`, `gcTime: 0`), cleared in `afterEach`; every RNTL v14 call awaited.
@@ -264,7 +264,7 @@ Reused from specs 09, 10, 10b and the "Lessons from spec 07".
 - [ ] The seller can accept (optional note), decline (table reason picker, Other needs text), and mark Completed / No-show after the table time, with confirm steps and double-tap protection (jest).
 - [ ] I've arrived: the button shows only on an accepted request inside the window by `server_now`, sends once, then reads as done; the seller sees "Customer has arrived"; a skewed phone clock does not change when it shows (jest).
 - [ ] Badges and customer updates work for table rows: owner total = waiting (both kinds) + customer updates; first sight is a baseline; own cancel raises nothing; a seller's answer or an expiry does (jest with the AsyncStorage mock).
-- [ ] There is one shared paged hook; `useMyRequests` and `useBusinessRequests` are thin wrappers; no third copy (review of the diff); the existing paging tests pass unedited.
+- [ ] There is one shared paged hook; `useMyRequests` and `useBusinessRequests` are thin wrappers; no third copy (review of the diff); the seller paging tests (`useBusinessRequestsPages`, `SellerRequestsScreen`) pass unedited; the customer paging tests (`MyRequestsPagination`, `useMyRequestsPages`) are edited only for the cursor change, keep their titles and intent, and the "exactly 50" case asserts no extra read because `next_cursor` is null.
 - [ ] Specs 07 to 10b tests pass unedited except the approved forced edits; `git diff --stat` on test files matches the list under "Files to change".
 - [ ] Every touchable has a label and role, targets ≥ 44 pt, status always a word (jest + iOS Simulator).
 - [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` pass; `src/types/database.ts` is regenerated, not hand-edited.

@@ -5,7 +5,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { dump } from '../__fixtures__/dump';
 import { makeRequest, REQUEST_ID } from '../__fixtures__/requests';
 import { makeTableRequest, TABLE_REQUEST_ID } from '../__fixtures__/tableRequests';
-import { cancelTableRequest, getMyTableRequest, getPickupRequest, RequestAppError } from '../api';
+import {
+  cancelTableRequest,
+  getMyTableRequest,
+  getPickupRequest,
+  markArrived,
+  RequestAppError,
+} from '../api';
 import { RequestDetailScreen } from '../components/RequestDetailScreen';
 import type { RequestKind } from '../kind';
 
@@ -21,11 +27,13 @@ jest.mock('../api', () => ({
   getPickupRequest: jest.fn(),
   getMyTableRequest: jest.fn(),
   cancelTableRequest: jest.fn(),
+  markArrived: jest.fn(),
 }));
 
 const pickupMock = jest.mocked(getPickupRequest);
 const tableMock = jest.mocked(getMyTableRequest);
 const cancelMock = jest.mocked(cancelTableRequest);
+const arrivedMock = jest.mocked(markArrived);
 const onBack = jest.fn();
 const SERVER_NOW = '2026-11-08T17:00:00Z';
 
@@ -54,7 +62,7 @@ const serve = (request: ReturnType<typeof makeTableRequest> | null) =>
 
 beforeEach(() => {
   jest.clearAllMocks();
-  [pickupMock, tableMock, cancelMock].forEach((mock) => mock.mockReset());
+  [pickupMock, tableMock, cancelMock, arrivedMock].forEach((mock) => mock.mockReset());
 });
 
 afterEach(async () => {
@@ -203,5 +211,37 @@ describe('cancel a table request', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Yes, cancel request' }));
     expect(await screen.findByText("This request can't be cancelled any more.")).toBeOnTheScreen();
     expect(await screen.findByLabelText('Status: Accepted')).toBeOnTheScreen();
+  });
+});
+
+describe('I have arrived on the customer detail', () => {
+  const acceptedRequest = (over = {}) =>
+    makeTableRequest({ status: 'accepted', display_status: 'accepted', ...over });
+
+  it('shows the button inside the window by the server clock, and sends one call on a double tap', async () => {
+    tableMock.mockResolvedValue({ server_now: '2026-11-08T23:30:00Z', request: acceptedRequest() });
+    arrivedMock.mockReturnValue(new Promise(() => undefined));
+    await renderScreen();
+    const button = await screen.findByRole('button', { name: "Tell Luigi's you've arrived" });
+    await fireEvent.press(button);
+    await fireEvent.press(button);
+    expect(arrivedMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows nothing when the server clock is outside the window', async () => {
+    tableMock.mockResolvedValue({ server_now: '2026-11-08T17:00:00Z', request: acceptedRequest() });
+    await renderScreen();
+    await screen.findByRole('header', { name: "Luigi's" });
+    expect(screen.queryByRole('button', { name: /you've arrived/i })).not.toBeOnTheScreen();
+  });
+
+  it('once arrived, says so and offers no button', async () => {
+    tableMock.mockResolvedValue({
+      server_now: '2026-11-08T23:30:00Z',
+      request: acceptedRequest({ arrived_at: '2026-11-08T23:20:00+00:00' }),
+    });
+    await renderScreen();
+    expect(await screen.findByText("You've told the restaurant you arrived")).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: /you've arrived/i })).not.toBeOnTheScreen();
   });
 });

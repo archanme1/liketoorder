@@ -23,6 +23,9 @@ export const TITLE_MAX_FONT_MULTIPLIER = maxFontMultiplier;
 
 type RequestDetailProps = TimeOptions & {
   request: CustomerRequest;
+  /** The server's clock when the request was read, and when this phone read it (for the arrival window). */
+  serverNow?: string;
+  fetchedAt?: number;
 };
 
 /** One request, by kind: a pickup order or a table. */

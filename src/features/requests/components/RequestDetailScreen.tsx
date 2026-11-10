@@ -80,7 +80,15 @@ function Loaded({
     );
   }
   if (query.data.request === null) return <NotFound onBack={onBack} />;
-  return <RequestDetail request={query.data.request} timeZone={timeZone} locale={locale} />;
+  return (
+    <RequestDetail
+      request={query.data.request}
+      serverNow={query.data.server_now}
+      fetchedAt={query.dataUpdatedAt}
+      timeZone={timeZone}
+      locale={locale}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

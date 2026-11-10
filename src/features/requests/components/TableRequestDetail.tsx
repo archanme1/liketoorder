@@ -13,11 +13,15 @@ import { statusSentence } from '../status';
 import { formatDateTime, formatDateTimeWithZone, type TimeOptions } from '../time';
 
 import { AnswerLines } from './AnswerLines';
+import { ArrivedButton } from './ArrivedButton';
 import { partyText } from './RequestRow';
 import { RequestStatusChip } from './RequestStatusChip';
 
 type TableRequestDetailProps = TimeOptions & {
   request: TableRequest;
+  /** The server's clock when the request was read, and when this phone read it. */
+  serverNow?: string;
+  fetchedAt?: number;
 };
 
 // One table request: the server's status as a word, the table time WITH its zone name, the party,
@@ -25,6 +29,8 @@ type TableRequestDetailProps = TimeOptions & {
 // an acceptance is not possible in v1.
 export function TableRequestDetail({
   request,
+  serverNow,
+  fetchedAt,
   timeZone,
   locale = deviceLocale(),
 }: TableRequestDetailProps) {
@@ -64,6 +70,10 @@ export function TableRequestDetail({
           </View>
         ) : null}
       </Card>
+
+      {serverNow !== undefined && fetchedAt !== undefined ? (
+        <ArrivedButton request={request} serverNow={serverNow} fetchedAt={fetchedAt} />
+      ) : null}
 
       {cancelError ? <Banner message={cancelError} /> : null}
 

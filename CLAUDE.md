@@ -185,7 +185,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 09 | pickup-requests | ✅ Shipped | .claude/specs/09-pickup-requests.md |
 | 10 | seller-request-inbox | ✅ Shipped | .claude/specs/10-seller-request-inbox.md |
 | 10b | requests-tab-and-answers | ✅ Shipped | .claude/specs/10b-requests-tab-and-answers.md |
-| 11 | table-requests | ⬜ Not started | — |
+| 11 | table-requests | 📝 Spec written | .claude/specs/11-table-requests.md |
 | 12 | notifications | ⬜ Not started | — |
 | 13 | food-log-uploads | ⬜ Not started | — |
 | 14 | activity-grid | ⬜ Not started | — |

@@ -14,7 +14,7 @@ Three hand-offs from spec 10b (§16) are closed here: the two copies of paged-li
 
 **Why now:** pickup requests and the Requests tab are done (09 to 10b). Spec 12 (notifications) needs every request kind to exist first.
 
-**Heads-up (same as 10b):** PR 1 drops `list_my_pickup_requests`, so the app on `main` is out of step with the database until PR 2 merges. Do not apply PR 1 to a shared database before PR 2 is ready.
+**Heads-up (changed from 10b):** PR 1 does **not** drop `list_my_pickup_requests`. It keeps working (it uses the shared builder, so its objects gain `kind`), so the app on `main` stays in step with the database after PR 1. PR 2 drops it in its own small migration once the app uses `list_my_requests`. PR 1 still drops the old `respond_to_request` and `mark_request_outcome` overloads; old callers without `p_kind` keep working because `p_kind` defaults to `'pickup'`.
 
 ## Depends on
 - 02 auth-and-profiles ✅
@@ -119,7 +119,7 @@ All `security definer`, `set search_path = ''`, revoke from `public, anon, authe
 | `respond_to_request(p_request_id, p_decision, p_decline_reason default null, p_note default null, p_kind default 'pickup')` (changed) | Old four-argument form **dropped** in the same migration (one overload only). `p_kind = 'table'` uses the table reason list (`fully_booked`, `closed_then`, `too_busy`, `time_not_possible`, `other`), same note rules as 10b (`other` needs 1 to 200 characters of text, a fixed reason takes no note, an accept may carry a note), same `decline_reason_required` / `invalid_input` / `invalid_text` codes. A pickup reason sent with `table` (or the reverse) is `invalid_input`. Old callers (no `p_kind`) still work for pickup. |
 | `mark_request_outcome(p_request_id, p_outcome, p_kind default 'pickup')` (changed) | Old two-argument form dropped; table: `accepted` and `table_at` passed. |
 | `list_my_requests(p_before text default null)` (new) | Customer's pickup and table requests merged, ordered `(created_at desc, id desc)`, text cursor `YYYY-MM-DDTHH24:MI:SS.US"Z"|<uuid>` (the format of `list_business_requests`), limit 51 → 50 + `next_cursor`. Returns `{ server_now, requests, next_cursor }`. |
-| `list_my_pickup_requests(timestamptz)` | **Dropped** (replaced by `list_my_requests`). |
+| `list_my_pickup_requests(timestamptz)` | **Kept in PR 1** (pickup rows only, timestamp cursor, objects gain `kind`). **Dropped in PR 2**, in its own small migration, once the app uses `list_my_requests`. |
 | `list_business_requests(p_status, p_before)` (changed) | Merges both kinds, same cursor and filters. |
 | `get_business_request(p_request_id)`, `count_waiting_requests()` (changed) | Cover both kinds (waiting = pending and unexpired). |
 | `private.table_request_json(...)` (new), `private.pickup_request_json(...)` (changed) | Both add the `kind` key. |
@@ -136,7 +136,7 @@ All `security definer`, `set search_path = ''`, revoke from `public, anon, authe
 `pending → accepted | declined` (seller, `respond_to_request`); `pending → cancelled` (customer); `pending → expired` (time, cron and `display_status`); `accepted → completed | no_show` (seller, after `table_at`); `arrived_at` set once on an `accepted` row (customer). No undo, no change of an answer.
 
 ### Function privileges (CLAUDE.md, §16)
-- `supabase/tests/05-seller-onboarding.test.sql`: the `authenticated` allowlist gains `submit_table_request`, `cancel_table_request`, `get_my_table_request`, `mark_arrived`, `list_my_requests` and loses `list_my_pickup_requests`; message "specs 05 to 11"; the test must fail if an old overload is still present.
+- `supabase/tests/05-seller-onboarding.test.sql`: the `authenticated` allowlist gains `submit_table_request`, `cancel_table_request`, `get_my_table_request`, `mark_arrived`, `list_my_requests` (PR 1) and loses `list_my_pickup_requests` (PR 2); message "specs 05 to 11"; the private-schema function list gains `table_request_expiry` and `table_request_json`; the test must fail if an old `respond_to_request` or `mark_request_outcome` overload is still present (PR 1) or if `list_my_pickup_requests` is (PR 2).
 
 ## Storage
 None.
@@ -164,6 +164,7 @@ All in `src/features/requests/` unless noted. Routes stay thin.
 - `supabase/tests/11-table-requests.test.sql`
 
 **PR 2**
+- `supabase/migrations/<timestamp>_drop_list_my_pickup_requests.sql` (one `drop function`, after the app uses `list_my_requests`; then `npm run db:types`)
 - `app/requests/table/new.tsx`
 - `src/features/requests/hooks/{usePagedRequests,useSubmitTableRequest,useCancelTableRequest,useMarkArrived,useTableRequest}.ts`
 - `src/features/requests/components/{TableRequestForm,PartySizeStepper,ArrivedButton}.tsx`
@@ -175,9 +176,9 @@ All in `src/features/requests/` unless noted. Routes stay thin.
 - `.claude/skills/supabase-patterns/SKILL.md` — table requests, `kind`, merged lists, `mark_arrived`
 - `docs/product/v1.md` §14 / §16 — contract note, and the closings in PR 2
 - **Forced edits to older pgTAP tests (approved by Archan):**
-  - `supabase/tests/05-seller-onboarding.test.sql` — allowlist names and message
-  - `supabase/tests/09-pickup-requests.test.sql` — customer key set gains `kind`; calls to `list_my_pickup_requests` move to `list_my_requests`
-  - `supabase/tests/10-seller-request-inbox.test.sql` — seller key set gains `kind`; `respond_to_request` / `mark_request_outcome` call sites only if the new signature needs it
+  - `supabase/tests/05-seller-onboarding.test.sql` — allowlist names (PR 1 adds the new names; PR 2 removes `list_my_pickup_requests`), message, the private-schema function list, and a one-overload check for `mark_request_outcome`
+  - `supabase/tests/09-pickup-requests.test.sql` — **PR 1:** only what the shared builder forces (the customer key set gains `kind`, plan counts). **PR 2 (approved now):** calls to `list_my_pickup_requests` move to `list_my_requests`, the `regprocedure` cast of the dropped function goes, and the timestamp-cursor asserts become text-cursor asserts (the list answer gains `next_cursor`)
+  - `supabase/tests/10-seller-request-inbox.test.sql` — seller key set gains `kind`; the `regprocedure` casts and `locks_first` signatures of `respond_to_request` / `mark_request_outcome` follow the new signatures
   - `supabase/tests/10b-requests-answer-notes.test.sql` — key sets gain `kind`; the single-overload check covers the new signatures
 
 **PR 2**
@@ -226,7 +227,7 @@ Reused from specs 09, 10, 10b and the "Lessons from spec 07".
 - [ ] **`mark_arrived` check order:** `not_found`, `invalid_transition`, `already_arrived`, `arrival_window` (pgTAP).
 - [ ] **Arrival window edges:** exactly -2 hours and +4 hours are allowed, one second outside is `arrival_window` (pgTAP).
 - [ ] **Keyset ties:** 123 rows with 120 sharing one timestamp, mixed kinds on the tie, and exactly 100 rows: no skip, repeat or empty last page (pgTAP and jest).
-- [ ] **Two overloads.** After the migration exactly one `respond_to_request` and one `mark_request_outcome` exist, and `list_my_pickup_requests` is gone (pgTAP via `pg_proc`).
+- [ ] **Two overloads.** After the PR 1 migration exactly one `respond_to_request` and one `mark_request_outcome` exist (pgTAP via `pg_proc`). After the PR 2 migration `list_my_pickup_requests` is gone too.
 - [ ] **Leftover seed data breaks pgTAP counts:** the new pgTAP file creates its own users, businesses and requests with fixed ids, counts only its own rows, in a rolled-back transaction.
 - [ ] **Large text clipping** on the form, stepper, arrived button, rows (kind first in the label).
 - [ ] **Test QueryClient cleanup** and AsyncStorage mock reset per test.
@@ -255,7 +256,7 @@ Reused from specs 09, 10, 10b and the "Lessons from spec 07".
 - [ ] Transitions: only the legal ones; a second answer → `invalid_transition`; customer cancel only while `pending`; Completed / No-show only on an `accepted` table request after `table_at` (pgTAP, including a respond-versus-cancel race).
 - [ ] `mark_arrived` works for the customer on an accepted request from `table_at - 2 hours` to `table_at + 4 hours` inclusive, sets `arrived_at` from the server clock, and the seller object then shows it; it is refused outside the window (`arrival_window`), a second time (`already_arrived`), on a non-accepted request (`invalid_transition`), and for anyone but the customer (`not_found`); the checks run in the order `not_found`, `invalid_transition`, `already_arrived`, `arrival_window`, so a second tap after the window has closed returns `already_arrived`; no location or client time input exists (pgTAP).
 - [ ] `list_my_requests` and `list_business_requests` merge both kinds newest first on `(created_at, id)` with a text cursor, 50 per page; 123 rows (120 sharing one timestamp, mixed kinds) and exactly 100 rows paginate with no skip, repeat or empty last page; the Waiting filter and `count_waiting_requests` count table requests (pgTAP).
-- [ ] Request objects have exactly the specified keys including `kind` (pickup 16 / 18, table 15 / 17) and none of the forbidden keys; exactly one `respond_to_request`, one `mark_request_outcome`, no `list_my_pickup_requests` (pgTAP key-set and `pg_proc` tests).
+- [ ] Request objects have exactly the specified keys including `kind` (pickup 16 / 18, table 15 / 17) and none of the forbidden keys; exactly one `respond_to_request` and one `mark_request_outcome` (PR 1), and no `list_my_pickup_requests` (PR 2) (pgTAP key-set and `pg_proc` tests).
 - [ ] A pickup call without `p_kind` (old app build) still works (pgTAP).
 - [ ] Request table shows only on a restaurant that accepts tables, never on homemade or a non-accepting restaurant; the form validates party size 1 to 20 and the time window, shows the picked time with its zone name (for example 7:00 pm EDT), and sends once on a double tap (jest, with an explicit-zone test).
 - [ ] Sent and Received show pickup and table rows mixed; each row shows the kind and speaks it at the start of its label; Waiting / All, 50 per page, loading, empty, error-with-retry and success states keep working (jest).
@@ -270,7 +271,7 @@ Reused from specs 09, 10, 10b and the "Lessons from spec 07".
 - [ ] Neither this spec nor the migration contains a raw invisible character: `perl -CSD -ne 'print "$ARGV:$.: $_" if /[\x{00AD}\x{0080}-\x{009F}\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2069}\x{FEFF}]/' .claude/specs/11-table-requests.md supabase/migrations/<timestamp>_table_requests.sql` prints nothing (BSD grep on macOS has no `-P`). Before trusting a clean result, prove the command on a scratch file holding one invisible character: it must print that line.
 
 ## Test plan
-- Database tests (pgTAP) in `supabase/tests/11-table-requests.test.sql`: everything under Definition of done, plus boundaries (party size 1 / 20 / 21; note 1 / 300 / 301 and `response_note` 1 / 200 / 201; each hidden-character class; table time at 29 and 30 minutes and at 30 days; **arrival window at exactly -2 h, -2 h minus one second, +4 h, +4 h plus one second**), one test for the check order (a second tap after the window has closed returns `already_arrived`, not `arrival_window`; a non-accepted row outside the window returns `invalid_transition`; another customer's row returns `not_found`), the respond-versus-cancel race, the `pg_proc` overload and dropped-function checks, no-grant checks, and a rolled-back transaction with its own fixtures.
+- Database tests (pgTAP) in `supabase/tests/11-table-requests.test.sql`: everything under Definition of done, plus boundaries (party size 1 / 20 / 21; note 1 / 300 / 301 and `response_note` 1 / 200 / 201; each hidden-character class; table time at 29 and 30 minutes and at 30 days; **arrival window at exactly -2 h, -2 h minus one second, +4 h, +4 h plus one second**), one test for the check order (a second tap after the window has closed returns `already_arrived`, not `arrival_window`; a non-accepted row outside the window returns `invalid_transition`; another customer's row returns `not_found`), the respond-versus-cancel race, the `pg_proc` overload checks (the dropped-function check for `list_my_pickup_requests` comes with PR 2), no-grant checks, and a rolled-back transaction with its own fixtures.
 - Unit/component tests (jest):
   - schemas: strict table and pickup schemas with `kind`, the discriminated list schema, the table form schema.
   - `declineReasons` per kind; `messages` / `sellerMessages`; `api` argument shapes and error mapping (`invalid_table_time`, `invalid_party_size`, `arrival_window`, `already_arrived`).
@@ -286,7 +287,7 @@ Reused from specs 09, 10, 10b and the "Lessons from spec 07".
   4. In SQL, allow `mark_arrived` on a non-accepted row: the status test must fail.
   5. In SQL, widen or remove the arrival window (for example allow `table_at - 3 hours` or `table_at + 5 hours`): the window-edge tests must fail.
   6. In SQL, page `list_business_requests` on `created_at` alone: the 120-tied-rows test must fail.
-  7. In SQL, leave the old overload of `respond_to_request` or `list_my_pickup_requests` in place: the `pg_proc` test must fail.
+  7. In SQL, leave the old overload of `respond_to_request` or `mark_request_outcome` in place: the `pg_proc` test must fail (PR 1). In PR 2, leave `list_my_pickup_requests` in place: its `pg_proc` test must fail.
   8. In SQL, leave `kind` out of an object: the key-set test must fail.
   9. In the app, enable Send with party size 0: the form test must fail.
   10. In the app, skip "mark seen on own cancel" in `useCancelTableRequest`: the own-cancel badge test must fail.
@@ -308,7 +309,7 @@ Decisions made by Archan when approving this spec:
 9. **Every request object gains `kind`;** all forced test edits listed above are approved; anything beyond that list needs a question first.
 10. **Cancel only while pending.** "Cancel after accept needs a seller notification, spec 12" is recorded in §16.
 11. **Merged lists on one `(created_at, id)` cursor** for both Sent and Received, and **one shared paged hook** instead of a third copy.
-12. **PR 1 drops `list_my_pickup_requests`;** the app on `main` is out of step with the database until PR 2 merges (same as 10b).
+12. **PR 1 keeps `list_my_pickup_requests` working; PR 2 drops it** in its own small migration once the app uses `list_my_requests`. The app on `main` stays in step with the database after PR 1 (changed from 10b). PR 1 does drop the old `respond_to_request` and `mark_request_outcome` overloads; old callers keep working through the `p_kind` default.
 13. **`mark_arrived` check order is fixed:** `not_found`, `invalid_transition`, `already_arrived`, `arrival_window`.
 14. **Table time is shown with its zone name** (for example 7:00 pm EDT) on the form and details; the phone's zone is used until a business time zone exists (§16, before launch).
 

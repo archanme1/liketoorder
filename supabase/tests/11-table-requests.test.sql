@@ -882,7 +882,9 @@ select pg_temp.as_user(26);
 insert into res select 'k_pc_submit', public.submit_pickup_request(pg_temp.b(10), pg_temp.k(9501), now() + interval '2 hours', null, 'soup', null);
 insert into res select 'k_pc_get', public.get_my_pickup_request((select (j ->> 'id')::uuid from res where label = 'k_pc_submit')) -> 'request';
 insert into res select 'k_pc_cancel', public.cancel_pickup_request((select (j ->> 'id')::uuid from res where label = 'k_pc_submit'));
-insert into res select 'k_pc_oldlist', public.list_my_requests() -> 'requests' -> 0;
+-- This customer also has a table request: pick a pickup row by its kind, not by position (the rows
+-- of one transaction tie on created_at, so the order between a pickup and a table row is not fixed).
+insert into res select 'k_pc_oldlist', x from jsonb_array_elements(public.list_my_requests() -> 'requests') x where x ->> 'kind' = 'pickup' limit 1;
 select is(pg_temp.keys((select j from res where label = 'k_t_submit')),
   array['arrived_at', 'business_id', 'business_name', 'business_type', 'created_at', 'decline_reason', 'display_status', 'expires_at', 'id', 'kind',
         'note', 'party_size', 'response_note', 'status', 'table_at'], 'a table submit returns exactly the 15 customer keys');

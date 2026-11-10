@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { DeclineReasonPicker } from '../components/DeclineReasonPicker';
-import type { AnyDeclineReason, DeclineReason } from '../schema';
+import type { DeclineReason } from '../schema';
 
 afterEach(cleanup);
 
@@ -21,7 +21,7 @@ function Harness({
   onText = jest.fn(),
   start = null as DeclineReason | null,
 }) {
-  const [reason, setReason] = useState<AnyDeclineReason | null>(start);
+  const [reason, setReason] = useState<DeclineReason | null>(start);
   const [text, setText] = useState('');
   return (
     <DeclineReasonPicker

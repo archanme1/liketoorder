@@ -18,6 +18,7 @@ export function useMarkRequestOutcome(kind: RequestKind = 'pickup') {
   const queryClient = useQueryClient();
   const inFlight = useRef(false);
   const mutation = useMutation<BusinessRequest, RequestAppError, Variables>({
+    // A pickup call stays exactly what it was before spec 11 (no kind; the server defaults to pickup).
     mutationFn: ({ requestId, outcome }) =>
       kind === 'table'
         ? markRequestOutcome(requestId, outcome, kind)

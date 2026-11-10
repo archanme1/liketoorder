@@ -19,14 +19,14 @@ export function useRespondToRequest(kind: RequestKind = 'pickup') {
   const queryClient = useQueryClient();
   const inFlight = useRef(false);
   const mutation = useMutation<BusinessRequest, RequestAppError, Variables>({
-    // The third argument is passed only when there is something to send, so a plain accept is the
-    // same two-argument call as before spec 10b.
-    mutationFn: ({ requestId, decision, answer }) =>
-      kind === 'table'
-        ? respondToRequest(requestId, decision, answer ?? {}, kind)
-        : answer
-          ? respondToRequest(requestId, decision, answer)
-          : respondToRequest(requestId, decision),
+    mutationFn: ({ requestId, decision, answer }) => {
+      if (kind === 'table') return respondToRequest(requestId, decision, answer ?? {}, kind);
+      // A pickup call stays exactly what it was before spec 10b / 11: the answer only when there
+      // is one, and no kind (the server defaults to pickup).
+      return answer
+        ? respondToRequest(requestId, decision, answer)
+        : respondToRequest(requestId, decision);
+    },
     onSuccess: (request, { requestId }) => {
       writeAnswer(queryClient, requestId, request);
       // The Requests tab number drops at once; the refetch after this settles it for good.

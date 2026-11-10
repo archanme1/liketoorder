@@ -9,8 +9,9 @@ import type { RequestKind } from '../kind';
 import {
   respondInputSchema,
   respondOptions,
-  type AnyDeclineReason,
+  type DeclineReason,
   type RespondOptions,
+  type TableDeclineReason,
 } from '../schema';
 import { DECLINE_REASON_REQUIRED, OTHER_REASON_REQUIRED, confirmCopy } from '../sellerMessages';
 
@@ -54,7 +55,10 @@ export function RespondDialog({
   const { space } = useTheme();
   const copy = confirmCopy(action, homemade, kind);
   const [note, setNote] = useState('');
-  const [reason, setReason] = useState<AnyDeclineReason | null>(null);
+  // One state per kind, so the picker only ever holds a reason of its own kind.
+  const [pickupReason, setPickupReason] = useState<DeclineReason | null>(null);
+  const [tableReason, setTableReason] = useState<TableDeclineReason | null>(null);
+  const reason = kind === 'table' ? tableReason : pickupReason;
   const [text, setText] = useState('');
 
   const input =
@@ -104,11 +108,18 @@ export function RespondDialog({
               <Text color="textMuted">{copy.body}</Text>
               {action === 'accepted' ? (
                 <AcceptNoteField value={note} onChange={setNote} homemade={homemade} />
+              ) : kind === 'table' ? (
+                <DeclineReasonPicker
+                  kind="table"
+                  reason={tableReason}
+                  onReasonChange={setTableReason}
+                  text={text}
+                  onTextChange={setText}
+                />
               ) : (
                 <DeclineReasonPicker
-                  kind={kind}
-                  reason={reason}
-                  onReasonChange={setReason}
+                  reason={pickupReason}
+                  onReasonChange={setPickupReason}
                   text={text}
                   onTextChange={setText}
                 />

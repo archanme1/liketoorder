@@ -5,8 +5,7 @@ export const NO_PRICE_NOTE = 'Total excludes items without a price';
 export const NO_MENU_NOTE = "No menu items available. Describe what you'd like.";
 export const EMPTY_LIST = 'No requests yet. Find a place on the map and request pickup.';
 export const TABLE_SENT_NOTE =
-  'The restaurant will answer this request. Your table is not booked yet.';
-export const TABLE_UNAVAILABLE = "This restaurant doesn't take table requests right now.";
+  'The restaurant will answer this request. Until it does, nothing is reserved.';
 export const ARRIVED_DONE = "You've told the restaurant you arrived";
 export const SENT_EMPTY = 'No requests yet. Requests you send will show up here.';
 export const BUSINESS_CHECK_ERROR = "Couldn't check your business, so Received is not shown.";

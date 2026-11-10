@@ -265,7 +265,7 @@ export function pickupTimeProblem(pickupAt: Date, now: Date): PickupTimeProblem 
   return null;
 }
 
-// ── Table time and the table form ───────────────────────────────────────────────────────────
+// -- Table time and the table form -------------------------------------------------------------
 export type TableTimeProblem = 'too_soon' | 'too_far';
 
 /** The server's rule: at least 30 minutes ahead and at most 30 days. Null when fine. */

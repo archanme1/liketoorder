@@ -224,7 +224,7 @@ describe('planRequestLimitDemo (spec 11b)', () => {
     expect(new Set(plan.map((row) => row.key)).size).toBe(10);
   });
 
-  it('all ten are inside the last 24 hours of the seed time, with the server expiry rule', () => {
+  it('all ten are 40 to 130 minutes old (inside 24 hours, and under 22 hours so the window lasts), with the server expiry rule', () => {
     for (const row of plan) {
       expect(row.createdAt.getTime()).toBeLessThan(NOW.getTime());
       expect(row.createdAt.getTime()).toBeGreaterThan(NOW.getTime() - 22 * HOUR);

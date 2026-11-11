@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react-native';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { fetchRestaurantDetails } from '@/features/map/api';
@@ -10,6 +10,7 @@ import { TableRequestScreen } from '../components/TableRequestScreen';
 
 jest.setTimeout(15_000);
 
+// One router object for every render: a new one each time would re-run the form's effects forever.
 const mockRouter = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
 jest.mock('expo-router', () => ({ useRouter: () => mockRouter }));
 jest.mock('@/lib/supabase', () => ({
@@ -23,7 +24,7 @@ jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
   submitTableRequest: jest.fn(),
 }));
-// KeyboardAvoidingView renders a plain View that keeps the props the form gave it.
+// KeyboardAvoidingView and ScrollView become plain Views, and the ScrollView ref has a scrollTo.
 jest.mock('react-native/Libraries/Components/Keyboard/KeyboardAvoidingView', () => {
   /* eslint-disable @typescript-eslint/no-require-imports */
   const { createElement } = require('react');
@@ -33,8 +34,6 @@ jest.mock('react-native/Libraries/Components/Keyboard/KeyboardAvoidingView', () 
     createElement(View, { testID: 'keyboard-avoiding', ...props });
   return { __esModule: true, default: KeyboardAvoidingView };
 });
-// ScrollView renders a plain View that keeps its props, and its ref exposes one shared scrollTo.
-const mockScrollTo = jest.fn();
 jest.mock('react-native/Libraries/Components/ScrollView/ScrollView', () => {
   /* eslint-disable @typescript-eslint/no-require-imports */
   const React = require('react');
@@ -44,7 +43,7 @@ jest.mock('react-native/Libraries/Components/ScrollView/ScrollView', () => {
     props: { children?: unknown },
     ref: unknown,
   ) {
-    React.useImperativeHandle(ref, () => ({ scrollTo: mockScrollTo }));
+    React.useImperativeHandle(ref, () => ({ scrollTo: () => undefined }));
     return React.createElement(View, props, props.children);
   });
   return { __esModule: true, default: ScrollView };
@@ -53,7 +52,7 @@ jest.mock('react-native/Libraries/Components/ScrollView/ScrollView', () => {
 const submitMock = jest.mocked(submitTableRequest);
 const restaurantMock = jest.mocked(fetchRestaurantDetails);
 
-const restaurant = (over: object = {}) => ({
+const restaurant = () => ({
   id: BUSINESS_ID,
   name: "Luigi's",
   cuisine_code: 'IT',
@@ -63,7 +62,6 @@ const restaurant = (over: object = {}) => ({
   currency_code: 'CAD' as string | null,
   photos: [],
   items: [],
-  ...over,
 });
 
 const onClose = jest.fn();
@@ -103,7 +101,6 @@ const send = () => screen.getByRole('button', { name: "Send table request to Lui
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockScrollTo.mockClear();
   submitMock.mockReset();
   restaurantMock.mockReset();
   restaurantMock.mockResolvedValue(restaurant());
@@ -130,7 +127,9 @@ describe('the request limits (spec 11b)', () => {
     await formReady();
     await pickFirstTime();
     await fireEvent.press(send());
-    expect(await screen.findByText(message)).toBeOnTheScreen();
+    expect(
+      await within(await screen.findByTestId('send-bar')).findByText(message),
+    ).toBeOnTheScreen();
     expect(send()).toBeOnTheScreen();
   });
 });

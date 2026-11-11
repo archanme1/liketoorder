@@ -25,14 +25,13 @@ type SellerRequestsScreenProps = TimeOptions & {
 
 const requestKey = (request: BusinessRequest) => request.id;
 
-// The seller's inbox (Received in the Requests tab, and Manage Business > Requests), newest first.
-// Filter chips All / Pending / Accepted / Declined, done by the server; opens on Pending. The
-// choice is this screen's state: kept while it stays mounted (the Requests tab), back to Pending
-// when it is opened again (Manage Business, a stack screen). Loading, empty, error with Retry, or
-// the list. More rows load as you scroll near the end (a footer spinner, or an
-// inline Try again if that page fails, with the rows already loaded kept). Pull down to start again
-// from the newest 50. Refetches when the app comes back to the front, every 30 s while a pending
-// row is loaded, and just after one expires. The seller Stack's header draws the title and Back.
+// The seller's inbox (Received in the Requests tab, and Manage Business > Requests), newest first,
+// with server-side filter chips that open on Pending (screen state only, so not kept across visits).
+// Loading, empty, error with Retry, or the list. More rows load as you scroll near the end (a footer
+// spinner, or an inline Try again if that page fails, with the rows already loaded kept). Pull down
+// to start again from the newest 50. Refetches when the app comes back to the front, every 30 s
+// while a pending row is loaded, and just after one expires. The seller Stack's header draws the
+// title and Back.
 export function SellerRequestsScreen({ onOpen, timeZone, locale }: SellerRequestsScreenProps) {
   const { colors, space, type } = useTheme();
   const [filter, setFilter] = useState<RequestFilter>('pending');

@@ -27,7 +27,8 @@ const nextCursor = (last: RequestList) => last.next_cursor ?? undefined;
 export function useMyRequests(options: { enabled?: boolean; filter?: RequestFilter } = {}) {
   const filter = options.filter ?? 'all';
   const queryKey = useMemo(() => mineKey(filter), [filter]);
-  // All asks exactly as the app on main does (no filter argument).
+  // All passes listMyRequests itself, so it is called with exactly one argument (the cursor), as
+  // before spec 11c. Keep it: MyRequestsPagination and useMyRequestsPages assert that one argument.
   const fetchPage = useMemo(
     () =>
       filter === 'all'

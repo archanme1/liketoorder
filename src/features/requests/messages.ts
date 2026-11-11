@@ -51,9 +51,9 @@ export function requestErrorMessage(code: RequestErrorCode): string {
     case 'empty_order':
       return "Choose an item or describe what you'd like.";
     case 'too_many_pending':
-      return 'You already have a request waiting. Wait for an answer or cancel it first.';
+      return 'You have too many requests waiting. You can have up to 3 pickup and 3 table requests waiting, and 1 per place. Cancel one or wait for an answer.';
     case 'rate_limited':
-      return "You've sent a lot of requests. Try again later.";
+      return "You've sent a lot of requests to this place today. Please try again tomorrow.";
     case 'invalid_transition':
       return "This request can't be cancelled any more.";
     case 'not_found':

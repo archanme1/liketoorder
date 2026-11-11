@@ -25,6 +25,15 @@ describe('messages', () => {
     for (const code of CODES) expect(messages.requestErrorMessage(code).length).toBeGreaterThan(0);
   });
 
+  it('says the request limits in the final words (spec 11b)', () => {
+    expect(messages.requestErrorMessage('too_many_pending')).toBe(
+      'You have too many requests waiting. You can have up to 3 pickup and 3 table requests waiting, and 1 per place. Cancel one or wait for an answer.',
+    );
+    expect(messages.requestErrorMessage('rate_limited')).toBe(
+      "You've sent a lot of requests to this place today. Please try again tomorrow.",
+    );
+  });
+
   it('uses one kind of apostrophe (the straight one) everywhere', () => {
     const all = [
       ...CODES.map((code) => messages.requestErrorMessage(code)),

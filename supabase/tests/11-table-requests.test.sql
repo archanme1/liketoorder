@@ -7,7 +7,7 @@
 -- helpers that return the error text, so a broken function turns a NAMED assertion red instead of
 -- aborting the file. Hidden characters are built with chr(), never typed.
 begin;
-select plan(352);
+select plan(364);
 
 -- -- Helpers (pg_temp) -------------------------------------------------------
 -- Ids:  users 00000000-0000-0000-0012-<n>   businesses ...-0412-<n>   table requests ...-0612-<n>
@@ -95,6 +95,18 @@ exception when others then return sqlerrm; end $$;
 create function pg_temp.sub_j(p_biz uuid, p_key uuid, p_at timestamptz, p_party int, p_note text default null)
 returns jsonb language plpgsql as $$
 begin return public.submit_table_request(p_biz, p_key, p_at, p_party, p_note);
+exception when others then return jsonb_build_object('error', sqlerrm); end $$;
+
+-- Submit a table request to p_biz and cancel it at once (nothing stays pending); 'OK' or the error message.
+create function pg_temp.sub_cancel(p_biz uuid) returns text language plpgsql as $$
+begin
+  perform public.cancel_table_request((public.submit_table_request(p_biz, gen_random_uuid(), now() + interval '2 hours', 2) ->> 'id')::uuid);
+  return 'OK';
+exception when others then return sqlerrm; end $$;
+
+-- A free-text pickup submit that returns the request, or { "error": message } instead of raising.
+create function pg_temp.sub_pj(p_biz uuid, p_key uuid, p_at timestamptz) returns jsonb language plpgsql as $$
+begin return public.submit_pickup_request(p_biz, p_key, p_at, null, 'soup', null);
 exception when others then return jsonb_build_object('error', sqlerrm); end $$;
 
 -- Error-returning wrappers: 'OK' or the error message.
@@ -190,15 +202,16 @@ $$;
 
 -- -- Fixtures (as postgres) --------------------------------------------------
 -- Users:  1 C1 (fixture requests)   2 C2   3 no username   4 owner b1   5 owner b2   6 owner b3   7 outsider
---         8 owner b8   9 owner b9   10 owner b10   14/15/16 owners b14/b15/b16   20 rate limit   21 pending limit
+--         8 owner b8   9 owner b9   10 owner b10   14/15/16 owners b14/b15/b16   20 backstop (10 to one restaurant)   21 pending cap of 3
 --         22 validation   23 idempotency   24 one pending per business   25 expiry job   26 key sets
---         27 caps (pickup full)   41 caps (table full)   28 paging 123   29 paging 100   33 mixed list   40 rate boundary
+--         27 caps (3 pending pickups)   41 caps (3 pending tables)   28 paging 123   29 paging 100   33 mixed list   40 backstop, 9 rows then the 10th
+--         56 backstop, every status   57 backstop, oldest 23 h 59 min   58 oldest exactly 24 h   59 oldest 24 h 01 min   60 eleven restaurants in an hour
 --         50..55 owners of b30..b35
 -- Businesses:  1 restaurant accepts tables   2 restaurant that does not accept   3 homemade   8 unlisted restaurant (accepts)
 --   9 stale 31 d restaurant (accepts)   10 second restaurant (accepts)   14, 15, 16 restaurants (accepts)   30..35 restaurants (accept)
 insert into auth.users (id, email)
 select pg_temp.u(n), 'p11_' || n || '@example.test'
-  from unnest(array[1,2,3,4,5,6,7,8,9,10,14,15,16,20,21,22,23,24,25,26,27,28,29,30,31,32,33,40,41,50,51,52,53,54,55]) n;
+  from unnest(array[1,2,3,4,5,6,7,8,9,10,14,15,16,20,21,22,23,24,25,26,27,28,29,30,31,32,33,40,41,50,51,52,53,54,55,56,57,58,59,60]) n;
 update public.profiles set username = 'p11_' || right(id::text, 3) where id::text like '00000000-0000-0000-0012-%';
 update public.profiles set username = null where id = pg_temp.u(3);
 
@@ -429,14 +442,17 @@ select is_empty(
   'every hidden-character class is refused in the note');
 select is(pg_temp.cnt(pg_temp.u(22)), 0, 'no refusal left a row behind');
 
--- Pending cap: 5 pending in total, 1 per business.
+-- Pending cap: 3 pending in total, 1 per business.
 select pg_temp.as_user(21);
 select is_empty(
-  $$ select i from generate_series(0, 4) i
+  $$ select i from generate_series(0, 2) i
       where pg_temp.sub_j(pg_temp.b(30 + i), pg_temp.k(9100 + i), now() + interval '2 hours', 2) ? 'error' $$,
-  'five pending table requests to five businesses are accepted');
-select is(pg_temp.sub_j(pg_temp.b(35), pg_temp.k(9105), now() + interval '2 hours', 2) ->> 'error', 'too_many_pending', 'the sixth pending request is refused');
-select is(pg_temp.cnt(pg_temp.u(21)), 5, 'and nothing was written for it');
+  'three pending table requests to three businesses are accepted');
+select is(pg_temp.sub_j(pg_temp.b(33), pg_temp.k(9103), now() + interval '2 hours', 2) ->> 'error', 'too_many_pending', 'the fourth pending request is refused');
+select is(pg_temp.cnt(pg_temp.u(21)), 3, 'and nothing was written for it');
+select is(pg_temp.sub_j(pg_temp.b(30), pg_temp.k(9100), now() + interval '3 hours', 2) ? 'error', false,
+  'a replay at the pending cap returns the original request, not too_many_pending');
+select is(pg_temp.cnt(pg_temp.u(21)), 3, 'and the replay wrote nothing');
 select pg_temp.as_user(24);
 select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9200), now() + interval '2 hours', 2) ? 'error', false, 'one pending request to a business is accepted');
 select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9201), now() + interval '3 hours', 2) ->> 'error', 'too_many_pending', 'a second pending request to the same business is refused');
@@ -444,37 +460,69 @@ select is(pg_temp.sub_j(pg_temp.b(10), pg_temp.k(9202), now() + interval '3 hour
 -- A pending row past its expires_at does not count.
 select pg_temp.mk(4000, 30, 24, 'pending', interval '-1 hour', interval '-1 hour');
 select is(pg_temp.sub_j(pg_temp.b(30), pg_temp.k(9203), now() + interval '2 hours', 2) ? 'error', false, 'an expired pending row does not count toward the cap');
--- Rate limit: 10 an hour; cancelled and expired rows count; rows an hour old do not.
+-- Backstop: 10 submits per restaurant in a rolling 24 hours, any status; rows 24 hours old do not count.
 select pg_temp.as_user(20);
-select pg_temp.mk(3000 + i, 30 + (i % 6), 20, 'cancelled', interval '3 hours', interval '2 hours', now() - i * interval '1 minute') from generate_series(1, 10) i;
-select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9300), now() + interval '2 hours', 2) ->> 'error', 'rate_limited', 'the 11th request in an hour is refused');
+select pg_temp.mk(3000 + i, 1, 20, 'cancelled', interval '3 hours', interval '2 hours', now() - i * interval '1 minute') from generate_series(1, 10) i;
+select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9300), now() + interval '2 hours', 2) ->> 'error', 'rate_limited', 'the 11th request to one restaurant in 24 hours is refused');
+select is(pg_temp.cnt(pg_temp.u(20)), 10, 'and nothing was written for it');
+select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(3001), now() + interval '2 hours', 2) ->> 'id', pg_temp.r(3001)::text,
+  'a replay at the backstop limit returns the original request, not rate_limited');
+select is(pg_temp.sub_j(pg_temp.b(10), pg_temp.k(9304), now() + interval '2 hours', 2) ? 'error', false, 'the same customer can still ask another restaurant');
 select pg_temp.as_user(40);
-select pg_temp.mk(3100 + i, 30 + (i % 6), 40, 'cancelled', interval '3 hours', interval '2 hours', now() - i * interval '1 minute') from generate_series(1, 9) i;
-select pg_temp.mk(3200 + i, 30 + (i % 6), 40, 'cancelled', interval '3 hours', interval '2 hours', now() - interval '1 hour') from generate_series(1, 5) i;
-select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9301), now() + interval '2 hours', 2) ? 'error', false, 'the 10th request in an hour is accepted (rows exactly an hour old do not count)');
-select is(pg_temp.sub_j(pg_temp.b(10), pg_temp.k(9302), now() + interval '2 hours', 2) ->> 'error', 'rate_limited', 'and the next one is rate_limited');
+select pg_temp.mk(3100 + i, 1, 40, 'cancelled', interval '3 hours', interval '2 hours', now() - i * interval '1 minute') from generate_series(1, 9) i;
+select lives_ok($$ select public.cancel_table_request((public.submit_table_request(pg_temp.b(1), pg_temp.k(9301), now() + interval '2 hours', 2) ->> 'id')::uuid) $$,
+  'the 10th request in 24 hours is accepted (and another customer with 10 rows to that restaurant does not affect it)');
+select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9302), now() + interval '2 hours', 2) ->> 'error', 'rate_limited', 'and the 11th is refused');
+select pg_temp.as_user(56);
+select pg_temp.mk(3300 + i, 1, 56, (array['cancelled', 'cancelled', 'cancelled', 'expired', 'expired', 'accepted', 'accepted', 'declined', 'declined'])[i],
+                  interval '3 hours', interval '2 hours', now() - i * interval '10 minutes') from generate_series(1, 9) i;
+select lives_ok($$ select public.cancel_table_request((public.submit_table_request(pg_temp.b(1), pg_temp.k(9310), now() + interval '2 hours', 2) ->> 'id')::uuid) $$,
+  'the 10th request is accepted after 9 rows of every status (cancelled, expired, accepted, declined), then cancelled');
+select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9311), now() + interval '2 hours', 2) ->> 'error', 'rate_limited',
+  'the 11th is refused: cancelled, expired, accepted and declined rows all count');
+select pg_temp.as_user(57);
+select pg_temp.mk(3400 + k::int, 1, 57, 'cancelled', interval '3 hours', interval '2 hours', now() - a)
+  from unnest(array[interval '1 hour', interval '3 hours', interval '5 hours', interval '7 hours', interval '9 hours', interval '11 hours',
+                    interval '13 hours', interval '15 hours', interval '20 hours', interval '23 hours 59 minutes']) with ordinality as t(a, k);
+select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9320), now() + interval '2 hours', 2) ->> 'error', 'rate_limited',
+  '10 requests spread over 24 hours (the oldest 23 h 59 min old) still count');
+select pg_temp.as_user(58);
+select pg_temp.mk(3500 + i, 1, 58, 'cancelled', interval '3 hours', interval '2 hours', now() - i * interval '10 minutes') from generate_series(1, 9) i;
+select pg_temp.mk(3510, 1, 58, 'cancelled', interval '3 hours', interval '2 hours', now() - interval '24 hours');
+select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9330), now() + interval '2 hours', 2) ? 'error', false, 'a request exactly 24 hours old no longer counts');
+select pg_temp.as_user(59);
+select pg_temp.mk(3600 + i, 1, 59, 'cancelled', interval '3 hours', interval '2 hours', now() - i * interval '10 minutes') from generate_series(1, 9) i;
+select pg_temp.mk(3610, 1, 59, 'cancelled', interval '3 hours', interval '2 hours', now() - interval '24 hours 1 minute');
+select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9340), now() + interval '2 hours', 2) ? 'error', false, 'a request 24 hours 1 minute old no longer counts');
+-- The old 10-an-hour rule is gone: 11 requests in one hour to 11 different restaurants, each cancelled right after.
+select pg_temp.as_user(60);
+select is_empty(
+  $$ select n from unnest(array[1, 10, 14, 15, 16, 30, 31, 32, 33, 34, 35]) n where pg_temp.sub_cancel(pg_temp.b(n)) is distinct from 'OK' $$,
+  '11 requests in one hour to 11 different restaurants are all accepted (the old 10-an-hour rule is gone)');
+select is(pg_temp.cnt(pg_temp.u(60)), 11, 'and all 11 were made');
+select pg_temp.clear_t(pg_temp.u(60));   -- keeps these rows out of the business lists tested later
 
 -- Pickup and table limits are independent.
 select pg_temp.as_user(27);
-select pg_temp.mkp(5000 + i, 30 + i, 27, 'pending', interval '20 minutes') from generate_series(0, 4) i;
-select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9400), now() + interval '2 hours', 2) ? 'error', false, 'five pending pickups do not block a table request');
+select pg_temp.mkp(5000 + i, 30 + i, 27, 'pending', interval '20 minutes') from generate_series(0, 2) i;
+select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9400), now() + interval '2 hours', 2) ? 'error', false, 'three pending pickups do not block a table request');
 select pg_temp.as_user(41);
-select pg_temp.mk(5100 + i, 30 + i, 41, 'pending', interval '3 hours', interval '2 hours') from generate_series(0, 4) i;
-select is((public.submit_pickup_request(pg_temp.b(1), pg_temp.k(9401), now() + interval '2 hours', null, 'soup', null) ->> 'status'), 'pending',
-  'five pending table requests do not block a pickup request');
+select pg_temp.mk(5100 + i, 30 + i, 41, 'pending', interval '3 hours', interval '2 hours') from generate_series(0, 2) i;
+select is(pg_temp.sub_pj(pg_temp.b(1), pg_temp.k(9401), now() + interval '2 hours') ->> 'status', 'pending',
+  'three pending table requests do not block a pickup request');
 select pg_temp.as_user(20);
-select is((public.submit_pickup_request(pg_temp.b(1), pg_temp.k(9402), now() + interval '2 hours', null, 'soup', null) ->> 'status'), 'pending',
-  'ten table requests in an hour do not rate-limit pickup');
+select is(pg_temp.sub_pj(pg_temp.b(1), pg_temp.k(9402), now() + interval '2 hours') ->> 'status', 'pending',
+  'ten table requests to a restaurant in 24 hours do not block a pickup request to it');
 select pg_temp.as_user(23);
-select pg_temp.mkp(5400 + i, 30 + (i % 6), 23, 'cancelled', interval '20 minutes', now() - i * interval '1 minute') from generate_series(1, 10) i;
+select pg_temp.mkp(5400 + i, 1, 23, 'cancelled', interval '20 minutes', now() - i * interval '1 minute') from generate_series(1, 10) i;
 select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9403), now() + interval '2 hours', 2) ? 'error', false,
-  'ten pickup rows in an hour do not rate-limit a table request');
+  'ten pickup rows to a restaurant in 24 hours do not block a table request to it');
 
--- Expired pending rows stay out of the 5-total count; the other kind at the same business does not block.
+-- Expired pending rows stay out of the 3-total count; the other kind at the same business does not block.
 select pg_temp.as_user(30);
-select pg_temp.mk(5500 + i, 30 + i, 30, 'pending', interval '1 hour', interval '-1 minute') from generate_series(0, 4) i;
+select pg_temp.mk(5500 + i, 30 + i, 30, 'pending', interval '1 hour', interval '-1 minute') from generate_series(0, 2) i;
 select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9600), now() + interval '2 hours', 2) ? 'error', false,
-  'five expired pending rows do not count toward the 5-total cap');
+  'three expired pending rows do not count toward the 3-total cap');
 select pg_temp.as_user(31);
 select pg_temp.mkp(5600, 1, 31, 'pending', interval '20 minutes');
 select is(pg_temp.sub_j(pg_temp.b(1), pg_temp.k(9601), now() + interval '2 hours', 2) ? 'error', false,

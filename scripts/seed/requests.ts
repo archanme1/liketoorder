@@ -24,6 +24,9 @@
  *   its Requests tab shows both Received and Sent. Those sent requests belong to a seller account the
  *   seed does not delete, so each run removes and re-creates them (password for every seed account
  *   is password123).
+ * - Also seeds the request limits demo (spec 11b): seed-customer-limit@example.com has 10 cancelled pickup
+ *   requests to seed_rest_010 from the last 24 hours, so a new request there is refused at once (it can
+ *   still ask other places). The window lasts about 22 hours after the seed runs, so re-run it for a fresh one.
  * - Add `--extra` (or `--extra N`, default 120) to also create that many older requests, for testing
  *   the My requests list's infinite scroll: SEED_SERVICE_ROLE_KEY=<key> npx tsx scripts/seed/requests.ts --extra 120
  * - Times are relative to when you run it, so re-run it for fresh times (the "expires in about 2
@@ -43,6 +46,7 @@ import {
   planAnswerNotes,
   planExtraRequests,
   planInboxExtra,
+  planRequestLimitDemo,
   planRequests,
   planSellerInbox,
   SEED_CUSTOMERS,
@@ -249,6 +253,8 @@ async function main() {
     ...(extra ? planExtraRequests(now, extra) : []),
     // After everything else, so the earlier rows (and what the tests look up first) are unchanged.
     ...planAnswerNotes(now),
+    // Spec 11b: seed_customer_limit already has 10 requests to one restaurant within 24 hours.
+    ...planRequestLimitDemo(now),
   ];
   const ownerIds = await ownerCustomerIds(db, ownerCustomerNames(plans));
   const targets = new Map<string, Target>();

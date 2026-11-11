@@ -414,8 +414,8 @@ describe('sending', () => {
   });
 
   it.each([
-    ['too_many_pending', /already have a request waiting/],
-    ['rate_limited', /Try again later/],
+    ['too_many_pending', /too many requests waiting/],
+    ['rate_limited', /lot of requests to this place today/],
     ['business_unavailable', /isn't available right now/],
     ['item_unavailable', /no longer available/],
     ['network', /No connection/],
@@ -553,7 +553,7 @@ describe('the fixed Send bar', () => {
     await pickFirstTime();
     await fireEvent.press(send());
     expect(
-      await within(screen.getByTestId('send-bar')).findByText(/Try again later/),
+      await within(screen.getByTestId('send-bar')).findByText(/lot of requests to this place today/),
     ).toBeOnTheScreen();
   });
 

@@ -70,9 +70,9 @@ describe('small helpers', () => {
   });
 
   it('has the spec wording for the empty states', () => {
-    expect(emptyMessage('waiting')).toBe('Nothing waiting for you right now.');
+    expect(emptyMessage('pending')).toBe('Nothing waiting for you right now.');
     expect(emptyMessage('all')).toBe(
-      'No requests yet. Customers who request pickup will show up here.',
+      'No requests yet. Customers who send you requests will show up here.',
     );
   });
 

@@ -1,11 +1,12 @@
 import {
   PAGE_SIZE,
   type BusinessRequest,
-  type InboxFilter,
+  type RequestFilter,
   type SellerRequest,
   type SellerRequestList,
 } from '../schema';
 
+import { matchesFilter } from './pagedServer';
 import { makeRequest } from './requests';
 import { makeSellerTableRequest } from './tableRequests';
 
@@ -56,14 +57,15 @@ export function sortSellerRows<T extends BusinessRequest>(rows: readonly T[]): T
 }
 
 /**
- * An in-memory list_business_requests: the filter, the server order, a keyset cursor
- * "<created_at>|<id>" (rows strictly after it), 50 a page, next_cursor null on the last page.
+ * An in-memory list_business_requests: the filter (the same rules as Sent), the server order, a
+ * keyset cursor "<created_at>|<id>" (rows strictly after it), 50 a page, next_cursor null on the
+ * last page.
  * `rows` can be changed between calls to play requests being added, answered or removed.
  */
 export function sellerPagedServer(state: { rows: BusinessRequest[] }) {
-  return async (filter: InboxFilter, before?: string): Promise<SellerRequestList> => {
+  return async (filter: RequestFilter, before?: string): Promise<SellerRequestList> => {
     const matching = sortSellerRows(state.rows)
-      .filter((row) => filter === 'all' || row.display_status === 'pending')
+      .filter((row) => matchesFilter(row, filter))
       .filter((row) => before === undefined || cursorOf(row) < before);
     const page = matching.slice(0, PAGE_SIZE);
     return {

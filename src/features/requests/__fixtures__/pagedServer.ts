@@ -1,4 +1,10 @@
-import { PAGE_SIZE, type CustomerRequest, type PickupRequest, type RequestList } from '../schema';
+import {
+  PAGE_SIZE,
+  type CustomerRequest,
+  type PickupRequest,
+  type RequestFilter,
+  type RequestList,
+} from '../schema';
 
 import { makeRequest } from './requests';
 import { makeTableRequest } from './tableRequests';
@@ -28,18 +34,37 @@ const zulu = (createdAt: string) => createdAt.replace('+00:00', 'Z');
 export const cursorOf = (row: CustomerRequest) => `${zulu(row.created_at)}|${row.id}`;
 
 /**
- * An in-memory list_my_requests: the server order (created_at desc, id desc), a keyset cursor
- * "<created_at>|<id>" (rows strictly after it), 50 a page, next_cursor null on the last page.
- * `rows` can be changed between calls to play a request being added, removed or updated.
+ * The server's filter rules (spec 11c), read from the server's display_status: Pending is a
+ * pending request not yet expired; Accepted is accepted, completed or no-show; Declined is declined
+ * only; All is every row (cancelled and expired show only there).
+ */
+export function matchesFilter(row: { display_status: string }, filter: RequestFilter): boolean {
+  switch (filter) {
+    case 'pending':
+      return row.display_status === 'pending';
+    case 'accepted':
+      return ['accepted', 'completed', 'no_show'].includes(row.display_status);
+    case 'declined':
+      return row.display_status === 'declined';
+    default:
+      return true;
+  }
+}
+
+/**
+ * An in-memory list_my_requests: the filter, the server order (created_at desc, id desc), a keyset
+ * cursor "<created_at>|<id>" (rows strictly after it), 50 a page, next_cursor null on the last
+ * page. `rows` can be changed between calls to play a request being added, removed or updated.
  */
 export function pagedServer(state: { rows: CustomerRequest[] }) {
-  return async (before?: string): Promise<RequestList> => {
+  return async (before?: string, filter: RequestFilter = 'all'): Promise<RequestList> => {
     const matching = [...state.rows]
       .sort((a, b) => {
         const x = cursorOf(a);
         const y = cursorOf(b);
         return x < y ? 1 : x > y ? -1 : 0;
       })
+      .filter((row) => matchesFilter(row, filter))
       .filter((row) => before === undefined || cursorOf(row) < before);
     const requests = matching.slice(0, PAGE_SIZE);
     return {

@@ -3,7 +3,7 @@
 **Branch:** `feature/requests-filters`
 **Product spec:** `docs/product/v1.md` section 4 (Navigation, Requests tab), section 8 (statuses), section 14 row 11c, section 16 (EXPLAIN the list keyset queries)
 **Plan mode:** required: changes the signature of a security-definer function (`list_my_requests`) and the filter contract of another (`list_business_requests`), regenerates `database.ts`, and touches well over ~5 files.
-**Status:** 📝 Spec written
+**Status:** ✅ Shipped
 
 ## Overview
 After this ships, both sides of the Requests tab (Sent, and Received for business owners) and the Manage Business requests screen have four filter chips, in this order: **All, Pending, Accepted, Declined**. Pending shows requests still waiting for an answer and not yet expired. Accepted shows accepted, completed and no-show requests. Declined shows declined requests only. Cancelled and expired requests show only under All. Sent opens on All and Received opens on Pending; the choice stays for the session and resets when the app restarts. The filtering is done on the server, so the existing paging (50 per page, `(created_at, id)` text cursor, more loads on scroll) still has no skipped or repeated rows and no empty last page. Pickup and table requests are filtered together, and each row keeps its kind label. It comes now because the lists hold both kinds and every status since spec 11, and Archan's spec 11 run showed they are hard to scan.
@@ -172,21 +172,21 @@ Feature-specific:
 - Editing shipped specs 09 to 11b. Out-of-scope v1 items in section 3 (chat, payments, delivery).
 
 ## Definition of done
-- [ ] pgTAP: for each filter on each function, the returned ids equal the expected set in `(created_at desc, id desc)` order, both kinds mixed, `kind` kept on every object.
-- [ ] pgTAP: Accepted includes `accepted`, `completed`, `no_show`; Declined includes `declined` only (never `cancelled`, `expired`, unswept overdue); Pending includes only `pending` with `expires_at > now` (never an unswept overdue row); All includes every status; cancelled and expired appear only under All.
-- [ ] pgTAP paging: under each filter, a set of 123 matching rows (120 sharing one timestamp, mixed kinds, interleaved with non-matching rows on the same timestamp) and a set of exactly 100 matching rows walk with no skip, no repeat, and no empty last page; the cursor continues correctly under the same filter on every page.
-- [ ] pgTAP: `'waiting'` gives the same rows as `'pending'`; `list_my_requests` with only `p_before` and `list_business_requests` with `'waiting'` or no status (the app on `main`) still work; `'expired'`, `'cancelled'`, `'completed'`, `'no_show'`, `'bogus'`, `'ACCEPTED'`, `''` give `invalid_input` on both functions.
-- [ ] pgTAP **outsider cannot**: another customer's sent rows and another business's received rows never appear under any filter; a user without a business gets an empty Received list; `anon` cannot execute either function; `public` has no execute.
-- [ ] pgTAP: exactly one `list_my_requests` (`(text, text)`) and one `list_business_requests` (`(text, text)`) exist; both `security definer` with `search_path=""`.
-- [ ] Deliberate-break proofs 1-13 each turn their named test red (lives_ok, rolled back).
-- [ ] EXPLAIN output for every filter on both functions recorded in the PR; section 16 item extended.
-- [ ] `src/types/database.ts` regenerated, not hand-edited.
-- [ ] jest: Sent (opens on All) and Received (opens on Pending, in the tab and on Manage Business) show four chips in the order All, Pending, Accepted, Declined, with no counts; choosing one sends the right `p_status`, shows only server rows, keeps the kind label, loads more on scroll with the cursor, and shows its empty text from "Wording"; the choice stays when switching Sent and Received and when leaving and returning to the tab; switching back to a filter shows its cached list; a row leaves Pending and appears in Accepted after accept; the badge still uses the All list.
-- [ ] jest a11y: group labels "Filter sent requests" / "Filter received requests"; each chip a radio with its label, "<label>, selected" when chosen and `accessibilityState.selected`; touch target at least 44 pt; wraps at large text.
-- [ ] `InboxFilter` and the `'waiting'` value are gone from the app (grep).
-- [ ] Older tests unchanged except the approved forced list.
-- [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` pass; CI green.
-- [ ] Non-ASCII and invisible-character checks clean as in the Rules, each proved on a scratch file first.
+- [x] pgTAP: for each filter on each function, the returned ids equal the expected set in `(created_at desc, id desc)` order, both kinds mixed, `kind` kept on every object.
+- [x] pgTAP: Accepted includes `accepted`, `completed`, `no_show`; Declined includes `declined` only (never `cancelled`, `expired`, unswept overdue); Pending includes only `pending` with `expires_at > now` (never an unswept overdue row); All includes every status; cancelled and expired appear only under All.
+- [x] pgTAP paging: under each filter, a set of 123 matching rows (120 sharing one timestamp, mixed kinds, interleaved with non-matching rows on the same timestamp) and a set of exactly 100 matching rows walk with no skip, no repeat, and no empty last page; the cursor continues correctly under the same filter on every page.
+- [x] pgTAP: `'waiting'` gives the same rows as `'pending'`; `list_my_requests` with only `p_before` and `list_business_requests` with `'waiting'` or no status (the app on `main`) still work; `'expired'`, `'cancelled'`, `'completed'`, `'no_show'`, `'bogus'`, `'ACCEPTED'`, `''` give `invalid_input` on both functions.
+- [x] pgTAP **outsider cannot**: another customer's sent rows and another business's received rows never appear under any filter; a user without a business gets an empty Received list; `anon` cannot execute either function; `public` has no execute.
+- [x] pgTAP: exactly one `list_my_requests` (`(text, text)`) and one `list_business_requests` (`(text, text)`) exist; both `security definer` with `search_path=""`.
+- [x] Deliberate-break proofs 1-13 each turn their named test red (lives_ok, rolled back).
+- [x] EXPLAIN output for every filter on both functions recorded in the PR; section 16 item extended.
+- [x] `src/types/database.ts` regenerated, not hand-edited.
+- [x] jest: Sent (opens on All) and Received (opens on Pending, in the tab and on Manage Business) show four chips in the order All, Pending, Accepted, Declined, with no counts; choosing one sends the right `p_status`, shows only server rows, keeps the kind label, loads more on scroll with the cursor, and shows its empty text from "Wording"; the choice stays when switching Sent and Received and when leaving and returning to the tab; switching back to a filter shows its cached list; a row leaves Pending and appears in Accepted after accept; the badge still uses the All list.
+- [x] jest a11y: group labels "Filter sent requests" / "Filter received requests"; each chip a radio with its label, "<label>, selected" when chosen and `accessibilityState.selected`; touch target at least 44 pt; wraps at large text.
+- [x] `InboxFilter` and the `'waiting'` value are gone from the app (grep).
+- [x] Older tests unchanged except the approved forced list.
+- [x] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` pass; CI green.
+- [x] Non-ASCII and invisible-character checks clean as in the Rules, each proved on a scratch file first.
 
 ## Test plan
 - Database tests (pgTAP) `supabase/tests/11c-requests-filters.test.sql`: everything in the DoD for both functions, a user who is both a customer and an owner (Sent and Received kept apart), the old-app calls, the refused raw values, overload and privilege checks, break proofs 1-13.
@@ -206,3 +206,17 @@ Made by Archan when approving the plan:
 
 ## Open questions
 None. All seven earlier questions are answered in Decisions 1 to 7.
+
+## Results
+Shipped 2026-11-11 in one PR with two gates (gate A database, gate B app).
+- **Manual check (iOS Simulator only, run by Archan; not a real iPhone or Android): all checks good in two rounds.**
+  - Sent: four chips (All, Pending, Accepted, Declined) with kind labels on every row; cancelled and expired only under All; a cancel leaves Pending; paging past 50 under Accepted and Declined.
+  - Received: opens on Pending; an accept moves a row to Accepted and a decline to Declined; paging past 50.
+  - Choices kept across Sent/Received and tab switches; Manage Business opens on Pending and resets on reopen; defaults back after an app restart.
+  - Large text and VoiceOver good.
+- pgTAP: new `11c-requests-filters.test.sql` (98 tests); forced edits in 10 (expired, cancelled, completed filters now refused; plan stays 247) and 11 (`list_my_requests(text, text)` in the definer list, the expired filter refused; plan stays 364). Suite: 13 files, 2180 tests. Break proofs 1-13 each turned their named tests red.
+- jest: 190 suites, 2839 tests. Five app breaks each turned their named tests red.
+- Forced jest edits (approved): `'waiting'` -> `'pending'`, "Waiting" -> "Pending" in six titles, the Received All empty text, and `SellerRequestsScreen.test.tsx` L148 (the accepted/confirm/book check now looks only inside the list, since the new "Accepted" chip matched the whole-screen search). `InboxFilter.test.tsx` deleted with the component.
+- Line numbers in "Forced edits to older tests" above were corrected during planning (pgTAP 10 `'accepted'` and 11 `'accepted'` needed no edit; 11 expired case is L889-890; `useBusinessRequestsPages` lines are L9, L25-26, L122, L124, L130, L203, L227; `SellerRequestsScreen` also needed L111; `sellerApi.test.ts` L28-40 was forced).
+- Review: security none; quality approved with suggestions (two comment suggestions applied).
+- Carried forward in `docs/product/v1.md` section 16: one word for pending (row status Waiting, chip Pending); Sent empty filtered list shows the empty text instead of the error after a failed refetch; EXPLAIN at about 100k rows over many customers (generic plan) and a possible `pickup_requests (customer_id, created_at desc, id desc)` index.

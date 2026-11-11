@@ -670,6 +670,7 @@ insert into res select 'f_exp', pg_temp.page_all('expired');
 insert into res select 'f_acc', pg_temp.page_all('accepted');
 insert into res select 'f_dec', pg_temp.page_all('declined');
 insert into res select 'f_none', pg_temp.page_all('completed');
+insert into res select 'f_canc', pg_temp.page_all('cancelled');
 select is(pg_temp.count_j() ->> 'waiting', '3', 'count_waiting_requests counts live pending requests only (not the one past expiry)');
 reset role;
 select is((select jsonb_array_length(j -> 'ids') from res where label = 'f_all'), 7, 'all: 7 requests');
@@ -677,11 +678,12 @@ select is((select j -> 'ids' from res where label = 'f_all'), pg_temp.expected_i
 select is((select j -> 'ids' from res where label = 'f_wait'), pg_temp.expected_ids(10, 'pending'), 'waiting: the 3 live pending requests');
 select is((select jsonb_array_length(j -> 'ids') from res where label = 'f_wait'), 3, 'waiting excludes the pending request past expires_at');
 select is((select j -> 'ids' from res where label = 'f_pend'), pg_temp.expected_ids(10, 'pending'), 'pending behaves like waiting');
-select is((select j -> 'ids' from res where label = 'f_exp'), pg_temp.expected_ids(10, 'expired'), 'expired includes the pending request past expires_at and the stored expired one');
-select is((select jsonb_array_length(j -> 'ids') from res where label = 'f_exp'), 2, 'expired: 2 requests');
+-- Spec 11c: expired, cancelled and completed are no longer filters (they show under All only).
+select is((select j ->> 'error' from res where label = 'f_exp'), 'invalid_input', 'expired is no longer a filter: invalid_input (spec 11c)');
+select is((select j ->> 'error' from res where label = 'f_canc'), 'invalid_input', 'cancelled is not a filter: invalid_input (spec 11c)');
 select is((select jsonb_array_length(j -> 'ids') from res where label = 'f_acc'), 1, 'accepted: 1 request');
 select is((select jsonb_array_length(j -> 'ids') from res where label = 'f_dec'), 1, 'declined: 1 request');
-select is((select jsonb_array_length(j -> 'ids') from res where label = 'f_none'), 0, 'completed: none');
+select is((select j ->> 'error' from res where label = 'f_none'), 'invalid_input', 'completed is no longer a filter: invalid_input (spec 11c)');
 
 -- ── 14. Request objects: exact key sets ─────────────────────────────────────
 set local role authenticated;

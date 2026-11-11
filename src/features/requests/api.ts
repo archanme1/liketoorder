@@ -19,8 +19,8 @@ import {
   waitingCountSchema,
   type OrderLine,
   type PickupAddress,
-  type InboxFilter,
   type PickupRequest,
+  type RequestFilter,
   type RespondOptions,
   type RequestDetail,
   type RequestList,
@@ -201,9 +201,18 @@ export async function markArrived(requestId: string): Promise<TableRequest> {
   return parsed.data;
 }
 
-/** One page (50) of the caller's requests, newest first; `before` is the server's own next_cursor text. */
-export async function listMyRequests(before?: string): Promise<RequestList> {
-  const { data, error } = await supabase.rpc('list_my_requests', { p_before: before });
+/**
+ * One page (50) of the caller's requests, newest first; `before` is the server's own next_cursor
+ * text. The filter is applied by the server (All sends none).
+ */
+export async function listMyRequests(
+  before?: string,
+  filter: RequestFilter = 'all',
+): Promise<RequestList> {
+  const { data, error } = await supabase.rpc('list_my_requests', {
+    p_before: before,
+    p_status: filter === 'all' ? undefined : filter,
+  });
   if (error) throw mapRequestError(error);
   const parsed = requestListSchema.safeParse(data);
   if (!parsed.success) throw new RequestAppError('unknown');
@@ -239,11 +248,11 @@ export async function getMyPickupAddress(requestId: string): Promise<PickupAddre
 
 /** One page (50) of the caller's business requests; `before` is the previous page's next_cursor. */
 export async function listBusinessRequests(
-  filter: InboxFilter,
+  filter: RequestFilter,
   before?: string,
 ): Promise<SellerRequestList> {
   const { data, error } = await supabase.rpc('list_business_requests', {
-    p_status: filter === 'waiting' ? 'waiting' : undefined,
+    p_status: filter === 'all' ? undefined : filter,
     p_before: before,
   });
   if (error) throw mapRequestError(error);

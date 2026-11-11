@@ -6,7 +6,7 @@ import { useTheme } from '@/theme/useTheme';
 
 import { useMyRequests } from '../hooks/useMyRequests';
 import { EMPTY_LIST, loadErrorMessage } from '../messages';
-import type { CustomerRequest } from '../schema';
+import type { CustomerRequest, RequestFilter } from '../schema';
 import type { TimeOptions } from '../time';
 
 import { RequestRow } from './RequestRow';
@@ -17,6 +17,8 @@ export type MyRequestsListProps = TimeOptions & {
   onFindPlace?: () => void;
   /** The empty list's words. */
   emptyMessage?: string;
+  /** Which requests the server lists (spec 11c); All by default. */
+  filter?: RequestFilter;
 };
 
 const requestKey = (request: CustomerRequest) => request.id;
@@ -33,11 +35,12 @@ export function MyRequestsList({
   onOpen,
   onFindPlace,
   emptyMessage = EMPTY_LIST,
+  filter = 'all',
   timeZone,
   locale,
 }: MyRequestsListProps) {
   const { colors, space, type } = useTheme();
-  const query = useMyRequests();
+  const query = useMyRequests({ filter });
   const {
     refresh,
     refreshing,
@@ -92,6 +95,8 @@ export function MyRequestsList({
         />
       ) : (
         <FlatList
+          // A fresh list (and scroll position) for each filter.
+          key={filter}
           testID="requests-list"
           data={query.requests}
           keyExtractor={requestKey}

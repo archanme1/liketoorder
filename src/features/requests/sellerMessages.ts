@@ -1,13 +1,15 @@
 import type { RequestErrorCode } from './api';
 import type { RequestKind } from './kind';
-import type { InboxFilter, RequestStatus } from './schema';
+import { EMPTY_ACCEPTED, EMPTY_DECLINED } from './messages';
+import type { RequestFilter, RequestStatus } from './schema';
 
 // The seller's wording (messages.ts and statusSentence are written for the customer). A pending
 // request never reads as booked, confirmed or accepted; "accepted" appears only once the seller
 // has accepted it.
 
-export const EMPTY_INBOX = 'No requests yet. Customers who request pickup will show up here.';
+export const EMPTY_INBOX = 'No requests yet. Customers who send you requests will show up here.';
 export const EMPTY_WAITING = 'Nothing waiting for you right now.';
+export const RECEIVED_FILTER_GROUP = 'Filter received requests';
 export const INBOX_LOAD_MORE_ERROR = "Couldn't load more requests.";
 export const INBOX_REFRESH_ERROR = "Couldn't refresh your requests.";
 export const NO_PRICE_NOTE = 'Total excludes items without a price';
@@ -94,8 +96,18 @@ export function customerLabel(name: string | null): string {
   return trimmed ? trimmed : 'Customer';
 }
 
-export function emptyMessage(filter: InboxFilter): string {
-  return filter === 'waiting' ? EMPTY_WAITING : EMPTY_INBOX;
+/** The Received list's empty text for one filter. */
+export function emptyMessage(filter: RequestFilter): string {
+  switch (filter) {
+    case 'pending':
+      return EMPTY_WAITING;
+    case 'accepted':
+      return EMPTY_ACCEPTED;
+    case 'declined':
+      return EMPTY_DECLINED;
+    default:
+      return EMPTY_INBOX;
+  }
 }
 
 /** What a failed load of the inbox, the detail or the count says. */

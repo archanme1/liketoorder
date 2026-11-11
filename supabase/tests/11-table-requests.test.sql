@@ -333,7 +333,7 @@ select is_empty(
                       'public.cancel_table_request(uuid)'::regprocedure,
                       'public.get_my_table_request(uuid)'::regprocedure,
                       'public.mark_arrived(uuid)'::regprocedure,
-                      'public.list_my_requests(text)'::regprocedure,
+                      'public.list_my_requests(text, text)'::regprocedure,
                       'public.respond_to_request(uuid, text, text, text, text)'::regprocedure,
                       'public.mark_request_outcome(uuid, text, text)'::regprocedure,
                       'private.table_request_json(uuid, timestamptz, boolean)'::regprocedure,
@@ -886,8 +886,8 @@ select is((select array_agg(x ->> 'id') from jsonb_array_elements(pg_temp.biz_li
   array[pg_temp.r(600)::text, pg_temp.r(601)::text, pg_temp.r(602)::text, pg_temp.pr(610)::text, pg_temp.pr(611)::text],
   'Waiting holds the unexpired pending requests of both kinds, newest first');
 select is((pg_temp.count_waiting() ->> 'waiting')::int, 5, 'the waiting count covers both kinds (3 table + 2 pickup, expired ones left out)');
-select is((select array_agg(x ->> 'id') from jsonb_array_elements(pg_temp.biz_list('expired') -> 'requests') x),
-  array[pg_temp.r(603)::text, pg_temp.pr(612)::text], 'the expired filter holds pending requests past their expiry, both kinds');
+select is(pg_temp.biz_list('expired') ->> 'error', 'invalid_input',
+  'expired is no longer a filter (spec 11c): pending requests past their expiry show under All only');
 select is((select array_agg(x ->> 'id') from jsonb_array_elements(pg_temp.biz_list('accepted') -> 'requests') x), array[pg_temp.r(604)::text],
   'the accepted filter holds the accepted table request');
 select is(jsonb_array_length(pg_temp.biz_list() -> 'requests'), 8, 'the unfiltered list holds all eight');

@@ -25,14 +25,14 @@ beforeEach(() => {
 });
 
 describe('listBusinessRequests', () => {
-  it('asks for the waiting filter and passes the cursor back untouched', async () => {
+  it('asks for the pending filter and passes the cursor back untouched', async () => {
     db.rpc.mockResolvedValue({
       data: { server_now: NOW, requests: [makeSellerRequest()], next_cursor: CURSOR },
       error: null,
     });
-    const page = await listBusinessRequests('waiting', CURSOR);
+    const page = await listBusinessRequests('pending', CURSOR);
     expect(db.rpc).toHaveBeenCalledWith('list_business_requests', {
-      p_status: 'waiting',
+      p_status: 'pending',
       p_before: CURSOR,
     });
     expect(page.next_cursor).toBe(CURSOR);

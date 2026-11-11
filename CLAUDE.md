@@ -187,7 +187,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 10b | requests-tab-and-answers | ✅ Shipped | .claude/specs/10b-requests-tab-and-answers.md |
 | 11 | table-requests | ✅ Shipped | .claude/specs/11-table-requests.md |
 | 11b | request-limits | ✅ Shipped | .claude/specs/11b-request-limits.md |
-| 11c | requests-filters | 📝 Planned (not started) | — |
+| 11c | requests-filters | ✅ Shipped | .claude/specs/11c-requests-filters.md |
 | 11d | theme-refresh | 📝 Planned (not started) | — |
 | 12 | notifications | ⬜ Not started | — |
 | 13 | food-log-uploads | ⬜ Not started | — |

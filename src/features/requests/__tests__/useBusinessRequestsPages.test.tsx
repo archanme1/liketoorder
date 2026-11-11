@@ -6,7 +6,7 @@ import { makeSellerRows, sellerPagedServer, sortSellerRows } from '../__fixtures
 import { RequestAppError, listBusinessRequests } from '../api';
 import { flattenBusinessPages, useBusinessRequests } from '../hooks/useBusinessRequests';
 import { PENDING_POLL_MS } from '../hooks/keys';
-import type { InboxFilter } from '../schema';
+import type { RequestFilter } from '../schema';
 
 jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
@@ -22,8 +22,8 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 // react-query only re-renders for props read during render; read everything.
-const setup = (filter: InboxFilter = 'all') =>
-  renderHook(({ f }: { f: InboxFilter }) => ({ ...useBusinessRequests(f) }), {
+const setup = (filter: RequestFilter = 'all') =>
+  renderHook(({ f }: { f: RequestFilter }) => ({ ...useBusinessRequests(f) }), {
     wrapper,
     initialProps: { f: filter },
   });
@@ -111,7 +111,7 @@ describe('paging by the server cursor', () => {
 });
 
 describe('filters', () => {
-  it('Waiting asks the server for waiting and keeps its own cache apart from All', async () => {
+  it('Pending asks the server for pending and keeps its own cache apart from All', async () => {
     server.rows = [
       ...makeSellerRows(2, { status: 'pending' }),
       ...makeSellerRows(3, { status: 'declined' }).map((r, i) => ({
@@ -119,15 +119,15 @@ describe('filters', () => {
         id: `00000000-0000-4000-8000-0000000001${i}0`,
       })),
     ];
-    const { result, rerender } = await setup('waiting');
+    const { result, rerender } = await setup('pending');
     await waitFor(() => expect(result.current.requests).toHaveLength(2));
-    expect(listMock).toHaveBeenLastCalledWith('waiting', undefined);
+    expect(listMock).toHaveBeenLastCalledWith('pending', undefined);
 
     await rerender({ f: 'all' });
     await waitFor(() => expect(result.current.requests).toHaveLength(5));
     expect(listMock).toHaveBeenLastCalledWith('all', undefined);
 
-    await rerender({ f: 'waiting' });
+    await rerender({ f: 'pending' });
     await waitFor(() => expect(result.current.requests).toHaveLength(2));
     expect(ids(result.current.requests).every((id) => id.endsWith('1') || id.endsWith('2'))).toBe(
       true,
@@ -197,10 +197,10 @@ describe('refetching and polling', () => {
     expect(listMock).not.toHaveBeenCalled();
   });
 
-  it('an EMPTY Waiting list is still polled, so a new request shows up after 30 s', async () => {
+  it('an EMPTY Pending list is still polled, so a new request shows up after 30 s', async () => {
     jest.useFakeTimers();
     server.rows = makeSellerRows(3, { status: 'declined' });
-    const { result } = await setup('waiting');
+    const { result } = await setup('pending');
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.requests).toHaveLength(0);
 
@@ -224,7 +224,7 @@ describe('refetching and polling', () => {
         expires_at: '2026-11-08T17:00:20+00:00',
       },
     ];
-    const { result } = await setup('waiting');
+    const { result } = await setup('pending');
     await waitFor(() => expect(result.current.requests).toHaveLength(1));
     listMock.mockClear();
     await act(async () => {

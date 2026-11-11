@@ -11,11 +11,12 @@ import { useTheme } from '@/theme/useTheme';
 
 import { requestKeys } from '../hooks/keys';
 import { useRequestsCounts } from '../hooks/useRequestsBadge';
-import { SENT_EMPTY, BUSINESS_CHECK_ERROR } from '../messages';
-import type { BusinessRequest, CustomerRequest } from '../schema';
+import { BUSINESS_CHECK_ERROR, SENT_FILTER_GROUP, sentEmptyMessage } from '../messages';
+import type { BusinessRequest, CustomerRequest, RequestFilter } from '../schema';
 import type { TimeOptions } from '../time';
 
 import { MyRequestsList } from './MyRequestsList';
+import { RequestFilterChips } from './RequestFilterChips';
 import { RequestsSwitch, type RequestsSide } from './RequestsSwitch';
 import { SellerRequestsScreen } from './SellerRequestsScreen';
 
@@ -32,6 +33,8 @@ type RequestsTabScreenProps = TimeOptions & {
 // off, until the person picks (local state: a cold start begins again). Both lists stay mounted
 // and the one not shown is hidden, so a switch never loses scroll or loaded pages. Opening Sent
 // marks what is there as seen (it clears the Sent number); coming back to the tab re-reads.
+// Sent and Received each have filter chips (spec 11c): Sent opens on All, Received on Pending, and
+// each choice stays for the session because both panes stay mounted.
 export function RequestsTabScreen({
   focused,
   onOpenSent,
@@ -45,6 +48,7 @@ export function RequestsTabScreen({
   const business = useMyBusiness();
   const counts = useRequestsCounts();
   const [picked, setPicked] = useState<RequestsSide | null>(null);
+  const [sentFilter, setSentFilter] = useState<RequestFilter>('all');
 
   // Seller mode on means a business exists, so the switches need not wait for the business query.
   const isOwner = business.isSuccess ? business.data !== null : isSeller ? true : undefined;
@@ -101,10 +105,21 @@ export function RequestsTabScreen({
           </Pane>
         ) : null}
         <Pane hidden={side !== 'sent'}>
-          <View style={[styles.sent, { paddingHorizontal: space.lg }]}>
+          <View
+            style={[
+              styles.sent,
+              { paddingHorizontal: space.lg, paddingTop: space.md, gap: space.md },
+            ]}
+          >
+            <RequestFilterChips
+              value={sentFilter}
+              onChange={setSentFilter}
+              groupLabel={SENT_FILTER_GROUP}
+            />
             <MyRequestsList
               onOpen={onOpenSent}
-              emptyMessage={SENT_EMPTY}
+              filter={sentFilter}
+              emptyMessage={sentEmptyMessage(sentFilter)}
               timeZone={timeZone}
               locale={locale}
             />

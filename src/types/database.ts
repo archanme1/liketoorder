@@ -352,7 +352,7 @@ isOneToOne: false
 { Args: { "p_before"?: string,"p_status"?: string }; Returns: Json
                            },
 "list_my_requests":
-{ Args: { "p_before"?: string }; Returns: Json
+{ Args: { "p_before"?: string,"p_status"?: string }; Returns: Json
                            },
 "map_homemade_in_bounds":
 { Args: { "p_max_lat": number,"p_max_lng": number,"p_min_lat": number,"p_min_lng": number }; Returns: Json

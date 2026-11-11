@@ -1,5 +1,13 @@
 import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import {
@@ -71,13 +79,13 @@ afterEach(async () => {
 });
 
 describe('the filter', () => {
-  it('opens on Waiting: asks the server for waiting and shows only those', async () => {
+  it('opens on Pending: asks the server for pending and shows only those', async () => {
     await renderScreen();
     expect(await screen.findByText('Ana')).toBeOnTheScreen();
-    expect(listMock).toHaveBeenCalledWith('waiting', undefined);
+    expect(listMock).toHaveBeenCalledWith('pending', undefined);
     expect(screen.getByText('Cy')).toBeOnTheScreen();
     expect(screen.queryByText('Ben')).not.toBeOnTheScreen();
-    expect(screen.getByRole('radio', { name: 'Waiting, selected' })).toBeOnTheScreen();
+    expect(screen.getByRole('radio', { name: 'Pending, selected' })).toBeOnTheScreen();
   });
 
   it('All shows every request and says All is selected', async () => {
@@ -90,7 +98,7 @@ describe('the filter', () => {
     expect(screen.getByText('Ed')).toBeOnTheScreen();
   });
 
-  it('stays on screen when Waiting is empty, so the seller can switch to All', async () => {
+  it('stays on screen when Pending is empty, so the seller can switch to All', async () => {
     server.rows = mixedRows().map((r) => ({
       ...r,
       status: 'declined',
@@ -108,7 +116,7 @@ describe('states', () => {
     listMock.mockImplementation(() => new Promise(() => undefined));
     await renderScreen();
     expect(await screen.findByLabelText('Loading requests')).toBeOnTheScreen();
-    expect(screen.getByRole('radio', { name: 'Waiting, selected' })).toBeOnTheScreen();
+    expect(screen.getByRole('radio', { name: 'Pending, selected' })).toBeOnTheScreen();
   });
 
   it('empty (All): the spec wording', async () => {
@@ -116,7 +124,9 @@ describe('states', () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('radio', { name: 'All' }));
     expect(
-      await screen.findByText('No requests yet. Customers who request pickup will show up here.'),
+      await screen.findByText(
+        'No requests yet. Customers who send you requests will show up here.',
+      ),
     ).toBeOnTheScreen();
   });
 
@@ -145,7 +155,9 @@ describe('states', () => {
     server.rows = makeSellerRows(3, { status: 'pending' });
     await renderScreen();
     await screen.findByText('Customer 1');
-    expect(screen.queryByText(/accepted|confirm|book/i)).not.toBeOnTheScreen();
+    expect(
+      within(screen.getByTestId('inbox-list')).queryByText(/accepted|confirm|book/i),
+    ).not.toBeOnTheScreen();
     for (const row of screen.getAllByRole('button', { name: /^Pickup\. Request from / })) {
       expect(row.props.accessibilityLabel).not.toMatch(/accepted|confirm|book/i);
     }
@@ -181,7 +193,7 @@ describe('states', () => {
 });
 
 describe('an empty list', () => {
-  it('empty Waiting picks up a new request after 30 s', async () => {
+  it('empty Pending picks up a new request after 30 s', async () => {
     jest.useFakeTimers();
     server.rows = mixedRows().map((r) => ({
       ...r,
@@ -332,7 +344,7 @@ describe('refreshing', () => {
     listMock.mockClear();
     await pull();
     await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
-    expect(listMock).toHaveBeenCalledWith('waiting', undefined);
+    expect(listMock).toHaveBeenCalledWith('pending', undefined);
   });
 
   it('shows a request that arrived meanwhile after a pull', async () => {

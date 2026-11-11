@@ -2,7 +2,7 @@
 -- idempotency, limits, expiry, display_status, list/get/cancel, the accepted-request address, and
 -- that nothing private leaks. Own fixtures, one rolled-back transaction.
 begin;
-select plan(269);
+select plan(271);
 
 -- ── Helpers (pg_temp) ───────────────────────────────────────────────────────
 -- Ids:  users 00000000-0000-0000-0009-<n>   businesses …-0049-<n>   items …-0059-<n>
@@ -125,14 +125,14 @@ grant all on res to public;
 --         30 thirty lines   31 validation   32 paging (51 rows)   33 submit   34 idempotency
 --         35 one pending per business   36 expiry job   37 key sets   38 cascade customer   39 owner of business 30
 --         40 other customer for the backstop   41 replay tests   42 address window   43 overdue pending   44 cancel boundary
---         45 backstop, every status   46 twelve places in an hour   47 backstop, oldest 23 h 59 min   48 oldest exactly 24 h   49 oldest 24 h 01 min
+--         45 backstop, all six statuses   50 backstop, completed and no_show rows   46 twelve places in an hour   47 backstop, oldest 23 h 59 min   48 oldest exactly 24 h   49 oldest 24 h 01 min
 -- Businesses (all fresh unless noted):  1 R1 restaurant, CAD   2 H1 homemade, CAD   3 H2 homemade, no currency
 --   10 unlisted   11 stale 31 d   12 exactly 30 d   13 place not_found   14 no map point, no location
 --   15 stale 31 d homemade   16 H3 homemade stale 31 d   17 H4 homemade   18 restaurant   20..27 homemade   30 homemade
 -- Items:  1 Soup 850   2 Salad (no price)   3 Sold out   all on R1;   4 Bread 450 on H1;   5 Other Cake on H2;   101..131 on R1
 insert into auth.users (id, email)
 select pg_temp.u(n), 'p09_' || n || '@example.test'
-  from unnest(array[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25,26,27,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49]) n;
+  from unnest(array[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25,26,27,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50]) n;
 update public.profiles set username = 'p09_' || right(id::text, 3) where id::text like '00000000-0000-0000-0009-%';
 update public.profiles set username = null where id = pg_temp.u(3);
 
@@ -229,10 +229,12 @@ values (pg_temp.r(310), pg_temp.b(2), pg_temp.u(43), 'pending', now() + interval
        (pg_temp.r(311), pg_temp.b(2), pg_temp.u(44), 'pending', now() + interval '2 hours', 'boundary', pg_temp.k(1311), now(),                      now() - interval '30 minutes'),
        (pg_temp.r(312), pg_temp.b(3), pg_temp.u(44), 'pending', now() + interval '2 hours', 'one left', pg_temp.k(1312), now() + interval '1 second', now() - interval '29 minutes');
 
--- Backstop fixtures (user 45: nine rows of every status; 47: ten rows over 24 h; 48 and 49: nine recent rows plus one old row).
-select pg_temp.mkp(n, 2, 45, (array['cancelled', 'cancelled', 'cancelled', 'expired', 'expired', 'accepted', 'accepted', 'declined', 'declined'])[n - 100],
+-- Backstop fixtures (user 45: nine rows covering every status; user 50: nine completed and no_show rows; 47: ten rows over 24 h; 48 and 49: nine recent rows plus one old row).
+select pg_temp.mkp(n, 2, 45, (array['cancelled', 'cancelled', 'expired', 'expired', 'accepted', 'accepted', 'declined', 'completed', 'no_show'])[n - 100],
                    (n - 100) * interval '10 minutes')
   from generate_series(101, 109) n;
+select pg_temp.mkp(n, 2, 50, case when n % 2 = 0 then 'completed' else 'no_show' end, (n - 400) * interval '10 minutes')
+  from generate_series(401, 409) n;
 select pg_temp.mkp((200 + k)::int, 2, 47, 'cancelled', a)
   from unnest(array[interval '1 hour', interval '3 hours', interval '5 hours', interval '7 hours', interval '9 hours', interval '11 hours',
                     interval '13 hours', interval '15 hours', interval '20 hours', interval '23 hours 59 minutes']) with ordinality as t(a, k);
@@ -665,8 +667,11 @@ select pg_temp.as_user(40);
 select lives_ok($$ select pg_temp.sub_biz(2) $$, 'another customer is not affected by the limit');
 select pg_temp.as_user(45);
 select lives_ok($$ select public.cancel_pickup_request(pg_temp.sub_biz(2)) $$,
-  'the 10th submit is accepted after 9 rows of every status (cancelled, expired, accepted, declined), then cancelled');
-select throws_ok($$ select pg_temp.sub_biz(2) $$, 'P0001', 'rate_limited', 'the 11th is rate_limited: cancelled, expired, accepted and declined rows all count');
+  'the 10th submit is accepted after 9 rows covering every status (cancelled, expired, accepted, declined, completed, no_show), then cancelled');
+select throws_ok($$ select pg_temp.sub_biz(2) $$, 'P0001', 'rate_limited', 'the 11th is rate_limited: rows of every status count');
+select pg_temp.as_user(50);
+select lives_ok($$ select public.cancel_pickup_request(pg_temp.sub_biz(2)) $$, 'the 10th submit is accepted after 9 completed and no_show rows, then cancelled');
+select throws_ok($$ select pg_temp.sub_biz(2) $$, 'P0001', 'rate_limited', 'the 11th is rate_limited: completed and no_show rows count too');
 select pg_temp.as_user(46);
 select is_empty($$ select n from unnest(array[20, 21, 22, 23, 24, 25, 26, 27, 17, 18, 1, 2]) n where pg_temp.sub_cancel(n) is distinct from 'OK' $$,
   '12 submits in one hour to 12 different places are all accepted (the old 10-an-hour rule is gone)');

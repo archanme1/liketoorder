@@ -14,7 +14,7 @@ export type RequestStatus =
 /** Which demo business a request goes to: the profile username of its owner (set by restaurants.ts). */
 export type Target = { kind: 'restaurant' | 'homemade'; ownerUsername: string };
 
-export type CustomerKey = 'demo' | 'sam' | 'priya';
+export type CustomerKey = 'demo' | 'sam' | 'priya' | 'limit';
 
 export type SeedCustomer = {
   key: CustomerKey;
@@ -40,6 +40,13 @@ export const SEED_CUSTOMERS: readonly SeedCustomer[] = [
     email: 'seed-customer-priya@example.com',
     username: 'seed_customer_priya',
     displayName: 'Priya Shah',
+  },
+  // Spec 11b: already over the per-place limit (see planRequestLimitDemo).
+  {
+    key: 'limit',
+    email: 'seed-customer-limit@example.com',
+    username: 'seed_customer_limit',
+    displayName: 'Limit Demo',
   },
 ];
 
@@ -195,6 +202,39 @@ export function planRequests(now: Date): PlannedRequest[] {
       responded: -5.5 * HOUR,
     }),
   ];
+}
+
+/** The restaurant the limit demo customer has already sent 10 requests to. */
+export const LIMIT_DEMO_OWNER = 'seed_rest_010';
+
+/**
+ * Spec 11b: ten cancelled pickup requests from one customer (seed_customer_limit) to one restaurant,
+ * all inside the last 24 hours of `now` (40 to 130 minutes old), so the next request to that
+ * restaurant is refused with rate_limited, while the customer has nothing pending and can still
+ * ask any other place. The window lasts about 22 hours after the seed runs: re-run the seed for a
+ * fresh one.
+ */
+export function planRequestLimitDemo(now: Date): PlannedRequest[] {
+  const rows: PlannedRequest[] = [];
+  for (let k = 1; k <= 10; k++) {
+    const createdAt = new Date(now.getTime() - (30 + 10 * k) * MINUTE);
+    const pickupAt = new Date(createdAt.getTime() + HOUR);
+    rows.push({
+      key: `limit-${k}`,
+      purpose: 'request limit demo: cancelled, within 24 h (a new request here is refused)',
+      customer: 'limit',
+      target: { kind: 'restaurant', ownerUsername: LIMIT_DEMO_OWNER },
+      status: 'cancelled',
+      createdAt,
+      pickupAt,
+      expiresAt: expiryFor(createdAt, pickupAt),
+      respondedAt: null,
+      itemCount: 0,
+      orderText: `Limit demo order ${k}`,
+      note: null,
+    });
+  }
+  return rows;
 }
 
 /** Most extra requests one run will add. */

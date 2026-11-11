@@ -16,8 +16,8 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 
 describe('SEED_CUSTOMERS', () => {
-  it('keeps the original demo customer and adds two more', () => {
-    expect(SEED_CUSTOMERS.map((c) => c.key)).toEqual(['demo', 'sam', 'priya']);
+  it('keeps the original demo customer and adds three more', () => {
+    expect(SEED_CUSTOMERS.map((c) => c.key)).toEqual(['demo', 'sam', 'priya', 'limit']);
     expect(SEED_CUSTOMERS[0].email).toBe(CUSTOMER_EMAIL);
   });
 

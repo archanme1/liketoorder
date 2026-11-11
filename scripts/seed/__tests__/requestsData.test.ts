@@ -2,11 +2,17 @@ import {
   CUSTOMER_EMAIL,
   expiryFor,
   MAX_EXTRA,
+  LIMIT_DEMO_OWNER,
   parseExtra,
+  planAnswerNotes,
   planExtraRequests,
+  planInboxExtra,
+  planRequestLimitDemo,
   planRequests,
+  planSellerInbox,
   snapshotItems,
 } from '../requestsData';
+import { planTableRequests } from '../tableRequestsData';
 import { HOMEMADE_COOKS } from '../homemadeData';
 import { RESTAURANTS } from '../restaurantData';
 import { isSeedEmail } from '../safety';
@@ -202,5 +208,85 @@ describe('planExtraRequests', () => {
     expect(new Set(extra.map((row) => row.target.kind))).toEqual(
       new Set(['restaurant', 'homemade']),
     );
+  });
+});
+
+describe('planRequestLimitDemo (spec 11b)', () => {
+  const plan = planRequestLimitDemo(NOW);
+
+  it('is ten cancelled pickup requests from one customer to one restaurant', () => {
+    expect(plan).toHaveLength(10);
+    expect(new Set(plan.map((row) => row.customer))).toEqual(new Set(['limit']));
+    expect(new Set(plan.map((row) => row.status))).toEqual(new Set(['cancelled']));
+    expect(new Set(plan.map((row) => `${row.target.kind}:${row.target.ownerUsername}`))).toEqual(
+      new Set([`restaurant:${LIMIT_DEMO_OWNER}`]),
+    );
+    expect(new Set(plan.map((row) => row.key)).size).toBe(10);
+  });
+
+  it('all ten are inside the last 24 hours of the seed time, with the server expiry rule', () => {
+    for (const row of plan) {
+      expect(row.createdAt.getTime()).toBeLessThan(NOW.getTime());
+      expect(row.createdAt.getTime()).toBeGreaterThan(NOW.getTime() - 22 * HOUR);
+      expect(row.expiresAt).toEqual(expiryFor(row.createdAt, row.pickupAt));
+      expect(row.respondedAt).toBeNull();
+      expect(row.orderText).toBeTruthy();
+    }
+  });
+
+  it('every created_at is different, and the restaurant exists in the restaurants seed', () => {
+    expect(new Set(plan.map((row) => row.createdAt.getTime())).size).toBe(10);
+    const number = Number(/_(\d+)$/.exec(LIMIT_DEMO_OWNER)?.[1]);
+    expect(number).toBeLessThanOrEqual(RESTAURANTS.length);
+  });
+});
+
+describe('seeded pending requests stay inside the limits (spec 11b)', () => {
+  // Every seeded request, with the person who sent it (an owner account for the "Sent" rows) and
+  // the place it went to, for pickup and for table requests separately.
+  const pickup = [
+    ...planRequests(NOW),
+    ...planSellerInbox(NOW),
+    ...planInboxExtra(NOW, 60),
+    ...planExtraRequests(NOW, 120),
+    ...planAnswerNotes(NOW),
+    ...planRequestLimitDemo(NOW),
+  ].map((row) => ({
+    who: row.customerUsername ?? row.customer ?? 'demo',
+    place: `${row.target.kind}:${row.target.ownerUsername}`,
+    status: row.status,
+  }));
+  const table = planTableRequests(NOW).map((row) => ({
+    who: row.customer,
+    place: row.ownerUsername,
+    status: row.status,
+  }));
+
+  const pendingBy = (rows: { who: string; place: string; status: string }[], key: 'who' | 'place') => {
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      if (row.status !== 'pending') continue;
+      const id = key === 'who' ? row.who : `${row.who}|${row.place}`;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
+  };
+
+  it('no customer has more than 3 pending pickup requests', () => {
+    for (const count of pendingBy(pickup, 'who').values()) expect(count).toBeLessThanOrEqual(3);
+  });
+
+  it('no customer has more than 3 pending table requests', () => {
+    for (const count of pendingBy(table, 'who').values()) expect(count).toBeLessThanOrEqual(3);
+  });
+
+  it('no customer has more than 1 pending request per place, for either kind', () => {
+    for (const count of pendingBy(pickup, 'place').values()) expect(count).toBeLessThanOrEqual(1);
+    for (const count of pendingBy(table, 'place').values()) expect(count).toBeLessThanOrEqual(1);
+  });
+
+  it('the limit demo customer has nothing pending, so only the 24-hour limit applies to it', () => {
+    expect(pickup.filter((row) => row.who === 'limit' && row.status === 'pending')).toHaveLength(0);
+    expect(table.filter((row) => row.who === 'limit')).toHaveLength(0);
   });
 });

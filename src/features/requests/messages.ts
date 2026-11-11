@@ -1,4 +1,5 @@
 import type { RequestErrorCode } from './api';
+import type { RequestFilter } from './schema';
 
 export const PAY_NOTE = 'Estimated total. Pay the seller directly.';
 export const NO_PRICE_NOTE = 'Total excludes items without a price';
@@ -10,6 +11,32 @@ export const ARRIVED_DONE = "You've told the restaurant you arrived";
 export const SENT_EMPTY = 'No requests yet. Requests you send will show up here.';
 export const BUSINESS_CHECK_ERROR = "Couldn't check your business, so Received is not shown.";
 export const NOT_AVAILABLE = "This place isn't available right now.";
+
+// The request list filters (spec 11c), for Sent and Received alike.
+export const FILTER_LABELS: Record<RequestFilter, string> = {
+  all: 'All',
+  pending: 'Pending',
+  accepted: 'Accepted',
+  declined: 'Declined',
+};
+export const SENT_FILTER_GROUP = 'Filter sent requests';
+export const SENT_EMPTY_PENDING = 'Nothing waiting for an answer right now.';
+export const EMPTY_ACCEPTED = 'No accepted requests yet.';
+export const EMPTY_DECLINED = 'No declined requests.';
+
+/** The Sent list's empty text for one filter. */
+export function sentEmptyMessage(filter: RequestFilter): string {
+  switch (filter) {
+    case 'pending':
+      return SENT_EMPTY_PENDING;
+    case 'accepted':
+      return EMPTY_ACCEPTED;
+    case 'declined':
+      return EMPTY_DECLINED;
+    default:
+      return SENT_EMPTY;
+  }
+}
 
 export function sentMessage(sellerName: string): string {
   return `Waiting for ${sellerName} to respond.`;

@@ -6,16 +6,17 @@ import { Banner, Button, EmptyState, ErrorState, Skeleton } from '@/components/u
 import { useTheme } from '@/theme/useTheme';
 
 import { useBusinessRequests } from '../hooks/useBusinessRequests';
-import type { InboxFilter as Filter, BusinessRequest } from '../schema';
+import type { BusinessRequest, RequestFilter } from '../schema';
 import {
   emptyMessage,
   inboxErrorMessage,
   INBOX_LOAD_MORE_ERROR,
   INBOX_REFRESH_ERROR,
+  RECEIVED_FILTER_GROUP,
 } from '../sellerMessages';
 import type { TimeOptions } from '../time';
 
-import { InboxFilter } from './InboxFilter';
+import { RequestFilterChips } from './RequestFilterChips';
 import { SellerRequestRow } from './SellerRequestRow';
 
 type SellerRequestsScreenProps = TimeOptions & {
@@ -24,14 +25,17 @@ type SellerRequestsScreenProps = TimeOptions & {
 
 const requestKey = (request: BusinessRequest) => request.id;
 
-// The seller's inbox, newest first. Opens on Waiting; All shows every request. Loading, empty,
-// error with Retry, or the list. More rows load as you scroll near the end (a footer spinner, or an
+// The seller's inbox (Received in the Requests tab, and Manage Business > Requests), newest first.
+// Filter chips All / Pending / Accepted / Declined, done by the server; opens on Pending. The
+// choice is this screen's state: kept while it stays mounted (the Requests tab), back to Pending
+// when it is opened again (Manage Business, a stack screen). Loading, empty, error with Retry, or
+// the list. More rows load as you scroll near the end (a footer spinner, or an
 // inline Try again if that page fails, with the rows already loaded kept). Pull down to start again
 // from the newest 50. Refetches when the app comes back to the front, every 30 s while a pending
 // row is loaded, and just after one expires. The seller Stack's header draws the title and Back.
 export function SellerRequestsScreen({ onOpen, timeZone, locale }: SellerRequestsScreenProps) {
   const { colors, space, type } = useTheme();
-  const [filter, setFilter] = useState<Filter>('waiting');
+  const [filter, setFilter] = useState<RequestFilter>('pending');
   const query = useBusinessRequests(filter);
   const {
     refresh,
@@ -68,7 +72,7 @@ export function SellerRequestsScreen({ onOpen, timeZone, locale }: SellerRequest
       edges={['bottom']}
       style={[styles.root, { backgroundColor: colors.bg, padding: space.lg, gap: space.md }]}
     >
-      <InboxFilter value={filter} onChange={setFilter} />
+      <RequestFilterChips value={filter} onChange={setFilter} groupLabel={RECEIVED_FILTER_GROUP} />
       {query.isPending ? (
         <View
           accessible

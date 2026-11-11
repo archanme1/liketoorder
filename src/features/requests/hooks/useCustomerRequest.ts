@@ -13,10 +13,16 @@ const READ: Record<RequestKind, (id: string) => Promise<RequestDetail>> = {
   table: getMyTableRequest,
 };
 
-/** The kind of a request already in the loaded Sent list, if it is there. */
+/** The kind of a request already in a loaded Sent list (any filter), if it is there. */
 function cachedKind(queryClient: QueryClient, id: string): RequestKind | null {
-  const pages = queryClient.getQueryData<Parameters<typeof flattenPages>[0]>(requestKeys.mine);
-  return flattenPages(pages).find((request) => request.id === id)?.kind ?? null;
+  const lists = queryClient.getQueriesData<Parameters<typeof flattenPages>[0]>({
+    queryKey: requestKeys.mine,
+  });
+  for (const [, pages] of lists) {
+    const kind = flattenPages(pages).find((request) => request.id === id)?.kind;
+    if (kind) return kind;
+  }
+  return null;
 }
 
 /**

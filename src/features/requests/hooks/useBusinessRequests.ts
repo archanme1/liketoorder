@@ -2,7 +2,7 @@ import type { InfiniteData } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
 import { listBusinessRequests } from '../api';
-import type { InboxFilter, BusinessRequest, SellerRequestList } from '../schema';
+import type { BusinessRequest, RequestFilter, SellerRequestList } from '../schema';
 
 import { requestKeys } from './keys';
 import { flattenRequestPages, usePagedRequests, type PagedCursor } from './usePagedRequests';
@@ -20,11 +20,12 @@ const nextCursor = (last: SellerRequestList) => last.next_cursor ?? undefined;
 
 /**
  * The seller's inbox for one filter, newest first, 50 a page, paged by the server's cursor
- * ("<created_at>|<id>", sent back untouched). Polled every 30 s: always on Waiting (even when
- * empty: nothing pushes a new request until spec 12, and an empty Waiting list is where a seller sits
- * and waits), on All only while a pending row is loaded. The paging itself is `usePagedRequests`.
+ * ("<created_at>|<id>", sent back untouched). The server applies the filter. Polled every 30 s:
+ * always on Pending (even when empty: nothing pushes a new request until spec 12, and an empty
+ * Pending list is where a seller sits and waits), on the others only while a pending row is
+ * loaded. The paging itself is `usePagedRequests`.
  */
-export function useBusinessRequests(filter: InboxFilter) {
+export function useBusinessRequests(filter: RequestFilter) {
   const queryKey = useMemo(() => requestKeys.inbox(filter), [filter]);
   const fetchPage = useCallback(
     (before: string | undefined) => listBusinessRequests(filter, before),
@@ -34,6 +35,6 @@ export function useBusinessRequests(filter: InboxFilter) {
     queryKey,
     fetchPage,
     nextCursor,
-    poll: filter === 'waiting' ? 'always' : 'pending',
+    poll: filter === 'pending' ? 'always' : 'pending',
   });
 }

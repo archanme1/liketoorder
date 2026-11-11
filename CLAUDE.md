@@ -186,7 +186,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 10 | seller-request-inbox | ✅ Shipped | .claude/specs/10-seller-request-inbox.md |
 | 10b | requests-tab-and-answers | ✅ Shipped | .claude/specs/10b-requests-tab-and-answers.md |
 | 11 | table-requests | ✅ Shipped | .claude/specs/11-table-requests.md |
-| 11b | request-limits | 📝 Planned (not started) | — |
+| 11b | request-limits | 📝 Spec written | .claude/specs/11b-request-limits.md |
 | 11c | requests-filters | 📝 Planned (not started) | — |
 | 11d | theme-refresh | 📝 Planned (not started) | — |
 | 12 | notifications | ⬜ Not started | — |

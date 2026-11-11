@@ -6,7 +6,7 @@
 **Status:** 📝 Spec written
 
 ## Overview
-A customer can send as many requests to the same restaurant as they like over time (for example 100 visits a month), as long as the earlier request has been answered, cancelled or has expired. The 10-per-hour limit is gone. At any moment a customer can have at most 3 waiting pickup requests and 3 waiting table requests, and 1 waiting request per restaurant per kind. One generous backstop stops a script that creates and cancels in a loop: at most 10 submits per customer per restaurant per kind in a rolling 24 hours, counting every status. A normal person never reaches it; a script cannot flood one restaurant's inbox (or, after spec 12, its notifications). It comes now because Archan's run of spec 11 showed the old numbers (5 pending, 10 an hour) did not fit real use.
+A customer can send as many requests to the same restaurant as they like over time (for example 100 visits a month), as long as the earlier request has been answered, cancelled or has expired. The hourly limit is gone. At any moment a customer can have at most 3 waiting pickup requests and 3 waiting table requests, and 1 waiting request per restaurant per kind. One generous backstop stops a script that creates and cancels in a loop: at most 10 submits per customer per restaurant per kind in a rolling 24 hours, counting every status. A normal person never reaches it; a script cannot flood one restaurant's inbox (or, after spec 12, its notifications). It comes now because Archan's run of spec 11 showed the old numbers (a higher pending cap and an hourly limit) did not fit real use.
 
 ## Depends on
 Specs 09, 10, 10b and 11 (all ✅ Shipped).
@@ -115,7 +115,7 @@ Feature-specific rules:
 - [ ] pgTAP: pickup and table caps are independent (3 pending pickups do not block a table request, and the reverse).
 - [ ] pgTAP: a 2nd pending request to the same restaurant is refused for each kind; a different restaurant is accepted.
 - [ ] pgTAP: cancelling, accepting, declining and expiry (swept, and unswept with `expires_at <= now`) each free a pending slot; unswept overdue rows do not count toward the cap.
-- [ ] pgTAP: more than 10 submits to one restaurant in an hour are no longer refused for the hourly reason (answered or cancelled between submits; the first refusal is the backstop at the 11th within 24 h, not `rate_limited` at 10 per hour).
+- [ ] pgTAP: the hourly limit is gone: more than 10 submits in one hour to different places (12 for pickup, 11 for table; each cancelled right after so the pending cap is never reached) are all accepted. The only refusal is the backstop at the 11th submit to the same place within 24 hours.
 - [ ] pgTAP backstop: the 10th submit in 24 h to one restaurant is accepted, the 11th raises `rate_limited` and writes nothing, for pickup and for table.
 - [ ] pgTAP backstop: cancelled, expired, accepted and declined rows all count.
 - [ ] pgTAP backstop: kinds are independent (10 pickup rows to a restaurant do not block a table request to it, and the reverse); a different restaurant is not affected; a different customer is not affected.
@@ -128,7 +128,7 @@ Feature-specific rules:
 - [ ] The app shows the new `too_many_pending` text ("You have too many requests waiting. You can have up to 3 pickup and 3 table requests waiting, and 1 per place. Cancel one or wait for an answer.") in the pickup form, table form and cancel/arrived error bars, and the new `rate_limited` text ("You've sent a lot of requests to this place today. Please try again tomorrow.") for the backstop; no other message changes.
 - [ ] The seed has a limit demo customer (`seed-customer-limit@example.com`) with 10 cancelled pickup requests to one restaurant within the last 24 hours of seed time, and no seeded customer has more than 3 pending requests per kind or more than 1 per business (a jest test asserts both).
 - [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` pass; CI is green.
-- [ ] `docs/product/v1.md` §8 and §9 state the limits, `.claude/skills/supabase-patterns/SKILL.md` has the new numbers, and no file outside the shipped specs still says "5 pending" or "10 an hour" for requests.
+- [ ] `docs/product/v1.md` sections 8 and 9 state the limits, `.claude/skills/supabase-patterns/SKILL.md` has the new numbers, and no file outside the shipped specs 09, 10, 10b and 11 and the old migrations still states the old pending cap or the hourly limit for requests.
 
 ## Test plan
 - Unit/component tests (jest): `messages.test.ts` covers the two new texts (and the apostrophe check); `PickupRequestForm.test.tsx` and the new `TableRequestFormLimits.test.tsx` show `too_many_pending` and `rate_limited` in the error bar with the new text; `api.test.ts` and `tableApi.test.ts` still map both codes; `scripts/seed/__tests__/requestsData.test.ts` covers the limit demo rows and the seeded pending counts.

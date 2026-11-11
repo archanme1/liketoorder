@@ -3,7 +3,7 @@
 **Branch:** `feature/request-limits`
 **Product spec:** `docs/product/v1.md` §8, §9, §14
 **Plan mode:** required — changes two Postgres functions that guard request creation, and touches more than 5 files (migration, two pgTAP files, messages and their tests, docs, skill)
-**Status:** 📝 Spec written
+**Status:** ✅ Shipped
 
 ## Overview
 A customer can send as many requests to the same restaurant as they like over time (for example 100 visits a month), as long as the earlier request has been answered, cancelled or has expired. The hourly limit is gone. At any moment a customer can have at most 3 waiting pickup requests and 3 waiting table requests, and 1 waiting request per restaurant per kind. One generous backstop stops a script that creates and cancels in a loop: at most 10 submits per customer per restaurant per kind in a rolling 24 hours, counting every status. A normal person never reaches it; a script cannot flood one restaurant's inbox (or, after spec 12, its notifications). It comes now because Archan's run of spec 11 showed the old numbers (a higher pending cap and an hourly limit) did not fit real use.
@@ -111,24 +111,24 @@ Feature-specific rules:
 - Per-user admin overrides, captcha, IP-based limits (v1.md §3 and §16).
 
 ## Definition of done
-- [ ] pgTAP: 3 pending pickup requests are accepted, the 4th raises `too_many_pending`; same for table; nothing is written when refused.
-- [ ] pgTAP: pickup and table caps are independent (3 pending pickups do not block a table request, and the reverse).
-- [ ] pgTAP: a 2nd pending request to the same restaurant is refused for each kind; a different restaurant is accepted.
-- [ ] pgTAP: cancelling, accepting, declining and expiry (swept, and unswept with `expires_at <= now`) each free a pending slot; unswept overdue rows do not count toward the cap.
-- [ ] pgTAP: the hourly limit is gone: more than 10 submits in one hour to different places (12 for pickup, 11 for table; each cancelled right after so the pending cap is never reached) are all accepted. The only refusal is the backstop at the 11th submit to the same place within 24 hours.
-- [ ] pgTAP backstop: the 10th submit in 24 h to one restaurant is accepted, the 11th raises `rate_limited` and writes nothing, for pickup and for table.
-- [ ] pgTAP backstop: cancelled, expired, accepted and declined rows all count.
-- [ ] pgTAP backstop: kinds are independent (10 pickup rows to a restaurant do not block a table request to it, and the reverse); a different restaurant is not affected; a different customer is not affected.
-- [ ] pgTAP backstop: rows 23 hours 59 minutes old count, rows just over 24 hours old do not.
-- [ ] pgTAP: a replay (same idempotency key) at the pending cap and at the backstop limit returns the original row and writes nothing.
-- [ ] pgTAP outsider cannot: another customer's pending or recent rows do not count toward my caps; `anon` cannot execute either function; the existing tests that stop a user reading or cancelling another user's request still pass.
-- [ ] Deliberate-break proofs fail the matching test for every break listed in the rules, each wrapped in `lives_ok` and rolled back.
-- [ ] Both functions keep their exact signatures, return type, `security definer`, `search_path` and grants; `src/types/database.ts` is unchanged; the app on `main` works against the new server.
-- [ ] The new migration is pure ASCII and the non-ASCII byte check is clean under the rule in "Rules for implementation" (whole file for the migration and for files that are clean today, added lines only for the rest), on all changed source, test and markdown files (the markdown check also covers invisible characters such as zero-width spaces and bidirectional marks, proved on a scratch file first).
-- [ ] The app shows the new `too_many_pending` text ("You have too many requests waiting. You can have up to 3 pickup and 3 table requests waiting, and 1 per place. Cancel one or wait for an answer.") in the pickup form, table form and cancel/arrived error bars, and the new `rate_limited` text ("You've sent a lot of requests to this place today. Please try again tomorrow.") for the backstop; no other message changes.
-- [ ] The seed has a limit demo customer (`seed-customer-limit@example.com`) with 10 cancelled pickup requests to one restaurant within the last 24 hours of seed time, and no seeded customer has more than 3 pending requests per kind or more than 1 per business (a jest test asserts both).
-- [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` pass; CI is green.
-- [ ] `docs/product/v1.md` sections 8 and 9 state the limits, `.claude/skills/supabase-patterns/SKILL.md` has the new numbers, and no file outside the shipped specs 09, 10, 10b and 11 and the old migrations still states the old pending cap or the hourly limit for requests.
+- [x] pgTAP: 3 pending pickup requests are accepted, the 4th raises `too_many_pending`; same for table; nothing is written when refused.
+- [x] pgTAP: pickup and table caps are independent (3 pending pickups do not block a table request, and the reverse).
+- [x] pgTAP: a 2nd pending request to the same restaurant is refused for each kind; a different restaurant is accepted.
+- [x] pgTAP: cancelling, accepting, declining and expiry (swept, and unswept with `expires_at <= now`) each free a pending slot; unswept overdue rows do not count toward the cap.
+- [x] pgTAP: the hourly limit is gone: more than 10 submits in one hour to different places (12 for pickup, 11 for table; each cancelled right after so the pending cap is never reached) are all accepted. The only refusal is the backstop at the 11th submit to the same place within 24 hours.
+- [x] pgTAP backstop: the 10th submit in 24 h to one restaurant is accepted, the 11th raises `rate_limited` and writes nothing, for pickup and for table.
+- [x] pgTAP backstop: cancelled, expired, accepted and declined rows all count.
+- [x] pgTAP backstop: kinds are independent (10 pickup rows to a restaurant do not block a table request to it, and the reverse); a different restaurant is not affected; a different customer is not affected.
+- [x] pgTAP backstop: rows 23 hours 59 minutes old count, rows just over 24 hours old do not.
+- [x] pgTAP: a replay (same idempotency key) at the pending cap and at the backstop limit returns the original row and writes nothing.
+- [x] pgTAP outsider cannot: another customer's pending or recent rows do not count toward my caps; `anon` cannot execute either function; the existing tests that stop a user reading or cancelling another user's request still pass.
+- [x] Deliberate-break proofs fail the matching test for every break listed in the rules, each wrapped in `lives_ok` and rolled back.
+- [x] Both functions keep their exact signatures, return type, `security definer`, `search_path` and grants; `src/types/database.ts` is unchanged; the app on `main` works against the new server.
+- [x] The new migration is pure ASCII and the non-ASCII byte check is clean under the rule in "Rules for implementation" (whole file for the migration and for files that are clean today, added lines only for the rest), on all changed source, test and markdown files (the markdown check also covers invisible characters such as zero-width spaces and bidirectional marks, proved on a scratch file first).
+- [x] The app shows the new `too_many_pending` text ("You have too many requests waiting. You can have up to 3 pickup and 3 table requests waiting, and 1 per place. Cancel one or wait for an answer.") in the pickup form, table form and cancel/arrived error bars, and the new `rate_limited` text ("You've sent a lot of requests to this place today. Please try again tomorrow.") for the backstop; no other message changes.
+- [x] The seed has a limit demo customer (`seed-customer-limit@example.com`) with 10 cancelled pickup requests to one restaurant within the last 24 hours of seed time, and no seeded customer has more than 3 pending requests per kind or more than 1 per business (a jest test asserts both).
+- [x] `npm run lint`, `npm run typecheck`, `npm test` and `npx supabase test db` pass; CI is green.
+- [x] `docs/product/v1.md` sections 8 and 9 state the limits, `.claude/skills/supabase-patterns/SKILL.md` has the new numbers, and no file outside the shipped specs 09, 10, 10b and 11 and the old migrations still states the old pending cap or the hourly limit for requests.
 
 ## Test plan
 - Unit/component tests (jest): `messages.test.ts` covers the two new texts (and the apostrophe check); `PickupRequestForm.test.tsx` and the new `TableRequestFormLimits.test.tsx` show `too_many_pending` and `rate_limited` in the error bar with the new text; `api.test.ts` and `tableApi.test.ts` still map both codes; `scripts/seed/__tests__/requestsData.test.ts` covers the limit demo rows and the seeded pending counts.
@@ -143,3 +143,10 @@ Feature-specific rules:
 
 ## Open questions
 None. (Archan decided: backstop accepted at 10 per customer per restaurant per kind per rolling 24 hours; one `too_many_pending` code with the combined wording; one PR with two gates.)
+
+## Results
+- **Gate A (database):** migration `request_limits` re-creates both functions; each diff against its source shows only the cap constant, the removed hourly block, the new backstop block, and `create or replace` for the table function. pgTAP 09 (plan 271) and 11 (plan 364) pass, 10 and 10b pass unchanged; the whole suite is 2082 assertions on a freshly reset database. Deliberate-break proofs (breaks 1 to 9 plus 8b) each turned the matching tests red, run in rolled-back transactions through `lives_ok`.
+- **Gate B (app, seed, docs):** the two new texts, the new table-form test, the limit demo seed customer, docs and skill notes. Lint, typecheck and the full jest run (186 suites, 2789 tests, run twice) pass.
+- **Code review:** security found nothing above Low (the Low, no overall daily cap across places, is accepted and recorded for spec 12 in `docs/product/v1.md`, the carry-forward list); quality approved with suggestions, which were applied.
+- **Manual check (iOS Simulator only, run by Archan; not a real iPhone and not Android):** all checks good. The backstop block at one place with another place still working; the pickup cap of 3 and 1 per place; the table cap of 3 with pickups independent; cancel and large text unchanged.
+- **Carry-forward:** overall daily request cap across places and notification throttling (spec 12); a real iPhone and Android check of the two messages is still open; pgTAP 11 covers four statuses for the "every status counts" case while pgTAP 09 covers all six.

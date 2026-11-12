@@ -188,7 +188,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 11 | table-requests | ✅ Shipped | .claude/specs/11-table-requests.md |
 | 11b | request-limits | ✅ Shipped | .claude/specs/11b-request-limits.md |
 | 11c | requests-filters | ✅ Shipped | .claude/specs/11c-requests-filters.md |
-| 11d | theme-refresh | 📝 Planned (not started) | — |
+| 11d | theme-refresh | Dropped: by Archan, he did not like the color design (beige background, orange fill buttons, teal accents); the unmerged work stays only on the local branch feature/theme-refresh | - |
 | 12 | notifications | ⬜ Not started | — |
 | 13 | food-log-uploads | ⬜ Not started | — |
 | 14 | activity-grid | ⬜ Not started | — |

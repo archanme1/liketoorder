@@ -189,7 +189,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 11b | request-limits | ✅ Shipped | .claude/specs/11b-request-limits.md |
 | 11c | requests-filters | ✅ Shipped | .claude/specs/11c-requests-filters.md |
 | 11d | theme-refresh | Dropped: by Archan, he did not like the color design (beige background, orange fill buttons, teal accents); the unmerged work stays only on the local branch feature/theme-refresh | - |
-| 12 | notifications | ⬜ Not started | — |
+| 12 | notifications | 🚧 In progress | .claude/specs/12-notifications.md |
 | 13 | food-log-uploads | ⬜ Not started | — |
 | 14 | activity-grid | ⬜ Not started | — |
 | 15 | activity-grid-cuisine-view | ⬜ Not started | — |

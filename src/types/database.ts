@@ -163,16 +163,36 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
-                },"pickup_requests": {
+                },"notification_settings": {
                   Row: {
-                    "accepted_address": string | null,"business_id": string,"created_at": string,"currency_code": string | null,"customer_id": string,"decline_reason": string | null,"expires_at": string,"id": string,"idempotency_key": string,"items": Json | null,"note": string | null,"order_text": string | null,"pickup_at": string,"responded_at": string | null,"response_note": string | null,"status": string,"updated_at": string
+                    "answers": boolean,"arrivals": boolean,"cancellations": boolean,"new_requests": boolean,"updated_at": string,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "accepted_address"?: string | null,"business_id": string,"created_at"?: string,"currency_code"?: string | null,"customer_id": string,"decline_reason"?: string | null,"expires_at": string,"id"?: string,"idempotency_key": string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at": string,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"updated_at"?: string
+                    "answers"?: boolean,"arrivals"?: boolean,"cancellations"?: boolean,"new_requests"?: boolean,"updated_at"?: string,"user_id": string
                   }
                   Update: {
-                    "accepted_address"?: string | null,"business_id"?: string,"created_at"?: string,"currency_code"?: string | null,"customer_id"?: string,"decline_reason"?: string | null,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at"?: string,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"updated_at"?: string
+                    "answers"?: boolean,"arrivals"?: boolean,"cancellations"?: boolean,"new_requests"?: boolean,"updated_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notification_settings_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: true
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"pickup_requests": {
+                  Row: {
+                    "accepted_address": string | null,"business_id": string,"created_at": string,"currency_code": string | null,"customer_id": string,"customer_unseen": boolean,"decline_reason": string | null,"expires_at": string,"id": string,"idempotency_key": string,"items": Json | null,"note": string | null,"order_text": string | null,"pickup_at": string,"responded_at": string | null,"response_note": string | null,"status": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "accepted_address"?: string | null,"business_id": string,"created_at"?: string,"currency_code"?: string | null,"customer_id": string,"customer_unseen"?: boolean,"decline_reason"?: string | null,"expires_at": string,"id"?: string,"idempotency_key": string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at": string,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"updated_at"?: string
+                  }
+                  Update: {
+                    "accepted_address"?: string | null,"business_id"?: string,"created_at"?: string,"currency_code"?: string | null,"customer_id"?: string,"customer_unseen"?: boolean,"decline_reason"?: string | null,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"items"?: Json | null,"note"?: string | null,"order_text"?: string | null,"pickup_at"?: string,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"updated_at"?: string
                   }
                   Relationships: [
                     {
@@ -237,6 +257,26 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"push_tokens": {
+                  Row: {
+                    "created_at": string,"id": string,"last_registered_at": string,"platform": string,"token": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"last_registered_at"?: string,"platform": string,"token": string,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"last_registered_at"?: string,"platform"?: string,"token"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "push_tokens_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"storage_cleanup_queue": {
                   Row: {
                     "business_id": string,"path": string,"queued_at": string
@@ -253,14 +293,14 @@ isOneToOne: false
                   ]
                 },"table_requests": {
                   Row: {
-                    "arrived_at": string | null,"business_id": string,"created_at": string,"customer_id": string,"decline_reason": string | null,"expires_at": string,"id": string,"idempotency_key": string,"note": string | null,"party_size": number,"responded_at": string | null,"response_note": string | null,"status": string,"table_at": string,"updated_at": string
+                    "arrived_at": string | null,"business_id": string,"created_at": string,"customer_id": string,"customer_unseen": boolean,"decline_reason": string | null,"expires_at": string,"id": string,"idempotency_key": string,"note": string | null,"party_size": number,"responded_at": string | null,"response_note": string | null,"status": string,"table_at": string,"updated_at": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "arrived_at"?: string | null,"business_id": string,"created_at"?: string,"customer_id": string,"decline_reason"?: string | null,"expires_at": string,"id"?: string,"idempotency_key": string,"note"?: string | null,"party_size": number,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"table_at": string,"updated_at"?: string
+                    "arrived_at"?: string | null,"business_id": string,"created_at"?: string,"customer_id": string,"customer_unseen"?: boolean,"decline_reason"?: string | null,"expires_at": string,"id"?: string,"idempotency_key": string,"note"?: string | null,"party_size": number,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"table_at": string,"updated_at"?: string
                   }
                   Update: {
-                    "arrived_at"?: string | null,"business_id"?: string,"created_at"?: string,"customer_id"?: string,"decline_reason"?: string | null,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"note"?: string | null,"party_size"?: number,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"table_at"?: string,"updated_at"?: string
+                    "arrived_at"?: string | null,"business_id"?: string,"created_at"?: string,"customer_id"?: string,"customer_unseen"?: boolean,"decline_reason"?: string | null,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"note"?: string | null,"party_size"?: number,"responded_at"?: string | null,"response_note"?: string | null,"status"?: string,"table_at"?: string,"updated_at"?: string
                   }
                   Relationships: [
                     {
@@ -306,8 +346,17 @@ isOneToOne: false
               "business_id": string,"place_id": string,"type": string
             }[]
                            },
+"claim_push_batch":
+{ Args: { "p_limit": number }; Returns: Json
+                           },
+"claim_push_receipts":
+{ Args: { "p_limit": number }; Returns: Json
+                           },
 "consume_places_quota":
 { Args: { "p_kind": string,"p_user_id": string }; Returns: boolean
+                           },
+"count_my_request_updates":
+{ Args: Record<PropertyKey, never>; Returns: number
                            },
 "count_waiting_requests":
 { Args: Record<PropertyKey, never>; Returns: Json
@@ -345,6 +394,9 @@ isOneToOne: false
 "get_my_table_request":
 { Args: { "p_request_id": string }; Returns: Json
                            },
+"get_notification_settings":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "get_restaurant_details":
 { Args: { "p_business_id": string }; Returns: Json
                            },
@@ -363,11 +415,23 @@ isOneToOne: false
 "mark_arrived":
 { Args: { "p_request_id": string }; Returns: Json
                            },
+"mark_my_requests_seen":
+{ Args: Record<PropertyKey, never>; Returns: undefined
+                           },
 "mark_request_outcome":
 { Args: { "p_kind"?: string,"p_outcome": string,"p_request_id": string }; Returns: Json
                            },
 "move_menu_item":
 { Args: { "p_direction": string,"p_item_id": string }; Returns: undefined
+                           },
+"record_push_receipts":
+{ Args: { "p_results": Json }; Returns: undefined
+                           },
+"record_push_results":
+{ Args: { "p_results": Json }; Returns: undefined
+                           },
+"register_push_token":
+{ Args: { "p_platform": string,"p_token": string }; Returns: undefined
                            },
 "respond_to_request":
 { Args: { "p_decision": string,"p_decline_reason"?: string,"p_kind"?: string,"p_note"?: string,"p_request_id": string }; Returns: Json
@@ -378,6 +442,9 @@ isOneToOne: false
 "set_menu_currency":
 { Args: { "p_code": string }; Returns: undefined
                            },
+"set_notification_settings":
+{ Args: { "p_answers": boolean,"p_arrivals": boolean,"p_cancellations": boolean,"p_new_requests": boolean }; Returns: Json
+                           },
 "set_seller_mode":
 { Args: { "p_on": boolean }; Returns: undefined
                            },
@@ -386,6 +453,9 @@ isOneToOne: false
                            },
 "submit_table_request":
 { Args: { "p_business_id": string,"p_idempotency_key": string,"p_note"?: string,"p_party_size": number,"p_table_at": string }; Returns: Json
+                           },
+"unregister_push_token":
+{ Args: { "p_token": string }; Returns: undefined
                            },
 "update_menu_item":
 { Args: { "p_description": string,"p_is_available": boolean,"p_item_id": string,"p_name": string,"p_price_minor": number }; Returns: undefined

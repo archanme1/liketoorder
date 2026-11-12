@@ -10,8 +10,10 @@
 -- quiet no-op without them, and outbox rows are asserted directly.
 -- claim_push_batch takes every due row in the database, so pg_temp.claim parks the queued rows of
 -- every other recipient first; each scenario has its own recipient and is checked before the next.
+-- pg_temp.claim does not park sending rows: a sending row left over in a local database, claimed
+-- over 5 minutes ago, would be reclaimed into a scenario's messages (CI starts from an empty one).
 begin;
-select plan(192);
+select plan(205);
 
 -- -- Helpers (pg_temp) -------------------------------------------------------
 -- Ids:  users 00000000-0000-0000-c012-<n>   businesses ...-c412-<n>   pickup requests ...-c812-<n>
@@ -158,26 +160,25 @@ $$;
 --   12 O5 owner b5 (cancelled before send, stale)   13 C4 (21st push)   14 C5 (20th push)   15 O6 owner b6 (arrived exempt)
 --   16 C6 (answers off)   17 O7 owner b7 (new requests off)   18 O8 owner b8 (no token)   19 C7 (retries)
 --   20 C8 (results and receipts)   21 C9 (stuck sending)   30..34 owners of b10..b14 (daily cap places)
--- Businesses: 1..8 restaurants that take tables; 10..14 the daily-cap places.
+--   22 owner b9 (stale row in a collapse)   23 C10 (5th reclaim)   24 owner b15 (cancel and arrival switches off)
+--   25 owner b16 (cancel of a held new request)   26 owner b17 (arrived pushes and the hourly cap)
+-- Businesses: 1..9 and 15..17 restaurants that take tables; 10..14 the daily-cap places.
 insert into auth.users (id, email)
 select pg_temp.u(n), 'p12_' || n || '@example.test'
-  from unnest(array[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,30,31,32,33,34]) n;
+  from unnest(array[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,30,31,32,33,34]) n;
 update public.profiles set username = 'p12_' || right(id::text, 3), display_name = 'SECRET-NAME'
  where id::text like '00000000-0000-0000-c012-%';
 
 insert into public.businesses (id, owner_id, type, name, cuisine_code, map_lat, map_lng, public_address, is_listed, accepts_table_requests)
 select pg_temp.b(n), pg_temp.u(o), 'restaurant', 'Place ' || n, 'IT', 63.0 + n / 10.0, 93.0, 'SECRET-ADDR ' || n || ' Main St', true, true
-  from (values (1, 2), (2, 3), (3, 10), (4, 11), (5, 12), (6, 15), (7, 17), (8, 18),
-               (10, 30), (11, 31), (12, 32), (13, 33), (14, 34)) as v(n, o);
+  from (values (1, 2), (2, 3), (3, 10), (4, 11), (5, 12), (6, 15), (7, 17), (8, 18), (9, 22),
+               (15, 24), (16, 25), (17, 26), (10, 30), (11, 31), (12, 32), (13, 33), (14, 34)) as v(n, o);
 insert into public.business_locations (business_id, place_id, formatted_address, lat, lng, resolved_at, place_status)
 select b.id, 'p12_' || right(b.id::text, 3), b.public_address, b.map_lat, b.map_lng, now() - interval '1 day', 'ok'
   from public.businesses b where b.id::text like '00000000-0000-0000-c412-%';
 
 create temp table res (label text primary key, j jsonb);
 grant all on res to public;
--- pg_net queue size before anything happens (null when pg_net is not installed).
-insert into res select 'net_before', to_jsonb((select count(*) from net.http_request_queue))
- where to_regclass('net.http_request_queue') is not null;
 
 -- -- 1. Closed tables: RLS on, no policy, no grant -------------------------------
 select ok((select relrowsecurity from pg_class where oid = 'public.push_tokens'::regclass), 'RLS is on for push_tokens');
@@ -244,8 +245,15 @@ select is(pg_temp.cron_field('push-sender', 'schedule'), '* * * * *', 'push-send
 select is(pg_temp.cron_field('push-sender', 'command'), 'select private.invoke_push_sender()', 'push-sender calls the kick');
 select is(pg_temp.cron_field('push-outbox-cleanup', 'schedule'), '15 4 * * *', 'push-outbox-cleanup runs at 04:15 UTC');
 select is(pg_temp.cron_field('push-outbox-cleanup', 'command'), 'select private.cleanup_push_outbox()', 'push-outbox-cleanup calls the cleanup');
-select is((select count(*)::int from vault.secrets where name in ('push_sender_url', 'push_sender_secret')), 0,
-  'the test database holds no push_sender vault secrets (the kick is a no-op here)');
+-- Decision 21: nothing in this file depends on the vault secrets. If they are set locally to try
+-- the sender, the kick is queued inside this transaction and rolled back with it.
+select case when (select count(*) from vault.secrets where name in ('push_sender_url', 'push_sender_secret')) = 0
+            then pass('the test database holds no push_sender vault secrets (the kick is a no-op here)')
+            else skip('push_sender vault secrets are set in this database; the kick is rolled back with this file', 1)
+       end;
+select ok((select position('pg_advisory_xact_lock(hashtextextended(''claim_push_batch'', 0))' in d) between 1 and position('with pairs as' in d)
+             from (select pg_get_functiondef('public.claim_push_batch(integer)'::regprocedure) as d) x),
+  'claim_push_batch takes the one-claim-at-a-time lock before it reads any row');
 
 -- Outsiders cannot touch the tables directly.
 set local role authenticated;
@@ -353,7 +361,10 @@ select pg_temp.mkp(26, 2, 5, 'pending');
 update public.pickup_requests set status = 'cancelled' where id = pg_temp.p(26);
 select pg_temp.mkt(20, 2, 5, 'pending');
 update public.table_requests set status = 'accepted', responded_at = now() where id = pg_temp.t(20);
--- Changed after the call starts (updated_at later than now()), and created after it.
+-- Changed after the call starts (updated_at later than now()), and created after it. now() is frozen
+-- in this transaction, so the set_updated_at trigger is switched off for one update to stand in for a
+-- later transaction. This covers a change that starts after the call; the accepted limit (a change
+-- that started before the call but commits during it) is not tested here.
 select pg_temp.mkp(27, 2, 5, 'pending');
 update public.pickup_requests set status = 'accepted', responded_at = now() where id = pg_temp.p(27);
 alter table public.pickup_requests disable trigger pickup_requests_set_updated_at;
@@ -606,6 +617,75 @@ select is_empty(
              or r.j::text ~ 'soup' or r.j::text ~ pg_temp.u(1)::text) $$,
   'no message holds a note, order text, address, email, phone, customer name or customer id');
 
+-- -- 10b. More claim rules ------------------------------------------------------
+-- (a) A held new request that is no longer pending when the window ends is dropped, not counted
+-- (owner user 22, b9). The newer of two held rows goes stale, so the older one leads and sweeps it.
+select pg_temp.tok(15, 22);
+select pg_temp.mkp(90, 9, 1, 'pending');
+insert into res values ('claim_a0', pg_temp.claim(pg_temp.u(22)));
+select lives_ok(format($$ select public.record_push_results('[{"outbox_ids": [%s], "outcome": "sent"}]') $$,
+                       pg_temp.oid(pg_temp.p(90), 'new_request')), 'stale-in-group: the first push is recorded as sent');
+update private.notification_outbox set claimed_at = now() - interval '4 minutes 59 seconds' where id = pg_temp.oid(pg_temp.p(90), 'new_request');
+select pg_temp.mkp(91, 9, 1, 'pending');
+select pg_temp.mkp(92, 9, 1, 'pending');
+insert into res values ('claim_a1', pg_temp.claim(pg_temp.u(22)));
+update public.pickup_requests set status = 'declined', responded_at = now() where id = pg_temp.p(92);
+update private.notification_outbox set claimed_at = now() - interval '5 minutes' where id = pg_temp.oid(pg_temp.p(90), 'new_request');
+update private.notification_outbox set next_attempt_at = now()
+ where id in (pg_temp.oid(pg_temp.p(91), 'new_request'), pg_temp.oid(pg_temp.p(92), 'new_request'));
+insert into res values ('claim_a2', pg_temp.claim(pg_temp.u(22)));
+select is((select (j -> 0 ->> 'count') || ':' || (j -> 0 ->> 'request_id') from res where label = 'claim_a2'), '1:' || pg_temp.p(91),
+  'a held new request that went stale is not counted: the push counts 1, for the live request');
+select is(pg_temp.ost(pg_temp.p(92), 'new_request'), 'skipped/stale', 'and the stale held row is skipped/stale');
+
+-- (b) A sending row reclaimed for the 5th time becomes failed (customer user 23).
+select pg_temp.tok(17, 23);
+select pg_temp.mkp(99, 1, 23, 'pending');
+update public.pickup_requests set status = 'accepted', responded_at = now() where id = pg_temp.p(99);
+insert into res values ('claim_b0', pg_temp.claim(pg_temp.u(23)));
+update private.notification_outbox set attempts = 4, claimed_at = now() - interval '5 minutes' where id = pg_temp.oid(pg_temp.p(99), 'accepted');
+insert into res values ('claim_b1', pg_temp.claim(pg_temp.u(23)));
+select is((select status || '|' || attempts from private.notification_outbox where id = pg_temp.oid(pg_temp.p(99), 'accepted')),
+  'failed|5', 'a row reclaimed for the 5th time (a sender that keeps stopping) becomes failed');
+select is((select jsonb_array_length(j) from res where label = 'claim_b1'), 0, 'and is not sent again');
+
+-- (c) The cancellation and arrival switches (owner user 24, b15; new requests stay on).
+insert into public.notification_settings (user_id, cancellations, arrivals) values (pg_temp.u(24), false, false);
+select pg_temp.tok(13, 24);
+select pg_temp.mkp(94, 15, 1, 'pending');
+update private.notification_outbox set status = 'sent', claimed_at = now() - interval '1 hour' where request_id = pg_temp.p(94);
+update public.pickup_requests set status = 'cancelled' where id = pg_temp.p(94);
+select pg_temp.mkt(94, 15, 1, 'accepted');
+update public.table_requests set arrived_at = now() where id = pg_temp.t(94);
+select pg_temp.mkp(95, 15, 1, 'pending');
+insert into res values ('claim_c3', pg_temp.claim(pg_temp.u(24)));
+select is(pg_temp.ost(pg_temp.p(94), 'cancelled'), 'skipped/setting_off', 'cancellations off: the cancelled push is skipped/setting_off');
+select is(pg_temp.ost(pg_temp.t(94), 'arrived'), 'skipped/setting_off', 'arrivals off: the arrived push is skipped/setting_off');
+select is(pg_temp.ost(pg_temp.p(95), 'new_request'), 'sending', 'new requests stay on: that push is sent');
+
+-- (d) A cancel while its new-request push is held drops both (owner user 25, b16).
+select pg_temp.tok(14, 25);
+select pg_temp.mkp(96, 16, 1, 'pending');
+insert into res values ('claim_d0', pg_temp.claim(pg_temp.u(25)));
+select lives_ok(format($$ select public.record_push_results('[{"outbox_ids": [%s], "outcome": "sent"}]') $$,
+                       pg_temp.oid(pg_temp.p(96), 'new_request')), 'held-cancel: the first push is recorded as sent');
+update private.notification_outbox set claimed_at = now() - interval '4 minutes 59 seconds' where id = pg_temp.oid(pg_temp.p(96), 'new_request');
+select pg_temp.mkp(97, 16, 1, 'pending');
+insert into res values ('claim_d1', pg_temp.claim(pg_temp.u(25)));
+select is(pg_temp.ost(pg_temp.p(97), 'new_request'), 'queued', 'the second new request is held');
+update public.pickup_requests set status = 'cancelled' where id = pg_temp.p(97);
+insert into res values ('claim_d2', pg_temp.claim(pg_temp.u(25)));
+select is(pg_temp.ost(pg_temp.p(97), 'new_request') || ',' || pg_temp.ost(pg_temp.p(97), 'cancelled'),
+  'skipped/cancelled_before_send,skipped/cancelled_before_send', 'cancelling a request whose push is held drops both rows');
+select is((select jsonb_array_length(j) from res where label = 'claim_d2'), 0, 'and nothing is sent');
+
+-- (e) Arrived pushes do not count toward the hourly cap of other events (owner user 26, b17).
+select pg_temp.tok(16, 26);
+select pg_temp.pushed(26, 17, 'arrived', 20, now() - interval '30 minutes');
+select pg_temp.mkp(98, 17, 1, 'pending');
+insert into res values ('claim_e0', pg_temp.claim(pg_temp.u(26)));
+select is(pg_temp.ost(pg_temp.p(98), 'new_request'), 'sending', '20 arrived pushes in the hour do not throttle a new-request push');
+
 -- -- 11. Retries, results, stuck rows ------------------------------------------------
 select is(pg_temp.record_err('{}'), 'invalid_input', 'record_push_results refuses a non-array');
 select is(pg_temp.record_err('[{"outbox_ids": [1], "outcome": "maybe"}]'), 'invalid_input', 'and an unknown outcome');
@@ -729,11 +809,6 @@ select is(array(select ticket_id from private.push_tickets where ticket_id like 
   array['ticket-0901'], 'tickets with no receipt after 24 hours and tickets older than 7 days are deleted');
 select is(array(select token from public.push_tokens where user_id = pg_temp.u(4) order by token),
   array['ExponentPushToken[fixture-0301]'], 'tokens not registered for 60 days are deleted');
-
--- -- 15. No pg_net call was made -------------------------------------------------
-select is((select count(*) from net.http_request_queue)::text,
-          coalesce((select j::text from res where label = 'net_before'), (select count(*) from net.http_request_queue)::text),
-  'no pg_net request was queued by any trigger in this file (no vault secrets)');
 
 select * from finish();
 rollback;

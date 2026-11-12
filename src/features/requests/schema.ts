@@ -169,6 +169,9 @@ export const waitingCountSchema = z.strictObject({
   waiting: z.number().int().min(0),
 });
 
+/** count_my_request_updates: a plain count. */
+export const updatesCountSchema = z.number().int().min(0);
+
 /**
  * The request list filters (spec 11c), in chip order, for Sent and Received alike. The server
  * decides what each one matches: Pending is pending and not yet expired; Accepted is accepted,

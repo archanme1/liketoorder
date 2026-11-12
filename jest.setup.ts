@@ -207,6 +207,114 @@ jest.mock('expo-location', () => ({
   })),
 }));
 
+// -- Spec 12 push notifications: native under jest, so each gets a small controllable fake. --
+// Same names and shapes as expo-notifications 58 (no PermissionStatus: the real module does not
+// export it). Default: never asked; asking grants; a fake Expo token; no notification tapped yet.
+// Listeners are kept in Sets; each subscription's remove() takes it out, like the real
+// EventSubscription. Test-only helpers (never in the real module):
+//   __emitReceived(notification)  a push arrives while the app is in the foreground
+//   __emitResponse(response)      a warm tap (also becomes the last response, like the real module)
+//   __setLastResponse(response)   a cold start from a tap (undefined = the hook is still loading)
+//   __emitToken(token)            the device push token changed
+//   __listenerCount()             how many listeners are still subscribed
+//   __reset()                     drops every listener and the last response (runs after each test)
+// Build notifications and responses with src/features/notifications/__fixtures__/notifications.ts.
+jest.mock('expo-notifications', () => {
+  // jest.mock factories may only name out-of-scope things (type parameters included) prefixed
+  // with `mock`.
+  type MockListener = (mockEvent: unknown) => void;
+  const received = new Set<MockListener>();
+  const responses = new Set<MockListener>();
+  const tokens = new Set<MockListener>();
+  const state: { last: unknown } = { last: null };
+  const subscribe =
+    (set: Set<MockListener>) => (listener: MockListener) => {
+      set.add(listener);
+      return { remove: () => void set.delete(listener) };
+    };
+  const emit = (set: Set<MockListener>, event: unknown) =>
+    [...set].forEach((listener) => listener(event));
+  return {
+    __esModule: true,
+    DEFAULT_ACTION_IDENTIFIER: 'expo.modules.notifications.actions.DEFAULT',
+    AndroidImportance: {
+      UNKNOWN: 0,
+      UNSPECIFIED: 1,
+      NONE: 2,
+      MIN: 3,
+      LOW: 4,
+      DEFAULT: 5,
+      HIGH: 6,
+      MAX: 7,
+    },
+    getPermissionsAsync: jest.fn(async () => ({
+      status: 'undetermined',
+      granted: false,
+      canAskAgain: true,
+      expires: 'never',
+    })),
+    requestPermissionsAsync: jest.fn(async () => ({
+      status: 'granted',
+      granted: true,
+      canAskAgain: true,
+      expires: 'never',
+    })),
+    getExpoPushTokenAsync: jest.fn(async () => ({
+      type: 'expo',
+      data: 'ExponentPushToken[test-0001]',
+    })),
+    setNotificationHandler: jest.fn(),
+    setNotificationChannelAsync: jest.fn(async () => null),
+    addNotificationReceivedListener: jest.fn(subscribe(received)),
+    addNotificationResponseReceivedListener: jest.fn(subscribe(responses)),
+    addPushTokenListener: jest.fn(subscribe(tokens)),
+    useLastNotificationResponse: jest.fn(() => state.last),
+    getLastNotificationResponse: jest.fn(() => state.last),
+    clearLastNotificationResponse: jest.fn(() => {
+      state.last = null;
+    }),
+    __emitReceived: (notification: unknown) => emit(received, notification),
+    __emitResponse: (response: unknown) => {
+      state.last = response;
+      emit(responses, response);
+    },
+    __setLastResponse: (response: unknown) => {
+      state.last = response;
+    },
+    __emitToken: (token: unknown) => emit(tokens, token),
+    __listenerCount: () => received.size + responses.size + tokens.size,
+    __reset: () => {
+      received.clear();
+      responses.clear();
+      tokens.clear();
+      state.last = null;
+    },
+  };
+});
+
+// A real phone by default. `isDevice` is a getter, so __setIsDevice(false) plays the Simulator
+// for code that reads Device.isDevice at call time (reset after each test).
+jest.mock('expo-device', () => {
+  const state = { isDevice: true };
+  return {
+    __esModule: true,
+    get isDevice() {
+      return state.isDevice;
+    },
+    osName: 'iOS',
+    __setIsDevice: (value: boolean) => {
+      state.isDevice = value;
+    },
+  };
+});
+
+afterEach(() => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  require('expo-notifications').__reset();
+  require('expo-device').__setIsDevice(true);
+  /* eslint-enable @typescript-eslint/no-require-imports */
+});
+
 // The bottom sheet needs reanimated + gesture-handler natively. The fake renders a View
 // (testID "bottom-sheet") that keeps every prop (snapPoints, index, enablePanDownToClose,
 // onChange, onClose), so tests can read them and call the handlers, and its ref exposes the

@@ -16,6 +16,7 @@ import {
   sellerRequestDetailSchema,
   sellerRequestListSchema,
   tableRequestSchema,
+  updatesCountSchema,
   waitingCountSchema,
   type OrderLine,
   type PickupAddress,
@@ -317,4 +318,22 @@ export async function countWaitingRequests(): Promise<WaitingCount> {
   const parsed = waitingCountSchema.safeParse(data);
   if (!parsed.success) throw new RequestAppError('unknown');
   return parsed.data;
+}
+
+/**
+ * How many of the customer's own requests (both kinds) changed since they last opened Sent: the
+ * server sets the flag on an answer, an expiry, completed and no-show, never on their own cancel.
+ */
+export async function countMyRequestUpdates(): Promise<number> {
+  const { data, error } = await supabase.rpc('count_my_request_updates');
+  if (error) throw mapRequestError(error);
+  const parsed = updatesCountSchema.safeParse(data);
+  if (!parsed.success) throw new RequestAppError('unknown');
+  return parsed.data;
+}
+
+/** Clears the flag on the requests that had changed when this was called (later changes stay). */
+export async function markMyRequestsSeen(): Promise<void> {
+  const { error } = await supabase.rpc('mark_my_requests_seen');
+  if (error) throw mapRequestError(error);
 }

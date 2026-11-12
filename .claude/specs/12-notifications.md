@@ -5,7 +5,7 @@
 - PR 2 (the app: `expo-notifications`, token registration, permission primer, Profile settings, tap routing, foreground refresh, server badge, jest tests): `feature/notifications-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §2 (push notifications in v1), §3 (out of scope), §4 (Navigation, the Requests tab number), §8 (Pickup requests), §9 (Table requests, I've arrived), §12 (Notifications), §14 row 12, §16 (cancel after accept needs a seller notification; overall daily cap and notification throttling; customer badge is per phone; polling under stacked screens; the seller's words are not put into notification text; cross-feature imports; hosted extensions; function privileges)
 **Plan mode:** required — new tables with RLS, triggers on both request tables, new and changed Postgres functions, a new Edge Function, a new native dependency (`expo-notifications`, needs a rebuild), new routes, and a change to sign-out (auth); far more than ~5 files.
-**Status:** 📝 Spec written
+**Status:** 🚧 In progress (PR 1 backend in review; PR 2 app not started)
 
 ## Overview
 After this ships, a business owner's phone gets a push notification when a pickup or table request arrives, when a customer cancels a pending request, and when a customer taps **I've arrived**. A customer's phone gets one when their request is accepted, declined or expires. Every text is a short fixed sentence; customer pushes may name the place, seller pushes name nobody. A notification never contains a request note, a response note, order text, an address, an email or a phone number; the details open inside the app after sign-in. Tapping a notification opens the right request (with its kind) after sign-in; a signed-out phone or a different account sees nothing it should not. Each kind of notification can be switched off in Profile, and the permission prompt is shown after a plain explanation at a sensible moment, never at launch.
@@ -94,6 +94,7 @@ create table private.notification_outbox (
                     check (status in ('queued','sending','sent','skipped','failed')),
   skip_reason     text check (skip_reason is null or skip_reason in
                     ('setting_off','no_token','stale','collapsed','throttled','cancelled_before_send')),
+  group_count     smallint not null default 1, -- events one push stands for (> 1 only on a collapsed lead row)
   attempts        smallint not null default 0,
   next_attempt_at timestamptz not null default now(),
   claimed_at      timestamptz,
@@ -187,7 +188,7 @@ All `security definer`, `set search_path = ''`, revoked from `public, anon, auth
 None.
 
 ## Edge Functions
-**`push-sender`** (PR 1), `supabase/functions/push-sender/{index,handler}.ts`, same shape as `places-refresh` (`index.ts` wires real dependencies into a pure `createHandler(deps)`; shared `_shared/http.ts`).
+**`push-sender`** (PR 1), `supabase/functions/push-sender/{index,handler,rpc}.ts`, same shape as `places-refresh` (`index.ts` wires real dependencies into a pure `createHandler(deps)`; shared `_shared/http.ts`).
 - **Auth:** `verify_jwt = false` in `config.toml`; the handler requires the `x-cron-secret` header to equal `PUSH_SENDER_SECRET` (401 with no body on mismatch, 500 `not_configured` when unset).
 - **Secrets** (Edge Function secrets, set by Archan, never in the repo, `.env` or logs): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PUSH_SENDER_SECRET`, optional `EXPO_ACCESS_TOKEN` (Expo's enhanced push security). Vault secrets `push_sender_url`, `push_sender_secret` (set by Archan).
 - **Input:** none (empty JSON). **Output:** `{ sent, skipped, retried, failed, receipts }` counts only.
@@ -230,7 +231,7 @@ All in `src/features/notifications/` unless noted. Routes stay thin.
 **PR 1**
 - `supabase/migrations/<timestamp>_notifications.sql`
 - `supabase/tests/12-notifications.test.sql`
-- `supabase/functions/push-sender/{index,handler}.ts`, `supabase/functions/_shared/{pushText,expoPush}.ts`
+- `supabase/functions/push-sender/{index,handler,rpc}.ts`, `supabase/functions/_shared/{pushText,expoPush}.ts`
 - `supabase/functions/tests/{push-sender,pushText}.test.ts`
 
 **PR 2**

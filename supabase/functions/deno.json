@@ -7,7 +7,7 @@
   "nodeModulesDir": "none",
   "tasks": {
     "test": "deno test --allow-env tests",
-    "check": "deno check places-autocomplete/index.ts places-resolve/index.ts places-refresh/index.ts tests/"
+    "check": "deno check places-autocomplete/index.ts places-resolve/index.ts places-refresh/index.ts push-sender/index.ts tests/"
   },
   "lint": {
     "rules": { "tags": ["recommended"] }

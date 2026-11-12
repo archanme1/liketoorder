@@ -350,6 +350,11 @@ declare
   v_name     text;
   v_messages jsonb := '[]'::jsonb;
 begin
+  -- One claim at a time. Each committed request kicks its own sender run, so runs can overlap; two
+  -- claims at once would not see each other's uncommitted sending rows and could both pass the
+  -- 5-minute window and the hourly cap. Waiting is safe: a claim only reads and updates rows and
+  -- ends with its transaction; the sending happens later, in the Edge Function.
+  perform pg_advisory_xact_lock(hashtextextended('claim_push_batch', 0));
   if p_limit is null or p_limit < 1 or p_limit > 100 then raise exception 'invalid_input'; end if;
 
   -- 1. Cancelled before the new-request push went out: neither is sent.

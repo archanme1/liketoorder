@@ -59,6 +59,23 @@ Deno.test('the place name is trimmed, its whitespace runs made one space, and cu
   assert.equal(text('accepted', 'pickup', 1, long).body, `${'A'.repeat(39)}B accepted your pickup request.`);
 });
 
+Deno.test('invisible and bidi characters in the place name are removed (built from code points)', () => {
+  const cp = (...points: number[]) => String.fromCodePoint(...points);
+  // Right-to-left override, zero-width space / joiner, isolates, word joiner, BOM, soft hyphen,
+  // Arabic letter mark, a C1 control and a Hangul filler, around and inside the name.
+  const sneaky = cp(0x202e) + 'Pas' + cp(0x200b) + 'ta' + cp(0x200d) + ' ' + cp(0x2066) + 'Place' + cp(0x2069)
+    + cp(0x2060, 0xfeff, 0x00ad, 0x061c, 0x0085, 0x3164);
+  assert.equal(placeName(sneaky), 'Pasta Place');
+  assert.equal(text('declined', 'pickup', 1, sneaky).body, 'Pasta Place declined your pickup request.');
+  for (const point of [0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0xfeff, 0x180e]) {
+    assert.ok(!text('accepted', 'table', 1, `A${cp(point)}B`).body.includes(cp(point)), `U+${point.toString(16)} is removed`);
+  }
+  // A name made only of invisible characters reads "The place".
+  assert.equal(placeName(cp(0x200b, 0x202e, 0xfeff)), 'The place');
+  // Ordinary letters outside ASCII stay.
+  assert.equal(placeName(cp(0x43a, 0x430, 0x444, 0x435)), cp(0x43a, 0x430, 0x444, 0x435));
+});
+
 Deno.test('a missing or blank place name reads "The place"', () => {
   assert.equal(placeName(null), 'The place');
   assert.equal(placeName('   '), 'The place');

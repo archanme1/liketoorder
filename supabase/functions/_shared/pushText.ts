@@ -18,10 +18,25 @@ export type PushText = { title: string; body: string };
 
 export const PLACE_NAME_MAX = 40;
 
-// The business name with runs of whitespace (newlines included) made one space, trimmed, and cut
-// to 40 characters (code points, so a character is never split).
+// Invisible characters a name could use to hide or reorder the fixed text around it: controls,
+// soft hyphen, combining grapheme joiner, Arabic letter mark, Hangul fillers, Khmer and Mongolian
+// invisibles, zero-width and bidi marks, bidi overrides and isolates, word joiner and invisible
+// operators, BOM, interlinear annotation marks. Built from code points so the source stays ASCII.
+const INVISIBLE_RANGES: [number, number][] = [
+  [0x0000, 0x001f], [0x007f, 0x009f], [0x00ad, 0x00ad], [0x034f, 0x034f], [0x061c, 0x061c],
+  [0x115f, 0x1160], [0x17b4, 0x17b5], [0x180b, 0x180e], [0x200b, 0x200f], [0x202a, 0x202e],
+  [0x2060, 0x206f], [0x3164, 0x3164], [0xfeff, 0xfeff], [0xffa0, 0xffa0], [0xfff9, 0xfffb],
+];
+const hex = (n: number) => n.toString(16).padStart(4, '0');
+const INVISIBLE = new RegExp(
+  '[' + INVISIBLE_RANGES.map(([a, b]) => `\\u{${hex(a)}}-\\u{${hex(b)}}`).join('') + ']',
+  'gu',
+);
+
+// The business name with runs of whitespace (newlines included) made one space, invisible
+// characters removed, trimmed, and cut to 40 characters (code points, so a character is never split).
 export function placeName(raw: string | null): string {
-  const cleaned = (raw ?? '').replace(/\s+/g, ' ').trim();
+  const cleaned = (raw ?? '').replace(/\s+/g, ' ').replace(INVISIBLE, '').trim();
   const cut = Array.from(cleaned).slice(0, PLACE_NAME_MAX).join('').trim();
   return cut === '' ? 'The place' : cut;
 }

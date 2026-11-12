@@ -351,6 +351,29 @@ Deno.test('one good token is enough: sent, with its ticket, and the dead token s
   });
 });
 
+Deno.test('a surprising Expo error code is treated and logged as unknown_error, never as its text', async () => {
+  const surprising = `Weird ${TOKEN_A} Request accepted ${PRIVATE.note}`;
+  const lines: string[] = [];
+  const saved = console.log;
+  console.log = (...args: unknown[]) => lines.push(args.map(String).join(' '));
+  try {
+    const s = setup({
+      send: () => Response.json({ data: [ticketError(surprising)] }),
+      receiptIds: ['ticket-1'],
+      receipts: () => Response.json({ data: { 'ticket-1': ticketError(surprising) } }),
+    });
+    await run(s);
+    assert.equal(s.recorded()[0].outcome, 'failed');
+    assert.deepEqual(s.rpcCalls.find((c) => c.fn === 'record_push_receipts')?.args.p_results, [
+      { ticket_id: 'ticket-1', status: 'error', error: 'unknown_error' },
+    ]);
+  } finally {
+    console.log = saved;
+  }
+  assert.ok(lines.filter((l) => l.includes('"code":"unknown_error"')).length >= 2, 'ticket and receipt both log unknown_error');
+  for (const line of lines) assert.ok(!line.includes('Weird') && !line.includes(TOKEN_A), `leaked: ${line}`);
+});
+
 Deno.test('an answer with the wrong number of tickets is retried', async () => {
   const { result } = await outcomeFor(() => Response.json({ data: [] }));
   assert.equal(result.outcome, 'retry');
@@ -442,6 +465,10 @@ Deno.test('logs and errors never contain a token, a title or body, a note or any
       { claims, send: () => new Response(`upstream ${TOKEN_A} ${TOKEN_B}`, { status: 500 }) },
       // Receipt errors.
       { claims: [], receiptIds: ['ticket-1'], receipts: () => Response.json({ data: { 'ticket-1': ticketError('DeviceNotRegistered') } }) },
+      // A surprising Expo code that holds the token, a title and the note.
+      { claims, receiptIds: ['ticket-2'],
+        send: (ms) => Response.json({ data: ms.map(() => ticketError(`Odd ${TOKEN_A} Request accepted ${PRIVATE.note}`)) }),
+        receipts: () => Response.json({ data: { 'ticket-2': ticketError(`Odd ${TOKEN_B} ${PRIVATE.email}`) } }) },
       // A database error thrown through the logging wrapper.
       { rpcError: 'claim_push_batch' },
       { claims, rpcError: 'record_push_results' },

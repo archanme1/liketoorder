@@ -32,6 +32,20 @@ export class ExpoRequestError extends Error {
   }
 }
 
+// Expo's documented ticket and receipt error codes. Anything else becomes unknown_error, so a changed
+// or surprising response can never carry text into a log line or the database.
+export const EXPO_ERROR_CODES = [
+  'DeviceNotRegistered',
+  'MessageTooBig',
+  'MessageRateExceeded',
+  'MismatchSenderId',
+  'InvalidCredentials',
+] as const;
+
+export function knownCode(code: string | undefined): string {
+  return (EXPO_ERROR_CODES as readonly string[]).includes(code ?? '') ? (code as string) : 'unknown_error';
+}
+
 // What a per-message error means for that token: drop it, try again later, or give up.
 export function classifyTicketError(code: string): 'dead_token' | 'retry' | 'fail' {
   if (code === 'DeviceNotRegistered') return 'dead_token';
@@ -114,7 +128,7 @@ export function createExpoClient({ fetch: fetchImpl, accessToken, timeoutMs = 10
         throw new ExpoRequestError('bad_response', true);
       }
       return parsed.data.data.map((t): ExpoResult =>
-        t.status === 'ok' ? { status: 'ok', id: t.id } : { status: 'error', code: t.details?.error ?? 'unknown_error' }
+        t.status === 'ok' ? { status: 'ok', id: t.id } : { status: 'error', code: knownCode(t.details?.error) }
       );
     },
 
@@ -125,7 +139,7 @@ export function createExpoClient({ fetch: fetchImpl, accessToken, timeoutMs = 10
       const parsed = ReceiptsResponse.safeParse(await post(RECEIPTS_URL, { ids }));
       if (!parsed.success) throw new ExpoRequestError('bad_response', true);
       for (const [id, r] of Object.entries(parsed.data.data)) {
-        receipts.set(id, r.status === 'ok' ? { status: 'ok' } : { status: 'error', code: r.details?.error ?? 'unknown_error' });
+        receipts.set(id, r.status === 'ok' ? { status: 'ok' } : { status: 'error', code: knownCode(r.details?.error) });
       }
       return receipts;
     },

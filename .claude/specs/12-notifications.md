@@ -147,8 +147,8 @@ alter table public.table_requests  add column customer_unseen boolean not null d
 
 ### Throttling and collapsing (decided, Decision 6)
 Applied inside `claim_push_batch` when a row is due:
-- **New requests, per recipient and business:** the first is sent at once. If a `new_request` push was sent to that owner less than **5 minutes** ago, the row is held until 5 minutes after that push. When the window ends, every held `new_request` row for the owner is sent as **one** collapsed push ("You have {n} new requests waiting."); the others become `skipped / collapsed`.
-- **Cancellations:** the same 5-minute rule, in their own bucket. If a cancelled request's `new_request` row is still unsent (queued or held), **both** rows become `skipped / cancelled_before_send`.
+- **New requests, per recipient and business:** the first is sent at once. If a `new_request` push was sent to that owner less than **5 minutes** ago, the row is held until 5 minutes after that push. When the window ends, every held `new_request` row for the owner is sent as **one** collapsed push ("You have {n} new requests waiting."); the others become `skipped / collapsed`. The collapsed push carries the **newest** request's kind and id, so a tap opens it.
+- **Cancellations:** the same 5-minute rule and the same collapsing, in their own bucket (newest request's kind and id; "{n} requests were cancelled." when the count is over 1). If a cancelled request's `new_request` row is still unsent (queued or held), **both** rows become `skipped / cancelled_before_send`.
 - **Stale:** a `new_request` whose request is no longer `pending` (or is past `expires_at`) when due is `skipped / stale`.
 - **Hard cap:** at most **20 pushes per recipient per rolling hour**; beyond that rows are `skipped / throttled`. `arrived` is exempt.
 - **Settings:** a switch that is off at send time → `skipped / setting_off`. No token → `skipped / no_token`.
@@ -178,10 +178,10 @@ All `security definer`, `set search_path = ''`, revoked from `public, anon, auth
 | `record_push_results(p_results jsonb)` | service_role | Marks sent / retry / failed, stores tickets, deletes `DeviceNotRegistered` tokens. |
 | `claim_push_receipts(p_limit int)` / `record_push_receipts(p_results jsonb)` | service_role | Receipt round. |
 | `submit_pickup_request(...)`, `submit_table_request(...)` (changed) | authenticated | Daily cap, above. Signatures unchanged. |
-| `private.enqueue_request_event()`, `private.invoke_push_sender()`, `private.cleanup_push_outbox()` | none | Trigger, kick, cleanup. |
+| `private.flag_customer_unseen()`, `private.enqueue_request_event()`, `private.invoke_push_sender()`, `private.cleanup_push_outbox()` | none | Seen-flag trigger, event trigger, kick, cleanup. |
 
 ### Function privileges (CLAUDE.md, §16)
-`supabase/tests/05-seller-onboarding.test.sql`: the `authenticated` allowlist gains `register_push_token`, `unregister_push_token`, `get_notification_settings`, `set_notification_settings`, `count_my_request_updates`, `mark_my_requests_seen`; message "specs 05 to 12"; the private-schema function list gains the three private functions. The four service-role functions are asserted not executable by `anon` or `authenticated`.
+`supabase/tests/05-seller-onboarding.test.sql`: the `authenticated` allowlist gains `register_push_token`, `unregister_push_token`, `get_notification_settings`, `set_notification_settings`, `count_my_request_updates`, `mark_my_requests_seen`; message "specs 05 to 12"; the private-schema function list gains the four private functions (`flag_customer_unseen`, `enqueue_request_event`, `invoke_push_sender`, `cleanup_push_outbox`). The four service-role functions are asserted not executable by `anon` or `authenticated`.
 
 ## Storage
 None.
@@ -205,6 +205,7 @@ None.
 | declined | Request declined | {Place} declined your {kind} request. |
 | expired | Request expired | {Place} didn't answer your {kind} request in time. |
 | cancelled | Request cancelled | A customer cancelled a {kind} request. |
+| collapsed cancelled (count > 1) | Requests cancelled | {n} requests were cancelled. |
 | arrived | Customer has arrived | A customer with a table request is here. |
 
 ## Components & hooks

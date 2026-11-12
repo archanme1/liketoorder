@@ -146,8 +146,15 @@ User-folder policy pattern: `(storage.foldername(name))[1] = (select auth.uid())
 - `places-resolve`: `{ placeId, sessionToken }` → Place Details (field mask `id,formattedAddress,location`) → `set_business_location(user.id, …)` → returns the owner view (same shape as `get_my_business()`). The client never sends coordinates or an address string.
 - Errors are `{ error: { code } }`; upstream bodies are never echoed. Log status, function name and latency only.
 - `places-refresh` (spec 07): POST from `pg_cron` via `pg_net` with `x-cron-secret`; claims up to 25 rows, asks Google for `id,location` one row at a time (5 s timeout each), saves each result at once through `apply_places_refresh`, and answers counts only `{ claimed, ok, not_found, failed }`. `not_found` only for HTTP 404 **and** body `error.status == NOT_FOUND`; every other failure is `failed` and the row is retried after a day. Nothing from Google, the key or the secret is logged.
-- `send-push`: triggered by DB webhook on request status change.
+- `push-sender` (spec 12): see "Outbox, trigger, kick and claim" below.
 Secrets via `npx supabase secrets set` — never in `EXPO_PUBLIC_*`.
+
+## Outbox, trigger, kick and claim (spec 12 notifications)
+- **Events come from row triggers, never the app or the Edge Function.** `private.enqueue_request_event()` (after insert / update of status, `arrived_at`) inserts `private.notification_outbox` rows in the same transaction as the change, so a rolled-back change leaves nothing. It never raises for delivery reasons: a missing recipient writes nothing, and the kick is wrapped. The outbox holds ids and an event name only, never text.
+- **Seen flag:** a separate `before update of status` trigger (`private.flag_customer_unseen`) sets `customer_unseen` on accepted, declined, expired, completed and no_show; the customer's own cancel never matches. `mark_my_requests_seen` clears only rows with `created_at` and `updated_at` at or before its own `now()`.
+- **Kick:** `private.invoke_push_sender()` copies `invoke_places_refresh` (vault URL + secret, `net.http_post`, quiet return without them or without `pg_net`), called at most once per transaction via `set_config('liketoorder.push_kick', '1', true)`; a 1-minute `pg_cron` sweeper covers retries and held rows. pgTAP never depends on `pg_net` or vault.
+- **Claim / record (service role only):** `claim_push_batch(limit)` takes due rows `for update skip locked` (plus `sending` rows claimed over 5 minutes ago: at-least-once) and decides each by the server clock: settings, stale, no token, hourly cap, then the 5-minute window per recipient + business + event, collapsing the due rows into one message led by the **newest** request. Each message has a fixed key set (pgTAP pins it; `business_name` always present, null for owner events). `record_push_results` applies only to rows still `sending`; retries wait `2^attempts` minutes, `failed` on the 5th. Texts are built in the Edge Function (`_shared/pushText.ts`) from fixed templates, and its logs carry ids, events, counts and Expo codes only.
+- **Daily cap across kinds:** both submit functions take a shared `request_daily:<uid>` advisory lock right after their kind lock, so a cap counted over two tables holds under concurrent submits of different kinds.
 
 ## App api layer
 ```ts

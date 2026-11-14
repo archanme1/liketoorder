@@ -98,11 +98,6 @@ afterEach(async () => {
 });
 
 describe('the customer badge with table requests', () => {
-  it('existing table requests raise nothing on release (the server starts them as seen)', async () => {
-    const { result } = await renderHook(() => useRequestsBadge(), { wrapper });
-    await settled(() => result.current, 0);
-  });
-
   it('the restaurant answering a table request raises it by one, pickup and table alike', async () => {
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
     await waitFor(() => expect(result.current.sent).toBe(0));
@@ -114,27 +109,11 @@ describe('the customer badge with table requests', () => {
     await settled(() => result.current.sent, 2);
   });
 
-  it("I have arrived changes no status, so the server's number stays", async () => {
-    serverUpdates = 1;
-    const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
-    await waitFor(() => expect(result.current.sent).toBe(1));
-    serve({
-      ...makeTableRequest({ id: 't1', status: 'accepted', display_status: 'accepted' }),
-      arrived_at: '2026-11-08T23:30:00+00:00',
-    });
-    await act(() => client.invalidateQueries({ queryKey: requestKeys.mine }));
-    await settled(() => result.current.sent, 1);
-  });
-
-  it("a wrong phone clock changes nothing: the number is the server's", async () => {
-    const real = Date.now();
-    jest.spyOn(Date, 'now').mockReturnValue(real + 365 * 24 * 3_600_000);
-    const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
-    await settled(() => result.current.sent, 0);
-    jest.spyOn(Date, 'now').mockReturnValue(real - 365 * 24 * 3_600_000);
-    serverUpdates = 1;
-    await refetchCount();
-    await settled(() => result.current.sent, 1);
+  it("the number is the server's: the badge never reads the request list", async () => {
+    serverUpdates = 2;
+    const { result } = await renderHook(() => useRequestsBadge(), { wrapper });
+    await settled(() => result.current, 2);
+    expect(listMock).not.toHaveBeenCalled();
   });
 });
 

@@ -242,6 +242,9 @@ describe('the Sent badge', () => {
   // real api function is used here, fed through the mocked supabase.rpc.
   const rpc = () =>
     (jest.requireMock('@/lib/supabase') as { supabase: { rpc: jest.Mock } }).supabase.rpc;
+  afterEach(() => {
+    rpc().mockReset();
+  });
 
   it("is the server's count whatever filtered list is on screen, and a Sent read re-reads it", async () => {
     let flagged = 0;
@@ -268,7 +271,6 @@ describe('the Sent badge', () => {
       await client.invalidateQueries({ queryKey: mineKey('declined') });
     });
     await waitFor(() => expect(result.current.updates.count).toBe(1));
-    rpc().mockReset();
   });
 });
 

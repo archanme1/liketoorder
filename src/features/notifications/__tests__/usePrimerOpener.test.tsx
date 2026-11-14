@@ -28,7 +28,8 @@ jest.mock('expo-router', () => ({
   usePathname: () => mockRoute.pathname,
 }));
 
-const SETTLE = 200;
+// Generous, so a stalled event loop on a busy CI machine cannot open the primer early.
+const SETTLE = 400;
 const getPermission = jest.mocked(Notifications.getPermissionsAsync);
 const defaultGet = getPermission.getMockImplementation();
 

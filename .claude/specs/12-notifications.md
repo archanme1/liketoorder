@@ -5,7 +5,7 @@
 - PR 2 (the app: `expo-notifications`, token registration, permission primer, Profile settings, tap routing, foreground refresh, server badge, jest tests): `feature/notifications-app`, created from `main` after PR 1 is merged.
 **Product spec:** `docs/product/v1.md` §2 (push notifications in v1), §3 (out of scope), §4 (Navigation, the Requests tab number), §8 (Pickup requests), §9 (Table requests, I've arrived), §12 (Notifications), §14 row 12, §16 (cancel after accept needs a seller notification; overall daily cap and notification throttling; customer badge is per phone; polling under stacked screens; the seller's words are not put into notification text; cross-feature imports; hosted extensions; function privileges)
 **Plan mode:** required — new tables with RLS, triggers on both request tables, new and changed Postgres functions, a new Edge Function, a new native dependency (`expo-notifications`, needs a rebuild), new routes, and a change to sign-out (auth); far more than ~5 files.
-**Status:** 🚧 In progress (PR 1 backend merged as #27; PR 2 app in progress)
+**Status:** 🚧 In progress (PR 1 backend merged as #27; PR 2 app built through gates E1 to G on `feature/notifications-app`, docs done; waiting for Archan's Simulator run, then review and ship)
 
 ## Overview
 After this ships, a business owner's phone gets a push notification when a pickup or table request arrives, when a customer cancels a pending request, and when a customer taps **I've arrived**. A customer's phone gets one when their request is accepted, declined or expires. Every text is a short fixed sentence; customer pushes may name the place, seller pushes name nobody. A notification never contains a request note, a response note, order text, an address, an email or a phone number; the details open inside the app after sign-in. Tapping a notification opens the right request (with its kind) after sign-in; a signed-out phone or a different account sees nothing it should not. Each kind of notification can be switched off in Profile, and the permission prompt is shown after a plain explanation at a sensible moment, never at launch.
@@ -289,19 +289,19 @@ Feature-specific:
   - PR 2: **E** deps, `app.config.ts`, fakes, api and schema, registration, sign-out → *Archan rebuilds* → **F** primer, permission, Profile settings → **G** tap resolver, foreground refresh, badge swap → **H** Simulator run, review, ship.
 
 ## Known pitfalls (checklist)
-- [ ] **Badge flood on release:** existing rows start with `customer_unseen = false` (pgTAP).
-- [ ] **Lost change during mark-seen:** `mark_my_requests_seen` clears only rows that existed (and had changed) when it was called (pgTAP).
-- [ ] **Rolled-back change sends nothing:** no outbox row and no kick survive a rollback (pgTAP inside a savepoint).
-- [ ] **Own cancel is not an update** for the server seen flag (pgTAP), and the app's cancel hooks no longer write local memory (jest).
-- [ ] **Token moves between users** on the same phone; the old user gets no more pushes (pgTAP).
-- [ ] **Sign-out order:** unregister before sign-out; a failed unregister does not block sign-out (jest).
-- [ ] **No projectId / Simulator:** registers nothing and does not throw (jest).
-- [ ] **Wrong-account tap** never lands on `/seller/onboarding` or shows another person's data (jest).
-- [ ] **Leaked text in logs:** Deno test captures every log and error line (Decision 20).
-- [ ] **pg_net absent in tests:** pgTAP passes with no vault secrets and no `pg_net` call made (Decision 21).
-- [ ] **Leftover seed data breaks pgTAP counts:** own fixtures, counts only own rows, rolled back.
-- [ ] **Test QueryClient cleanup** and AsyncStorage mock reset per test.
-- [ ] **Old tests untouched** except the approved lists (`git diff --stat` on test files in the review).
+- [x] **Badge flood on release:** existing rows start with `customer_unseen = false` (pgTAP).
+- [x] **Lost change during mark-seen:** `mark_my_requests_seen` clears only rows that existed (and had changed) when it was called (pgTAP).
+- [x] **Rolled-back change sends nothing:** no outbox row and no kick survive a rollback (pgTAP inside a savepoint).
+- [x] **Own cancel is not an update** for the server seen flag (pgTAP), and the app's cancel hooks no longer write local memory (jest).
+- [x] **Token moves between users** on the same phone; the old user gets no more pushes (pgTAP).
+- [x] **Sign-out order:** unregister before sign-out; a failed unregister does not block sign-out (jest).
+- [x] **No projectId / Simulator:** registers nothing and does not throw (jest).
+- [x] **Wrong-account tap** never lands on `/seller/onboarding` or shows another person's data (jest).
+- [x] **Leaked text in logs:** Deno test captures every log and error line (Decision 20).
+- [x] **pg_net absent in tests:** pgTAP passes with no vault secrets and no `pg_net` call made (Decision 21).
+- [x] **Leftover seed data breaks pgTAP counts:** own fixtures, counts only own rows, rolled back.
+- [x] **Test QueryClient cleanup** and AsyncStorage mock reset per test.
+- [x] **Old tests untouched** except the approved lists (`git diff --stat` on test files in the review).
 
 ## Out of scope
 - Email or SMS notifications; an in-app notification inbox or history; read receipts.
@@ -315,20 +315,33 @@ Feature-specific:
 - Everything in v1 §3.
 
 ## Definition of done
-- [ ] Each event in the trigger table writes exactly one outbox row with the right event, kind, request, business and recipient; completed / no_show write none; a rolled-back change writes none (pgTAP).
-- [ ] `customer_unseen` is set by an answer, an expiry, completed and no_show, not by the customer's own cancel; existing rows start false; `count_my_request_updates` counts both kinds; `mark_my_requests_seen` clears only rows that existed when it was called (pgTAP).
-- [ ] `claim_push_batch`: settings off → `setting_off`; no token → `no_token`; a no-longer-pending new request → `stale`; a second new request inside 5 minutes is held and then collapsed into one push with the right count (edges: 4:59 held, 5:00 due); cancel before the new-request push → both `cancelled_before_send`; the 21st push to one recipient in an hour → `throttled`, `arrived` exempt; returned messages contain no note, order text, address, email, phone or customer name (pgTAP key-set check).
-- [ ] Retries: waits of 1, 2, 4 and 8 minutes after the 1st to 4th failure, `failed` on the 5th; a stuck `sending` row is reclaimable after 5 minutes; `DeviceNotRegistered` deletes the token; receipts recorded (pgTAP).
-- [ ] Tokens: format check; register moves a token from another user; the 11th token drops the oldest; unregister removes only the caller's own (pgTAP).
-- [ ] Daily cap: 29 and 30 accepted, the 31st refused with `daily_limit`, counting both kinds and all places and every status; an idempotent replay at the cap returns the original; the 11b limits behave as before (pgTAP).
-- [ ] **An outsider cannot** read any row of `push_tokens` or `notification_settings`; write `push_tokens` directly (insert or update); remove another user's token with `unregister_push_token` (the token stays with its owner); read or change another user's settings; read or write the outbox or tickets; execute any service-role or private function as `anon` or `authenticated`; count or clear another user's seen flags. `anon` executes no `public` function (pgTAP).
-- [ ] pgTAP passes with no vault secrets and without `pg_net` being called (Decision 21).
-- [ ] Deno: every template, fed fixtures that carry a note, order text, address, email, phone and customer name, produces texts and data containing none of them; payload shape (no `badge`, no user id); chunking at 100; retry classification; secret check (401 / 500); **every captured log and error line contains no token, title, body or note** (Decision 20).
-- [ ] jest: payload validation; tap routing for both sides, cold and warm; signed out → sign-in → the right screen; wrong account → neutral line, never `/seller/onboarding`; primer timing and Not now; permission states (undetermined, granted, denied → Open Settings); settings switches with optimistic save and rollback; sign-out unregisters first and still signs out when that fails; no `projectId` or the Simulator registers nothing and does not throw; badge from the server count; opening Sent clears it; foreground push invalidates the lists; `daily_limit` message.
+- [x] Each event in the trigger table writes exactly one outbox row with the right event, kind, request, business and recipient; completed / no_show write none; a rolled-back change writes none (pgTAP).
+- [x] `customer_unseen` is set by an answer, an expiry, completed and no_show, not by the customer's own cancel; existing rows start false; `count_my_request_updates` counts both kinds; `mark_my_requests_seen` clears only rows that existed when it was called (pgTAP).
+- [x] `claim_push_batch`: settings off → `setting_off`; no token → `no_token`; a no-longer-pending new request → `stale`; a second new request inside 5 minutes is held and then collapsed into one push with the right count (edges: 4:59 held, 5:00 due); cancel before the new-request push → both `cancelled_before_send`; the 21st push to one recipient in an hour → `throttled`, `arrived` exempt; returned messages contain no note, order text, address, email, phone or customer name (pgTAP key-set check).
+- [x] Retries: waits of 1, 2, 4 and 8 minutes after the 1st to 4th failure, `failed` on the 5th; a stuck `sending` row is reclaimable after 5 minutes; `DeviceNotRegistered` deletes the token; receipts recorded (pgTAP).
+- [x] Tokens: format check; register moves a token from another user; the 11th token drops the oldest; unregister removes only the caller's own (pgTAP).
+- [x] Daily cap: 29 and 30 accepted, the 31st refused with `daily_limit`, counting both kinds and all places and every status; an idempotent replay at the cap returns the original; the 11b limits behave as before (pgTAP).
+- [x] **An outsider cannot** read any row of `push_tokens` or `notification_settings`; write `push_tokens` directly (insert or update); remove another user's token with `unregister_push_token` (the token stays with its owner); read or change another user's settings; read or write the outbox or tickets; execute any service-role or private function as `anon` or `authenticated`; count or clear another user's seen flags. `anon` executes no `public` function (pgTAP).
+- [x] pgTAP passes with no vault secrets and without `pg_net` being called (Decision 21).
+- [x] Deno: every template, fed fixtures that carry a note, order text, address, email, phone and customer name, produces texts and data containing none of them; payload shape (no `badge`, no user id); chunking at 100; retry classification; secret check (401 / 500); **every captured log and error line contains no token, title, body or note** (Decision 20).
+- [x] jest: payload validation; tap routing for both sides, cold and warm; signed out → sign-in → the right screen; wrong account → neutral line, never `/seller/onboarding`; primer timing and Not now; permission states (undetermined, granted, denied → Open Settings); settings switches with optimistic save and rollback; sign-out unregisters first and still signs out when that fails; no `projectId` or the Simulator registers nothing and does not throw; badge from the server count; opening Sent clears it; foreground push invalidates the lists; `daily_limit` message.
 - [ ] Every touchable has a label and role, targets ≥ 44 pt, state as words (jest + iOS Simulator).
-- [ ] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` and the Deno tests pass; `src/types/database.ts` regenerated, not hand-edited.
-- [ ] Specs 09 to 11c tests pass unedited except the approved lists.
-- [ ] Byte and invisible-character checks: SQL and TS added for this spec hold no non-ASCII byte (`perl -ne 'print "$ARGV:$.: $_" if /[^\x00-\x7F]/'`, byte mode); markdown (this spec, `SKILL.md`, `v1.md`, `CLAUDE.md`) passes the spec 11 invisible-character class (`perl -CSD` with the widened class). Each command is first proved on a scratch file holding one such character (it must print that line).
+- [x] `npm run lint`, `npm run typecheck`, `npm test`, `npx supabase test db` and the Deno tests pass; `src/types/database.ts` regenerated, not hand-edited.
+- [x] Specs 09 to 11c tests pass unedited except the approved lists.
+- [x] Byte and invisible-character checks: SQL and TS added for this spec hold no non-ASCII byte (`perl -ne 'print "$ARGV:$.: $_" if /[^\x00-\x7F]/'`, byte mode); markdown (this spec, `SKILL.md`, `v1.md`, `CLAUDE.md`) passes the spec 11 invisible-character class (`perl -CSD` with the widened class). Each command is first proved on a scratch file holding one such character (it must print that line).
+
+Not ticked yet: the touch-target, label and state check needs the iOS Simulator run (gate H). Everything ticked above is proven by tests on `feature/notifications-app`: pgTAP (all 15 files, including PR 2's `12b-notifications-old-rows`), Deno (173), jest (212 suites, 2,995 tests), lint and typecheck.
+
+### Build notes (PR 2)
+- **Old rows (gate E1, approved):** a new migration replaces `claim_push_batch` with one extra first step: queued rows (held ones too) and abandoned `sending` rows created 1 hour or more ago become `skipped / stale`, every event included. Test: `supabase/tests/12b-notifications-old-rows.test.sql`; break 13 proved.
+- **Taps:** cold start uses `getLastNotificationResponse` / `clearLastNotificationResponse` (the non-async names in SDK 58), not `useLastNotificationResponse`; warm taps use the listener; only the default action counts; one route per notification identifier (`resetHandledTapsForTests` after each test).
+- **Remote payload data on iOS:** `content.data` of a remote push is the APNs payload's top-level `body` dictionary (`NotificationRecords.swift`), which is where Expo's push service puts `data`; Simulator `.apns` files must do the same.
+- **Primer:** one opener at the root opens it only after the route has been unchanged for 1 second (every navigation restarts the wait); the request-sent moment is a mutation-cache watcher on `SUBMIT_REQUEST_MUTATION_KEY`, so the forms are unchanged. Opening the primer at all marks the person as asked on this phone.
+- **Sign-out:** removes the token this phone registered (kept in AsyncStorage `liketoorder.push.token.v1`), best effort, at most 3 s.
+- **Badge:** `useCustomerUpdates` reads `count_my_request_updates` every 30 s in the foreground and after every Sent list read; Sent on screen calls `mark_my_requests_seen` only when the count is above 0.
+- **Extra files (approved):** `requests/messages.ts`, `auth/returnTo.ts`, `sellers/components/SellerOnboardingScreen.tsx`, `app/(tabs)/requests.tsx`, `requests/schema.ts` (`updatesCountSchema`), `requests/hooks/keys.ts` (`SUBMIT_REQUEST_MUTATION_KEY`, `updatesCount`), new `notifications/tokenStore.ts` and `requests/legacyStatusMemory.ts`.
+- **Older tests edited (approved lists):** `statusMemory.test.ts` (deleted), `requestsBadge.test.tsx`, `tableBadges.test.tsx`, `useCancelTableRequest.test.tsx` (Decision 18 section), `RequestsTabScreen.test.tsx`, `SentFilters.test.tsx` (the `clearStatusMemory` lines only), `RequestsTab.test.tsx`, and the Sent-badge section of `requestFilterHooks.test.tsx` (plus its now-dead `clearStatusMemory` import and call). `AuthProvider`, sign-out, Profile and SellerOnboarding tests passed unedited.
+- **Test lessons:** jest-expo's `Constants.expoConfig` is a non-configurable getter, so tests that need an EAS id mock `expo-constants`; jest mock factories may only name things prefixed `mock`; `SafeAreaProvider` needs `initialMetrics` under jest; RNTL v14 uses `toBeChecked()`; a test client must set `gcTime: 0` for mutations too, or jest stays open for 5 minutes.
 
 ## Test plan
 - **Database tests (pgTAP)** in `supabase/tests/12-notifications.test.sql`: everything under Definition of done, own fixtures with fixed ids, `begin; ... rollback;`, the `pg_temp.as_user` impersonation style from spec 11, and time moved by updating fixture timestamps (no sleeps). No dependence on `pg_net` or vault.

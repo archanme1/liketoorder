@@ -15,6 +15,12 @@ export const requestKeys = {
   waitingCount: ['requests', 'waitingCount'] as const,
 };
 
+/**
+ * The mutation key of both submit hooks (pickup and table). The notifications feature watches it
+ * to offer the permission primer after a customer's first sent request (spec 12, Decision 7).
+ */
+export const SUBMIT_REQUEST_MUTATION_KEY = ['requests', 'submit'] as const;
+
 /** The query key of one Sent list. */
 export function mineKey(filter: RequestFilter) {
   return filter === 'all' ? requestKeys.mine : requestKeys.mineFiltered(filter);

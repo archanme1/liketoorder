@@ -5,6 +5,7 @@ import { View } from 'react-native';
 
 import { Banner, Button, ErrorState, Text, TextField } from '@/components/ui';
 import { CuisineField } from '@/features/cuisines/components/CuisineField';
+import { usePrimerMoment } from '@/features/notifications/hooks/usePrimerMoment';
 import { useIsSeller } from '@/features/navigation/hooks/useIsSeller';
 import { useTheme } from '@/theme/useTheme';
 
@@ -165,6 +166,7 @@ function DetailsStep({ create }: { create: ReturnType<typeof useCreateBusiness> 
 function AddressStep({ businessType }: { businessType: BusinessType }) {
   const { space } = useTheme();
   const router = useRouter();
+  const { maybeOpen } = usePrimerMoment();
   return (
     <View style={{ gap: space.lg }}>
       <StepHeader
@@ -174,7 +176,12 @@ function AddressStep({ businessType }: { businessType: BusinessType }) {
       />
       <AddressAutocomplete
         businessType={businessType}
-        onResolved={() => router.replace('/manage')}
+        onResolved={() => {
+          router.replace('/manage');
+          // Onboarding is done: a moment to offer notifications (spec 12). The primer waits for
+          // the move to Manage to settle before it opens.
+          maybeOpen('owner');
+        }}
       />
     </View>
   );

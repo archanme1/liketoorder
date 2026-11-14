@@ -5,7 +5,7 @@ import { useCallback, useRef } from 'react';
 import { submitTableRequest, type RequestAppError, type SubmitTableInput } from '../api';
 import type { TableRequest } from '../schema';
 
-import { requestKeys } from './keys';
+import { SUBMIT_REQUEST_MUTATION_KEY, requestKeys } from './keys';
 
 export type SubmitTableArgs = Omit<SubmitTableInput, 'idempotencyKey'>;
 
@@ -31,6 +31,7 @@ export function useSubmitTableRequest() {
   const inFlight = useRef(false);
 
   const mutation = useMutation<TableRequest, RequestAppError, SubmitTableArgs>({
+    mutationKey: SUBMIT_REQUEST_MUTATION_KEY,
     mutationFn: (input) => {
       const print = fingerprint(input);
       if (attempt.current === null || attempt.current.print !== print) {

@@ -82,6 +82,21 @@ export async function ensureAndroidChannel(): Promise<void> {
   }
 }
 
+/**
+ * A push that arrives while the app is open shows its banner and plays its sound (Decision 13).
+ * Never the app-icon badge (Decision 10).
+ */
+export function configureForegroundHandler(): void {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
+
 /** Calls `listener` when the phone's push token changes. Returns the unsubscribe. */
 export function onPushTokenChange(listener: () => void): () => void {
   const subscription = Notifications.addPushTokenListener(() => listener());

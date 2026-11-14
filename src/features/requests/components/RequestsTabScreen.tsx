@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Banner, Button, Text } from '@/components/ui';
 import { useIsSeller } from '@/features/navigation/hooks/useIsSeller';
+import { usePrimerMoment } from '@/features/notifications/hooks/usePrimerMoment';
 import { useMyBusiness } from '@/features/sellers/hooks/useMyBusiness';
 import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
@@ -59,6 +60,13 @@ export function RequestsTabScreen({
   useEffect(() => {
     if (focused && sentShown) markSentSeen();
   }, [focused, sentShown, markSentSeen]);
+
+  // An owner's first look at Received is a moment to offer notifications (spec 12, Decision 7);
+  // whether the primer actually opens is decided once the screen settles.
+  const { maybeOpen } = usePrimerMoment();
+  useEffect(() => {
+    if (focused && isOwner && side === 'received') maybeOpen('owner');
+  }, [focused, isOwner, side, maybeOpen]);
 
   // Coming back to the tab: the lists and the waiting number are read again (not on first focus).
   const wasFocused = useRef(focused);

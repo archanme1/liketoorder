@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView } from 'react-native';
 
 import { Button, Screen, Text } from '@/components/ui';
@@ -23,6 +23,13 @@ export function NotificationsPrimer({ role }: NotificationsPrimerProps) {
   const userId = session?.user.id;
   const permission = useNotificationPermission();
   const [asking, setAsking] = useState(false);
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!userId) return;
@@ -36,10 +43,13 @@ export function NotificationsPrimer({ role }: NotificationsPrimerProps) {
     setAsking(true);
     try {
       await permission.request();
-    } finally {
-      setAsking(false);
-      close();
+    } catch {
+      // The system prompt failed: close anyway; Profile shows the real state.
     }
+    // Already gone (a swipe-away while the system prompt was up): nothing left to close.
+    if (!mounted.current) return;
+    setAsking(false);
+    close();
   };
 
   return (

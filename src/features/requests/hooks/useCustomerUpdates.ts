@@ -40,12 +40,21 @@ export function useCustomerUpdates() {
           root === requestKeys.mine[0] &&
           list === requestKeys.mine[1]
         ) {
-          void client.invalidateQueries({ queryKey: requestKeys.updatesCount });
+          // The hook is mounted twice (tab bar and Requests tab): a read already running is
+          // kept rather than restarted (review S5).
+          void client.invalidateQueries(
+            { queryKey: requestKeys.updatesCount },
+            { cancelRefetch: false },
+          );
         }
       }),
     [client],
   );
 
+  // Accepted narrow race (review S4): if a request changes after the Sent list was read but
+  // before the count is re-read, Sent can clear a change the list does not show yet. The list
+  // re-reads within 30 s (and on any push), so the new status still appears; only its badge
+  // number is lost. Not worth a timestamp handshake between the two reads in v1.
   const inFlight = useRef(false);
   const markSeen = useCallback(() => {
     if (!signedIn || count === undefined || count <= 0 || inFlight.current) return;

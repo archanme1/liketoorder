@@ -73,10 +73,16 @@ export function RequestsTabScreen({
 
   // An owner's first look at Received is a moment to offer notifications (spec 12, Decision 7);
   // whether the primer actually opens is decided once the screen settles.
+  // Not at launch: the person must have come to Received themselves, by leaving the tab and
+  // coming back or by picking Received, never a cold start that opens straight onto it.
   const { maybeOpen } = usePrimerMoment();
+  const [leftOnce, setLeftOnce] = useState(false);
+  // Set during render (React's "adjust state on change" pattern), like the root layout's stackMounted.
+  if (!focused && !leftOnce) setLeftOnce(true);
+  const navigatedHere = leftOnce || picked === 'received';
   useEffect(() => {
-    if (focused && isOwner && side === 'received') maybeOpen('owner');
-  }, [focused, isOwner, side, maybeOpen]);
+    if (focused && isOwner && side === 'received' && navigatedHere) maybeOpen('owner');
+  }, [focused, isOwner, side, navigatedHere, maybeOpen]);
 
   // Coming back to the tab: the lists and the waiting number are read again (not on first focus).
   const wasFocused = useRef(focused);

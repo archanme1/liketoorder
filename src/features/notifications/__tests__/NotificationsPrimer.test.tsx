@@ -95,6 +95,28 @@ describe('NotificationsPrimer', () => {
     expect(hasOpenedThisRun('user-1')).toBe(true);
   });
 
+  it('closed while the system prompt was up: nothing navigates afterwards (review S7)', async () => {
+    let answer: () => void = () => undefined;
+    askPermission.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = () =>
+            resolve({ status: 'granted', granted: true, canAskAgain: true, expires: 'never' } as Awaited<
+              ReturnType<typeof Notifications.requestPermissionsAsync>
+            >);
+        }),
+    );
+    await show();
+    await fireEvent.press(screen.getByRole('button', { name: 'Turn on notifications' }));
+    await waitFor(() => expect(askPermission).toHaveBeenCalledTimes(1));
+    await cleanup();
+    answer();
+    await waitFor(() => expect(Notifications.getPermissionsAsync).toHaveBeenCalled());
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(mockRouter.back).not.toHaveBeenCalled();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
   it('Turn on shows the system prompt, then closes', async () => {
     await show();
     await fireEvent.press(screen.getByRole('button', { name: 'Turn on notifications' }));

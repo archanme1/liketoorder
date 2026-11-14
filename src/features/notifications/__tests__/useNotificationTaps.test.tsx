@@ -71,6 +71,13 @@ describe('useNotificationTaps', () => {
     expect(mockRouter.push).not.toHaveBeenCalled();
   });
 
+  it('a cold start from an action button routes nothing and clears the response (review S6)', async () => {
+    fakeNotifications.__setLastResponse(makeResponse(pushData(), 'some.action'));
+    await renderHook(() => useNotificationTaps());
+    expect(mockRouter.push).not.toHaveBeenCalled();
+    expect(Notifications.getLastNotificationResponse()).toBeNull();
+  });
+
   it.each([
     ['a bad payload', { foo: 'bar' }],
     ['another version', pushData({ v: 2 })],

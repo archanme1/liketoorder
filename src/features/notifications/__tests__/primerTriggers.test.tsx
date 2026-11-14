@@ -155,10 +155,31 @@ afterEach(async () => {
 });
 
 describe('Requests tab: an owner first looking at Received', () => {
-  it('is a primer moment (owner)', async () => {
+  it('a cold start straight onto Received is not one (never at launch, review S9)', async () => {
     businessMock.mockResolvedValue({ id: 'b1' } as unknown as MyBusiness);
     asProfile(true);
     await render(tab(true));
+    expect(await screen.findByRole('radio', { name: /^Received.*selected/ })).toBeOnTheScreen();
+    await waitFor(() => expect(businessMock).toHaveBeenCalled());
+    expect(getPendingPrimer()).toBeNull();
+  });
+
+  it('coming back to Received after leaving the tab is one (owner)', async () => {
+    businessMock.mockResolvedValue({ id: 'b1' } as unknown as MyBusiness);
+    asProfile(true);
+    const view = await render(tab(true));
+    await screen.findByRole('radio', { name: /^Received.*selected/ });
+    await view.rerender(tab(false));
+    expect(getPendingPrimer()).toBeNull();
+    await view.rerender(tab(true));
+    await waitFor(() => expect(getPendingPrimer()).toBe('owner'));
+  });
+
+  it('picking Received with the switch is one (owner)', async () => {
+    businessMock.mockResolvedValue({ id: 'b1' } as unknown as MyBusiness);
+    // Seller mode off: the tab opens on Sent.
+    await render(tab(true));
+    await fireEvent.press(await screen.findByRole('radio', { name: /^Received/ }));
     await waitFor(() => expect(getPendingPrimer()).toBe('owner'));
   });
 

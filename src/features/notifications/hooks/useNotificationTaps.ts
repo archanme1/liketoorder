@@ -24,7 +24,14 @@ export function useNotificationTaps(): void {
 
   useEffect(() => {
     const route = (tap: PushTap | null) => {
-      if (!tap || !tap.isDefaultAction || handled.has(tap.identifier)) return;
+      if (!tap) return;
+      if (!tap.isDefaultAction) {
+        // An action button, not a tap on the notification: nothing to open, but do not keep it
+        // as the cold-start response (review S6).
+        clearLastTap();
+        return;
+      }
+      if (handled.has(tap.identifier)) return;
       handled.add(tap.identifier);
       clearLastTap();
       const payload = tapPayloadSchema.safeParse(tap.data);

@@ -21,7 +21,6 @@ import { useCustomerUpdates } from '../hooks/useCustomerUpdates';
 import { flattenPages, useMyRequests } from '../hooks/useMyRequests';
 import { useRespondToRequest } from '../hooks/useRespondToRequest';
 import type { CustomerRequest, SellerRequest } from '../schema';
-import { clearStatusMemory } from '../statusMemory';
 
 import { makeRows, pagedServer } from '../__fixtures__/pagedServer';
 import { makeSellerRows, sellerPagedServer } from '../__fixtures__/sellerRequests';
@@ -88,7 +87,6 @@ beforeEach(async () => {
   counter += 1;
   userId = `user-${counter}`;
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  clearStatusMemory();
   await flush();
   await AsyncStorage.clear();
   jest.clearAllMocks();
@@ -240,7 +238,21 @@ describe('polling', () => {
 });
 
 describe('the Sent badge', () => {
-  it('is made from the unfiltered All list even while a filtered list is on screen', async () => {
+  // Spec 12: the number is the server's (count_my_request_updates), not made from any list. The
+  // real api function is used here, fed through the mocked supabase.rpc.
+  const rpc = () =>
+    (jest.requireMock('@/lib/supabase') as { supabase: { rpc: jest.Mock } }).supabase.rpc;
+  afterEach(() => {
+    rpc().mockReset();
+  });
+
+  it("is the server's count whatever filtered list is on screen, and a Sent read re-reads it", async () => {
+    let flagged = 0;
+    rpc().mockImplementation(async (name: string) =>
+      name === 'count_my_request_updates'
+        ? { data: flagged, error: null }
+        : { data: null, error: { code: 'P0001', message: 'unknown' } },
+    );
     sent.rows = sentWith(['pending', 'declined', 'accepted', 'cancelled']);
     const { result } = await renderHook(
       () => ({ updates: useCustomerUpdates(), dec: useMyRequests({ filter: 'declined' }) }),
@@ -248,18 +260,15 @@ describe('the Sent badge', () => {
     );
     await waitFor(() => expect(result.current.updates.count).toBe(0));
     await waitFor(() => expect(result.current.dec.requests).toHaveLength(1));
-    // The badge's list is `mine` (All), holding every row, read with no filter argument.
-    expect(flattenPages(client.getQueryData(requestKeys.mine))).toHaveLength(4);
-    expect(mineMock.mock.calls.some((call) => call.length === 1 && call[0] === undefined)).toBe(
-      true,
-    );
 
-    // A status change in a row the filtered list does not show still counts.
+    // A change in a row the filtered list does not show still counts: the server flagged it, and
+    // reading the (filtered) Sent list again reads the number again.
+    flagged = 1;
     sent.rows = sent.rows.map((r) =>
       r.display_status === 'pending' ? { ...r, status: 'accepted', display_status: 'accepted' } : r,
     );
     await act(async () => {
-      await client.invalidateQueries({ queryKey: requestKeys.mine });
+      await client.invalidateQueries({ queryKey: mineKey('declined') });
     });
     await waitFor(() => expect(result.current.updates.count).toBe(1));
   });

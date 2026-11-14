@@ -20,10 +20,12 @@ import {
 import { peekReturnTo } from '@/features/auth/returnTo';
 import { useMyProfile } from '@/features/profile/hooks/useMyProfile';
 import { profileErrorMessage } from '@/features/profile/messages';
+import { NotificationsBridge } from '@/features/notifications/components/NotificationsBridge';
 import { useAppFocus } from '@/lib/appFocus';
 import { queryClient } from '@/lib/queryClient';
 // Loaded at startup so missing EXPO_PUBLIC_SUPABASE_* vars fail loudly at launch.
 import '@/lib/supabase';
+import { useReduceMotion } from '@/lib/useReduceMotion';
 import { useTheme } from '@/theme/useTheme';
 
 export default function RootLayout() {
@@ -106,6 +108,8 @@ function RootNavigator() {
       >
         <RootStack access={access} home={home} postAuth={postAuth} />
       </View>
+      {/* Push notifications (spec 12): renders nothing; mounted with the Stack so it can navigate. */}
+      <NotificationsBridge />
       {profileLoading ? (
         <View style={StyleSheet.absoluteFill}>
           <LoadingScreen />
@@ -122,8 +126,15 @@ type RootStackProps = {
 };
 
 function RootStack({ access, home, postAuth }: RootStackProps) {
+  const reduceMotion = useReduceMotion();
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      {/* Spec 12: the primer and the tap resolver slide up as a modal. Not guarded here: the
+          resolver must be reachable signed out; the primer is guarded inside its own layout. */}
+      <Stack.Screen
+        name="notifications"
+        options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'default' }}
+      />
       <Stack.Protected
         guard={access.signedOutScreens || access.resetPassword}
         redirectTo={postAuth}
@@ -139,6 +150,7 @@ function RootStack({ access, home, postAuth }: RootStackProps) {
       </Stack.Protected>
       <Stack.Protected guard={access.app} redirectTo={home}>
         <Stack.Screen name="profile/edit" />
+        <Stack.Screen name="profile/notifications" />
         <Stack.Screen name="requests" />
         {/* No business-based guard: the seller screens redirect after their own data loads. */}
         <Stack.Screen name="seller" />

@@ -13,7 +13,15 @@ export const requestKeys = {
   inbox: (filter: RequestFilter) => ['requests', 'inbox', filter] as const,
   businessDetail: (id: string) => ['requests', 'businessDetail', id] as const,
   waitingCount: ['requests', 'waitingCount'] as const,
+  // The customer's own requests changed since they last opened Sent (spec 12, server flag).
+  updatesCount: ['requests', 'updatesCount'] as const,
 };
+
+/**
+ * The mutation key of both submit hooks (pickup and table). The notifications feature watches it
+ * to offer the permission primer after a customer's first sent request (spec 12, Decision 7).
+ */
+export const SUBMIT_REQUEST_MUTATION_KEY = ['requests', 'submit'] as const;
 
 /** The query key of one Sent list. */
 export function mineKey(filter: RequestFilter) {

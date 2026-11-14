@@ -3,10 +3,8 @@ import { useCallback, useRef } from 'react';
 
 import { cancelTableRequest, type RequestAppError } from '../api';
 import type { TableRequest } from '../schema';
-import { markSeenAt } from '../statusMemory';
 
 import { requestKeys } from './keys';
-import { useUserId } from './useUserId';
 
 /**
  * Cancels a pending table request. Both the list and the detail are re-read afterwards.
@@ -14,15 +12,11 @@ import { useUserId } from './useUserId';
  */
 export function useCancelTableRequest() {
   const queryClient = useQueryClient();
-  const userId = useUserId();
   const inFlight = useRef(false);
   const mutation = useMutation<TableRequest, RequestAppError, string>({
     mutationFn: (requestId) => cancelTableRequest(requestId),
-    // The person's own cancel is not news (Decision 18): remember it as seen BEFORE the list is
-    // re-read in onSettled, so the Requests badge never rises for it.
-    onSuccess: (_request, requestId) => {
-      if (userId) markSeenAt(userId, requestId, 'cancelled');
-    },
+    // The person's own cancel is not news (Decision 18): the server does not flag it as an update
+    // (spec 12), so nothing needs remembering here.
     // Also after a failure: the request may have expired or changed, and the server knows.
     onSettled: async (_data, _error, requestId) => {
       inFlight.current = false;

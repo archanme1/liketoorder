@@ -9,12 +9,13 @@ import type { MyBusiness } from '@/features/sellers/schema';
 
 import {
   RequestAppError,
+  countMyRequestUpdates,
   countWaitingRequests,
   listBusinessRequests,
   listMyRequests,
+  markMyRequestsSeen,
 } from '../api';
 import { RequestsTabScreen } from '../components/RequestsTabScreen';
-import { clearStatusMemory } from '../statusMemory';
 
 import { makeRequest } from '../__fixtures__/requests';
 import { makeSellerRequest } from '../__fixtures__/sellerRequests';
@@ -24,6 +25,8 @@ jest.mock('../api', () => ({
   listMyRequests: jest.fn(),
   listBusinessRequests: jest.fn(),
   countWaitingRequests: jest.fn(),
+  countMyRequestUpdates: jest.fn(),
+  markMyRequestsSeen: jest.fn(),
 }));
 jest.mock('@/features/sellers/api', () => ({
   ...jest.requireActual('@/features/sellers/api'),
@@ -40,6 +43,15 @@ jest.mock('@/lib/supabase', () => ({
 const mineMock = jest.mocked(listMyRequests);
 const inboxMock = jest.mocked(listBusinessRequests);
 const waitingMock = jest.mocked(countWaitingRequests);
+const updatesMock = jest.mocked(countMyRequestUpdates);
+const markSeenMock = jest.mocked(markMyRequestsSeen);
+/** The server's count of the customer's changed requests (spec 12). */
+let serverUpdates = 0;
+const raiseUpdates = (n: number) =>
+  act(async () => {
+    serverUpdates = n;
+    await client.invalidateQueries({ queryKey: ['requests', 'updatesCount'] });
+  });
 const businessMock = jest.mocked(sellersApi.getMyBusiness);
 const profileMock = jest.mocked(profileApi.getMyProfile);
 
@@ -102,13 +114,19 @@ function asProfile(isSeller: boolean) {
 beforeEach(async () => {
   counter += 1;
   userId = `user-${counter}`;
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  clearStatusMemory();
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { gcTime: 0 } },
+  });
+  serverUpdates = 0;
   await flush();
   await AsyncStorage.clear();
   jest.clearAllMocks();
   businessMock.mockResolvedValue(null);
   waitingMock.mockResolvedValue({ server_now: NOW, waiting: 0 });
+  updatesMock.mockImplementation(async () => serverUpdates);
+  markSeenMock.mockImplementation(async () => {
+    serverUpdates = 0;
+  });
   sentRows();
   inboxRows();
   asProfile(false);
@@ -218,10 +236,7 @@ describe('a business owner', () => {
     expect(
       await screen.findByRole('radio', { name: 'Received, 3 need you, selected' }),
     ).toBeOnTheScreen();
-    sentRows(makeRequest({ id: 'a', status: 'accepted', display_status: 'accepted' }));
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ['requests', 'mine'] });
-    });
+    await raiseUpdates(1);
     expect(await screen.findByRole('radio', { name: 'Sent, 1 updated' })).toBeOnTheScreen();
     expect(screen.getByTestId('switch-count-received')).toHaveTextContent('3');
     expect(screen.getByTestId('switch-count-sent')).toHaveTextContent('1');
@@ -243,15 +258,14 @@ describe('a business owner', () => {
     await screen.findByRole('radio', { name: 'Received, selected' });
     await waitFor(() => expect(mineMock).toHaveBeenCalled());
     await act(flush);
-    sentRows(makeRequest({ id: 'a', status: 'declined', display_status: 'declined' }));
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ['requests', 'mine'] });
-    });
+    await raiseUpdates(1);
     expect(await screen.findByRole('radio', { name: 'Sent, 1 updated' })).toBeOnTheScreen();
+    expect(markSeenMock).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByRole('radio', { name: /^Sent/ }));
     await waitFor(() =>
       expect(screen.getByRole('radio', { name: 'Sent, selected' })).toBeOnTheScreen(),
     );
+    expect(markSeenMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('switch-count-sent')).toBeNull();
   });
 
@@ -261,14 +275,12 @@ describe('a business owner', () => {
     await screen.findByRole('radio', { name: 'Sent, selected' });
     await waitFor(() => expect(mineMock).toHaveBeenCalled());
     await act(flush);
-    sentRows(makeRequest({ id: 'a', status: 'declined', display_status: 'declined' }));
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ['requests', 'mine'] });
-    });
+    await raiseUpdates(1);
     // Sent is shown but the tab is not on screen: the number stays, and says it is selected.
     expect(
       await screen.findByRole('radio', { name: 'Sent, 1 updated, selected' }),
     ).toBeOnTheScreen();
+    expect(markSeenMock).not.toHaveBeenCalled();
   });
 
   it('keeps both lists mounted, so switching never reloads or loses a page', async () => {

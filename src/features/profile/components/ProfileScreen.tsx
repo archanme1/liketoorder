@@ -5,6 +5,7 @@ import { Banner, Button, Screen } from '@/components/ui';
 import { useSession } from '@/features/auth/hooks/useSession';
 import { useSignOut } from '@/features/auth/hooks/useSignOut';
 import { authErrorMessage, PASSWORD_UPDATED } from '@/features/auth/messages';
+import { NotificationsRow } from '@/features/notifications/components/NotificationsRow';
 import { SellerModeRow } from '@/features/sellers/components/SellerModeRow';
 import { useTheme } from '@/theme/useTheme';
 
@@ -41,6 +42,7 @@ export function ProfileScreen() {
           }}
         />
         <SellerModeRow />
+        <NotificationsRow />
         <Button
           title="Sign out"
           variant="secondary"

@@ -5,13 +5,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Banner, Button, Text } from '@/components/ui';
 import { useIsSeller } from '@/features/navigation/hooks/useIsSeller';
+import { usePrimerMoment } from '@/features/notifications/hooks/usePrimerMoment';
 import { useMyBusiness } from '@/features/sellers/hooks/useMyBusiness';
 import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 import { requestKeys } from '../hooks/keys';
 import { useRequestsCounts } from '../hooks/useRequestsBadge';
-import { BUSINESS_CHECK_ERROR, SENT_FILTER_GROUP, sentEmptyMessage } from '../messages';
+import {
+  BUSINESS_CHECK_ERROR,
+  OTHER_ACCOUNT_NOTICE,
+  SENT_FILTER_GROUP,
+  sentEmptyMessage,
+} from '../messages';
 import type { BusinessRequest, CustomerRequest, RequestFilter } from '../schema';
 import type { TimeOptions } from '../time';
 
@@ -25,6 +31,9 @@ type RequestsTabScreenProps = TimeOptions & {
   focused: boolean;
   onOpenSent: (request: CustomerRequest) => void;
   onOpenReceived: (request: BusinessRequest) => void;
+  /** A tapped notification belonged to another account (spec 12): a neutral, dismissible line. */
+  notice?: 'other-account';
+  onDismissNotice?: () => void;
 };
 
 // The Requests tab. A customer sees the requests they sent. Anyone who owns a business (whatever
@@ -39,6 +48,8 @@ export function RequestsTabScreen({
   focused,
   onOpenSent,
   onOpenReceived,
+  notice,
+  onDismissNotice,
   timeZone,
   locale,
 }: RequestsTabScreenProps) {
@@ -60,6 +71,19 @@ export function RequestsTabScreen({
     if (focused && sentShown) markSentSeen();
   }, [focused, sentShown, markSentSeen]);
 
+  // An owner's first look at Received is a moment to offer notifications (spec 12, Decision 7);
+  // whether the primer actually opens is decided once the screen settles.
+  // Not at launch: the person must have come to Received themselves, by leaving the tab and
+  // coming back or by picking Received, never a cold start that opens straight onto it.
+  const { maybeOpen } = usePrimerMoment();
+  const [leftOnce, setLeftOnce] = useState(false);
+  // Set during render (React's "adjust state on change" pattern), like the root layout's stackMounted.
+  if (!focused && !leftOnce) setLeftOnce(true);
+  const navigatedHere = leftOnce || picked === 'received';
+  useEffect(() => {
+    if (focused && isOwner && side === 'received' && navigatedHere) maybeOpen('owner');
+  }, [focused, isOwner, side, navigatedHere, maybeOpen]);
+
   // Coming back to the tab: the lists and the waiting number are read again (not on first focus).
   const wasFocused = useRef(focused);
   useEffect(() => {
@@ -77,6 +101,19 @@ export function RequestsTabScreen({
         <Text variant="title" accessibilityRole="header" maxFontSizeMultiplier={maxFontMultiplier}>
           Requests
         </Text>
+        {notice === 'other-account' ? (
+          <View style={{ gap: space.sm }}>
+            <Banner tone="info" message={OTHER_ACCOUNT_NOTICE} />
+            {onDismissNotice ? (
+              <Button
+                title="Dismiss"
+                variant="ghost"
+                accessibilityLabel="Dismiss the notification message"
+                onPress={onDismissNotice}
+              />
+            ) : null}
+          </View>
+        ) : null}
         {business.isError && !isOwner ? (
           <View style={{ gap: space.sm }}>
             <Banner message={BUSINESS_CHECK_ERROR} />

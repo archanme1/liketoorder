@@ -60,6 +60,12 @@ const config: ExpoConfig = {
       },
     ],
     '@react-native-community/datetimepicker',
+    // Spec 12. No EAS projectId yet (Decision 19): the app then asks for no push token. The
+    // `requests` channel itself is created at runtime (pushModule.ensureAndroidChannel).
+    [
+      'expo-notifications',
+      { defaultChannel: 'requests', enableBackgroundRemoteNotifications: false },
+    ],
   ],
 };
 

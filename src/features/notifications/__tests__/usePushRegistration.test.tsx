@@ -19,7 +19,18 @@ import {
   fakeNotifications,
 } from '../__fixtures__/notifications';
 
-jest.mock('@/lib/supabase', () => ({ supabase: { rpc: jest.fn() } }));
+// The client's current session follows `mockSession.userId` (what getSignedInUserId reads).
+const mockSession: { userId: string | null } = { userId: 'user-1' };
+jest.mock('@/lib/supabase', () => ({
+  supabase: {
+    rpc: jest.fn(),
+    auth: {
+      getSession: jest.fn(async () => ({
+        data: { session: mockSession.userId ? { user: { id: mockSession.userId } } : null },
+      })),
+    },
+  },
+}));
 
 // expo-constants under jest-expo has a non-configurable expoConfig getter; fake the two fields
 // pushModule reads. Default here: built after `eas init` (projectId.test.ts covers "no id").
@@ -99,6 +110,7 @@ const registerCalls = () => db.rpc.mock.calls.filter(([name]) => name === 'regis
 beforeEach(async () => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   authValue = auth('user-1');
+  mockSession.userId = 'user-1';
   await AsyncStorage.clear();
   db.rpc.mockReset();
   db.rpc.mockResolvedValue({ data: null, error: null });
@@ -171,6 +183,7 @@ describe('usePushRegistration', () => {
     const view = await mount();
     await waitFor(() => expect(registerCalls()).toHaveLength(1));
     authValue = auth('user-2');
+    mockSession.userId = 'user-2';
     await view.rerender(undefined);
     await waitFor(() => expect(registerCalls()).toHaveLength(2));
   });
@@ -187,6 +200,33 @@ describe('usePushRegistration', () => {
       }),
     );
     await waitFor(async () => expect(await readStoredToken()).toBe(OTHER_TEST_TOKEN));
+  });
+
+  it('if the person changed while the call was out, takes the token back off them (best effort)', async () => {
+    // The register call is still out when the session changes (sign-out or another account).
+    let finishRegister: () => void = () => undefined;
+    db.rpc.mockImplementation((name: string) => {
+      if (name === 'register_push_token') {
+        return new Promise((resolve) => {
+          finishRegister = () => resolve({ data: null, error: null });
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    await mount();
+    await waitFor(() => expect(registerCalls()).toHaveLength(1));
+    mockSession.userId = null;
+    await act(async () => finishRegister());
+    await waitFor(() =>
+      expect(db.rpc).toHaveBeenCalledWith('unregister_push_token', { p_token: TEST_TOKEN }),
+    );
+    await waitFor(async () => expect(await readStoredToken()).toBeNull());
+  });
+
+  it('keeps the token when the person is still the same after the call', async () => {
+    await mount();
+    await waitFor(async () => expect(await readStoredToken()).toBe(TEST_TOKEN));
+    expect(db.rpc).not.toHaveBeenCalledWith('unregister_push_token', expect.anything());
   });
 
   it('swallows a server error and stores nothing', async () => {

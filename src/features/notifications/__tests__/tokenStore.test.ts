@@ -3,7 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
 import { NotificationAppError } from '../api';
-import { TOKEN_KEY, readStoredToken, saveStoredToken, unregisterThisPhone } from '../tokenStore';
+import {
+  TOKEN_KEY,
+  readStoredToken,
+  saveStoredToken,
+  trackRegistration,
+  unregisterThisPhone,
+} from '../tokenStore';
 
 import { TEST_TOKEN } from '../__fixtures__/notifications';
 
@@ -61,6 +67,26 @@ describe('unregisterThisPhone', () => {
     await saveStoredToken(TEST_TOKEN);
     db.rpc.mockRejectedValueOnce(new NotificationAppError('network'));
     await expect(unregisterThisPhone()).resolves.toBeUndefined();
+  });
+
+  it('waits for a registration still running, then removes the token it stored', async () => {
+    // A registration started a moment before sign-out: nothing is stored yet.
+    let finish: () => void = () => undefined;
+    trackRegistration(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }).then(() => saveStoredToken(TEST_TOKEN)),
+    );
+    const signingOut = unregisterThisPhone(2000);
+    finish();
+    await signingOut;
+    expect(db.rpc).toHaveBeenCalledWith('unregister_push_token', { p_token: TEST_TOKEN });
+    await expect(readStoredToken()).resolves.toBeNull();
+  });
+
+  it('a registration that never ends cannot hold sign-out past the timeout', async () => {
+    trackRegistration(new Promise<void>(() => undefined));
+    await expect(unregisterThisPhone(20)).resolves.toBeUndefined();
   });
 
   it('gives up after the timeout when the server never answers', async () => {

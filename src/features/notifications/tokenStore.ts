@@ -11,6 +11,21 @@ export const TOKEN_KEY = 'liketoorder.push.token.v1';
 /** How long sign-out waits for the token to be removed before it signs out anyway. */
 export const UNREGISTER_TIMEOUT_MS = 3000;
 
+// A registration still running (usePushRegistration). Sign-out waits for it, inside its time
+// limit, so a token registered a moment before sign-out is still removed (review LOW).
+let registering: Promise<void> | null = null;
+
+/** Records a running registration so sign-out can wait for it. Returns the same promise. */
+export function trackRegistration(work: Promise<void>): Promise<void> {
+  registering = work;
+  void work
+    .catch(() => undefined)
+    .finally(() => {
+      if (registering === work) registering = null;
+    });
+  return work;
+}
+
 export async function readStoredToken(): Promise<string | null> {
   try {
     const raw = await AsyncStorage.getItem(TOKEN_KEY);
@@ -47,6 +62,7 @@ export async function unregisterThisPhone(
 ): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const work = (async () => {
+    if (registering) await registering.catch(() => undefined);
     const token = await readStoredToken();
     if (!token) return;
     await unregisterPushToken(token);

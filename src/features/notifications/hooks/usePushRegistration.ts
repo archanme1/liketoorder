@@ -2,9 +2,9 @@ import { useEffect, useReducer } from 'react';
 
 import { useSession } from '@/features/auth/hooks/useSession';
 
-import { registerPushToken } from '../api';
+import { getSignedInUserId, registerPushToken, unregisterPushToken } from '../api';
 import { getPushPlatform, getPushToken, onPushTokenChange } from '../pushModule';
-import { saveStoredToken } from '../tokenStore';
+import { clearStoredToken, saveStoredToken, trackRegistration } from '../tokenStore';
 
 import { useNotificationPermission } from './useNotificationPermission';
 
@@ -24,18 +24,25 @@ export function usePushRegistration(): void {
 
   useEffect(() => {
     if (!userId || isRecovering || state !== 'granted') return;
-    void (async () => {
-      const token = await getPushToken();
-      const platform = getPushPlatform();
-      if (!token || !platform) return;
-      try {
-        await registerPushToken(token, platform);
-        // Kept even if the person signed out meanwhile: the token is theirs on the server now,
-        // and sign-out on this phone needs it to remove it.
-        await saveStoredToken(token);
-      } catch {
-        // Ignore: the next app start, sign-in or token change tries again.
-      }
-    })();
+    void trackRegistration(
+      (async () => {
+        const token = await getPushToken();
+        const platform = getPushPlatform();
+        if (!token || !platform) return;
+        try {
+          await registerPushToken(token, platform);
+          // Stored so sign-out on this phone can remove it (sign-out waits for this run).
+          await saveStoredToken(token);
+          // The person changed while the call was out (signed out or switched): take the token
+          // back off this user while that is still possible, best effort.
+          if ((await getSignedInUserId()) !== userId) {
+            await unregisterPushToken(token);
+            await clearStoredToken();
+          }
+        } catch {
+          // Ignore: the next app start, sign-in or token change tries again.
+        }
+      })(),
+    );
   }, [userId, isRecovering, state, tokenChanges]);
 }

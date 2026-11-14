@@ -43,6 +43,16 @@ export function mapNotificationError(error: unknown): NotificationAppError {
 
 export type PushPlatform = 'ios' | 'android';
 
+/** The user the Supabase client is signed in as right now, or null. Never throws. */
+export async function getSignedInUserId(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.user.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Links this phone's Expo push token to the signed-in user (moving it from anyone else). */
 export async function registerPushToken(token: string, platform: PushPlatform): Promise<void> {
   const { error } = await supabase.rpc('register_push_token', {

@@ -15,7 +15,6 @@ import {
 } from '../api';
 import { RequestsTabScreen } from '../components/RequestsTabScreen';
 import type { CustomerRequest, SellerRequest } from '../schema';
-import { clearStatusMemory } from '../statusMemory';
 
 import { cursorOf, makeMixedRows, makeRows, pagedServer } from '../__fixtures__/pagedServer';
 import { makeSellerRows, sellerPagedServer } from '../__fixtures__/sellerRequests';
@@ -123,7 +122,6 @@ beforeEach(async () => {
   counter += 1;
   userId = `user-${counter}`;
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  clearStatusMemory();
   await flush();
   await AsyncStorage.clear();
   jest.clearAllMocks();

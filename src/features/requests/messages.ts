@@ -48,6 +48,9 @@ export function tableSentMessage(sellerName: string): string {
 }
 
 /** What the person is told for each failure. Never says why a business is unavailable. */
+/** Spec 12: a tapped notification was for another account signed in on this phone. */
+export const OTHER_ACCOUNT_NOTICE = 'This notification was for another account.';
+
 export function requestErrorMessage(code: RequestErrorCode): string {
   switch (code) {
     case 'network':
@@ -81,6 +84,8 @@ export function requestErrorMessage(code: RequestErrorCode): string {
       return 'You have too many requests waiting. You can have up to 3 pickup and 3 table requests waiting, and 1 per place. Cancel one or wait for an answer.';
     case 'rate_limited':
       return "You've sent a lot of requests to this place today. Please try again tomorrow.";
+    case 'daily_limit':
+      return "You've sent a lot of requests today. Try again tomorrow.";
     case 'invalid_transition':
       return "This request can't be cancelled any more.";
     case 'not_found':

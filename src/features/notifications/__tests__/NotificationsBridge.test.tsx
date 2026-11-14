@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { AuthContext, type AuthContextValue } from '@/features/auth/components/AuthProvider';
 
 import { NotificationsBridge } from '../components/NotificationsBridge';
+import { resetHandledTapsForTests } from '../hooks/useNotificationTaps';
 import { resetPrimerMomentForTests } from '../primerMoment';
 
 jest.mock('@/lib/supabase', () => ({ supabase: { rpc: jest.fn() } }));
@@ -37,6 +38,7 @@ afterEach(async () => {
   await cleanup();
   client.clear();
   resetPrimerMomentForTests();
+  resetHandledTapsForTests();
   jest.clearAllMocks();
 });
 
@@ -59,5 +61,9 @@ describe('NotificationsBridge', () => {
     });
     // Nothing opens at launch.
     expect(mockRouter.push).not.toHaveBeenCalled();
+    // Listening for taps, foreground pushes and token changes.
+    expect(
+      (Notifications as unknown as { __listenerCount: () => number }).__listenerCount(),
+    ).toBe(3);
   });
 });

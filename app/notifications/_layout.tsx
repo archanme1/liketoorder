@@ -1,7 +1,18 @@
 import { Stack } from 'expo-router';
 
-// Notification screens draw their own controls. Signed-in, profile-complete access comes from the
-// root layout's `app` guard (the tap resolver of gate G will need a signed-out entry here).
+import { useSession } from '@/features/auth/hooks/useSession';
+
+// Notification screens draw their own controls. The tap resolver (open) is reachable signed out:
+// it sends the person to sign-in itself and runs again afterwards. The permission primer (allow)
+// is for a signed-in person only.
 export default function NotificationsLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  const { session, isRecovering } = useSession();
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="open" />
+      <Stack.Protected guard={session !== null && !isRecovering}>
+        <Stack.Screen name="allow" />
+      </Stack.Protected>
+    </Stack>
+  );
 }

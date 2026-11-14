@@ -4,7 +4,6 @@ import { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import { REQUEST_ID, makeRequest } from '@/features/requests/__fixtures__/requests';
 import { makeSellerRequest } from '@/features/requests/__fixtures__/sellerRequests';
-import { clearStatusMemory } from '@/features/requests/statusMemory';
 import { myProfileKey } from '@/features/profile/hooks/useMyProfile';
 import { queryClient } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
@@ -78,6 +77,8 @@ type World = {
   sent: ReturnType<typeof makeRequest>[];
   inbox: ReturnType<typeof makeSellerRequest>[];
   waiting: number;
+  /** The server's count of the customer's changed requests (spec 12). */
+  updates: number;
 };
 let world: World;
 
@@ -119,6 +120,11 @@ function installDatabase() {
         };
       case 'count_waiting_requests':
         return { data: { server_now: NOW, waiting: world.waiting }, error: null };
+      case 'count_my_request_updates':
+        return { data: world.updates, error: null };
+      case 'mark_my_requests_seen':
+        world.updates = 0;
+        return { data: null, error: null };
       case 'respond_to_request':
         return {
           data: {
@@ -151,10 +157,9 @@ const tabLabels = () =>
 beforeEach(async () => {
   jest.clearAllMocks();
   queryClient.clear();
-  clearStatusMemory();
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
   await AsyncStorage.clear();
-  world = { profile: { ...profile }, business: null, sent: [], inbox: [], waiting: 0 };
+  world = { profile: { ...profile }, business: null, sent: [], inbox: [], waiting: 0, updates: 0 };
   db.auth.getSession.mockResolvedValue({ data: { session } });
   installDatabase();
 });
@@ -222,10 +227,11 @@ describe('a customer (seller mode off)', () => {
     await renderRouter('./app', { initialUrl: '/profile' });
     await screen.findByLabelText('Requests tab');
     await settle();
-    // The seller answers while the person is on another tab.
+    // The seller answers while the person is on another tab: the server flags it.
     world.sent = [makeRequest({ status: 'accepted', display_status: 'accepted' })];
+    world.updates = 1;
     await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ['requests', 'mine'] });
+      await queryClient.invalidateQueries({ queryKey: ['requests', 'updatesCount'] });
     });
     expect(await screen.findByLabelText('Requests tab, 1 new')).toBeTruthy();
     // The number itself is hidden from the screen reader so it is not read twice.
@@ -234,7 +240,7 @@ describe('a customer (seller mode off)', () => {
     for (const badge of badges) expect(badge.props.accessibilityElementsHidden).toBe(true);
   });
 
-  it('shows no number for a first sight (the baseline), even for answered requests', async () => {
+  it('shows no number when the server has nothing flagged, even for answered requests', async () => {
     world.sent = [makeRequest({ status: 'declined', display_status: 'declined' })];
     await renderRouter('./app', { initialUrl: '/profile' });
     await screen.findByLabelText('Requests tab');

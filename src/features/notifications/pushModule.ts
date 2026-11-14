@@ -97,6 +97,52 @@ export function configureForegroundHandler(): void {
   });
 }
 
+/** A tap on a notification: which notification, how it was opened, and its `data`. */
+export type PushTap = { identifier: string; isDefaultAction: boolean; data: unknown };
+
+function toTap(response: Notifications.NotificationResponse): PushTap {
+  return {
+    identifier: response.notification.request.identifier,
+    isDefaultAction: response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER,
+    data: response.notification.request.content.data,
+  };
+}
+
+/** The tap that started the app (cold start), or null. Never throws. */
+export function getLastTap(): PushTap | null {
+  try {
+    const response = Notifications.getLastNotificationResponse();
+    return response ? toTap(response) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Forgets the cold-start tap, so a later mount does not route it again. */
+export function clearLastTap(): void {
+  try {
+    Notifications.clearLastNotificationResponse();
+  } catch {
+    // Nothing to clear.
+  }
+}
+
+/** Calls `listener` for each tap while the app is running (warm). Returns the unsubscribe. */
+export function onTap(listener: (tap: PushTap) => void): () => void {
+  const subscription = Notifications.addNotificationResponseReceivedListener((response) =>
+    listener(toTap(response)),
+  );
+  return () => subscription.remove();
+}
+
+/** Calls `listener` with a push's `data` when one arrives while the app is open. */
+export function onForegroundPush(listener: (data: unknown) => void): () => void {
+  const subscription = Notifications.addNotificationReceivedListener((notification) =>
+    listener(notification.request.content.data),
+  );
+  return () => subscription.remove();
+}
+
 /** Calls `listener` when the phone's push token changes. Returns the unsubscribe. */
 export function onPushTokenChange(listener: () => void): () => void {
   const subscription = Notifications.addPushTokenListener(() => listener());

@@ -52,6 +52,7 @@ export type RequestErrorCode =
   | 'empty_order'
   | 'too_many_pending'
   | 'rate_limited'
+  | 'daily_limit'
   | 'invalid_transition'
   | 'not_found'
   | 'network'
@@ -75,6 +76,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<RequestErrorCode>([
   'empty_order',
   'too_many_pending',
   'rate_limited',
+  'daily_limit',
   'invalid_transition',
   'not_found',
 ]);

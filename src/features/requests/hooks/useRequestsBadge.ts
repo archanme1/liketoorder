@@ -13,7 +13,7 @@ export type RequestsCounts = {
   sent: number | undefined;
   /** The Requests tab number: received + sent for an owner (both must be known), sent for a customer. */
   total: number | undefined;
-  /** Marks every loaded request as seen (the Sent list calls this when it is on screen). */
+  /** Clears the server's changed flags (the Sent list calls this while it is on screen). */
   markSentSeen: () => void;
 };
 

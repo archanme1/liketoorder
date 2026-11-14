@@ -7,18 +7,31 @@ import { AuthContext, type AuthContextValue } from '@/features/auth/components/A
 import * as sellersApi from '@/features/sellers/api';
 import type { MyBusiness } from '@/features/sellers/schema';
 
-import { RequestAppError, cancelPickupRequest, countWaitingRequests, listMyRequests } from '../api';
+import {
+  RequestAppError,
+  cancelPickupRequest,
+  countMyRequestUpdates,
+  countWaitingRequests,
+  listMyRequests,
+  markMyRequestsSeen,
+} from '../api';
 import { requestKeys } from '../hooks/keys';
 import { useCancelPickupRequest } from '../hooks/useCancelPickupRequest';
 import { useRequestsBadge, useRequestsCounts } from '../hooks/useRequestsBadge';
-import { clearStatusMemory } from '../statusMemory';
 
 import { makeRequest } from '../__fixtures__/requests';
+
+// Spec 12: the customer's "changed" number is the server's (count_my_request_updates), the same on
+// every phone. The server decides what counts (an answer, an expiry, completed, no-show; never the
+// customer's own cancel; existing rows start as seen): pgTAP covers that. Here: the app shows the
+// server's number, clears it through mark_my_requests_seen, and never invents one.
 
 jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
   listMyRequests: jest.fn(),
   countWaitingRequests: jest.fn(),
+  countMyRequestUpdates: jest.fn(),
+  markMyRequestsSeen: jest.fn(),
   cancelPickupRequest: jest.fn(),
 }));
 jest.mock('@/features/sellers/api', () => ({
@@ -28,6 +41,8 @@ jest.mock('@/features/sellers/api', () => ({
 
 const listMock = jest.mocked(listMyRequests);
 const waitingMock = jest.mocked(countWaitingRequests);
+const updatesMock = jest.mocked(countMyRequestUpdates);
+const markSeenMock = jest.mocked(markMyRequestsSeen);
 const cancelMock = jest.mocked(cancelPickupRequest);
 const businessMock = jest.mocked(sellersApi.getMyBusiness);
 
@@ -51,8 +66,9 @@ function auth(userId: string | null): AuthContextValue {
 
 let client: QueryClient;
 let userId: string | null;
-// A new user id per test: a write that lands late from one test can never reach the next.
 let counter = 0;
+/** The server's flag count for the signed-in customer. */
+let serverUpdates = 0;
 function wrapper({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={auth(userId)}>
@@ -70,21 +86,26 @@ async function settled(read: () => number | undefined, expected: number) {
   await act(flush);
   expect(read()).toBe(expected);
 }
+const refetchCount = () =>
+  act(() => client.invalidateQueries({ queryKey: requestKeys.updatesCount }));
 const refetchList = () => act(() => client.invalidateQueries({ queryKey: requestKeys.mine }));
 
 beforeEach(async () => {
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { gcTime: 0 } },
+  });
   counter += 1;
   userId = `user-${counter}`;
-  clearStatusMemory();
-  await flush();
+  serverUpdates = 0;
   await AsyncStorage.clear();
-  listMock.mockReset();
-  waitingMock.mockReset();
-  cancelMock.mockReset();
-  businessMock.mockReset();
+  jest.clearAllMocks();
   businessMock.mockResolvedValue(null);
   waitingMock.mockResolvedValue({ server_now: NOW, waiting: 0 });
+  updatesMock.mockImplementation(async () => serverUpdates);
+  markSeenMock.mockImplementation(async () => {
+    serverUpdates = 0;
+  });
+  serve(makeRequest({ id: 'a' }));
 });
 
 afterEach(async () => {
@@ -93,84 +114,80 @@ afterEach(async () => {
   jest.restoreAllMocks();
 });
 
-describe('the customer badge (spec 10b Decision 7)', () => {
-  it('shows no number while the list or the phone memory is loading', async () => {
-    listMock.mockReturnValue(new Promise(() => undefined));
+describe('the customer badge (spec 10b Decision 7, server flag since spec 12)', () => {
+  it('shows no number while the count is loading', async () => {
+    updatesMock.mockReturnValue(new Promise(() => undefined));
     const { result } = await renderHook(() => useRequestsBadge(), { wrapper });
     expect(result.current).toBeUndefined();
   });
 
-  it('shows no number when the list fails to load (never a wrong number)', async () => {
-    listMock.mockRejectedValue(new RequestAppError('network'));
+  it('shows no number when the count fails to load (never a wrong number)', async () => {
+    updatesMock.mockRejectedValue(new RequestAppError('network'));
     const { result } = await renderHook(() => useRequestsBadge(), { wrapper });
-    await waitFor(() => expect(listMock).toHaveBeenCalled());
+    await waitFor(() => expect(updatesMock).toHaveBeenCalled());
     await act(flush);
     expect(result.current).toBeUndefined();
   });
 
-  it('treats the first load on a phone as the baseline: no badge for existing requests, not even for a moment', async () => {
-    serve(
-      makeRequest({ id: 'a', status: 'accepted', display_status: 'accepted' }),
-      makeRequest({ id: 'b', status: 'declined', display_status: 'declined' }),
-    );
-    const shown: (number | undefined)[] = [];
-    const useRecorded = () => {
-      const counts = useRequestsCounts();
-      shown.push(counts.sent);
-      return counts;
-    };
-    const { result } = await renderHook(useRecorded, { wrapper });
-    await waitFor(() => expect(result.current.sent).toBe(0));
-    await act(flush);
-    expect(shown.filter((value) => value !== undefined && value > 0)).toEqual([]);
-  });
-
-  it('counts a request the seller answered since it was last seen', async () => {
-    serve(makeRequest({ id: 'a' }));
+  it("shows the server's number: none, then one after the seller answers", async () => {
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
     await waitFor(() => expect(result.current.sent).toBe(0));
-    serve(makeRequest({ id: 'a', status: 'accepted', display_status: 'accepted' }));
-    await refetchList();
+    serverUpdates = 1;
+    await refetchCount();
     await waitFor(() => expect(result.current.sent).toBe(1));
     expect(result.current.total).toBe(1);
   });
 
-  it('counts a pending request that expired, using the server status and not the phone clock', async () => {
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2030-01-01T00:00:00Z'));
-    serve(makeRequest({ id: 'a', expires_at: '2026-11-08T17:30:00+00:00' }));
+  it('reads the number again after every Sent list read, so a change the list shows is counted', async () => {
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
-    // The phone says 2030: the request is long past its expiry, but the server still says pending.
     await waitFor(() => expect(result.current.sent).toBe(0));
-    serve(makeRequest({ id: 'a', status: 'pending', display_status: 'expired' }));
+    // Mount the list itself (the badge no longer reads it), then let it re-read.
+    await act(() =>
+      client.fetchQuery({ queryKey: requestKeys.mine, queryFn: () => listMyRequests() }),
+    );
+    serverUpdates = 2;
+    serve(makeRequest({ id: 'a', status: 'accepted', display_status: 'accepted' }));
     await refetchList();
-    await waitFor(() => expect(result.current.sent).toBe(1));
+    await act(() =>
+      client.fetchQuery({ queryKey: requestKeys.mine, queryFn: () => listMyRequests() }),
+    );
+    await waitFor(() => expect(result.current.sent).toBe(2));
   });
 
-  it('clears the number when the Sent list is opened (markSentSeen) and keeps it cleared', async () => {
-    serve(makeRequest({ id: 'a' }));
+  it('clears the number when the Sent list is opened (markSentSeen), then reads it again', async () => {
+    serverUpdates = 1;
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
-    await waitFor(() => expect(result.current.sent).toBe(0));
-    serve(makeRequest({ id: 'a', status: 'declined', display_status: 'declined' }));
-    await refetchList();
     await waitFor(() => expect(result.current.sent).toBe(1));
     await act(async () => result.current.markSentSeen());
-    await waitFor(() => expect(result.current.sent).toBe(0));
-    await refetchList();
-    await act(flush);
-    expect(result.current.sent).toBe(0);
+    await waitFor(() => expect(markSeenMock).toHaveBeenCalledTimes(1));
+    await settled(() => result.current.sent, 0);
+    expect(updatesMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('does not let another user on the same phone inherit the number', async () => {
-    serve(makeRequest({ id: 'a' }));
-    const first = await renderHook(() => useRequestsCounts(), { wrapper });
-    await waitFor(() => expect(first.result.current.sent).toBe(0));
-    await first.unmount();
-    client.clear();
+  it('does not call the server to clear a number that is already zero', async () => {
+    const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
+    await waitFor(() => expect(result.current.sent).toBe(0));
+    await act(async () => result.current.markSentSeen());
+    await act(flush);
+    expect(markSeenMock).not.toHaveBeenCalled();
+  });
 
-    userId = `${userId}-other`;
-    serve(makeRequest({ id: 'a', status: 'accepted', display_status: 'accepted' }));
-    const second = await renderHook(() => useRequestsCounts(), { wrapper });
-    await waitFor(() => expect(second.result.current.sent).toBe(0));
+  it('sends one clear at a time, and a failed clear only reads the number again', async () => {
+    serverUpdates = 3;
+    let release: () => void = () => undefined;
+    markSeenMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          release = () => reject(new RequestAppError('network'));
+        }),
+    );
+    const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
+    await waitFor(() => expect(result.current.sent).toBe(3));
+    await act(async () => result.current.markSentSeen());
+    await act(async () => result.current.markSentSeen());
+    expect(markSeenMock).toHaveBeenCalledTimes(1);
+    await act(async () => release());
+    await settled(() => result.current.sent, 3);
   });
 
   it('makes no requests and shows nothing for a guest', async () => {
@@ -178,107 +195,38 @@ describe('the customer badge (spec 10b Decision 7)', () => {
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
     await act(flush);
     expect(result.current.total).toBeUndefined();
-    expect(listMock).not.toHaveBeenCalled();
+    expect(updatesMock).not.toHaveBeenCalled();
     expect(waitingMock).not.toHaveBeenCalled();
-  });
-});
-
-describe('the stored copy cannot be read', () => {
-  it('shows no number, does not loop, and reads again when a screen mounts next', async () => {
-    serve(makeRequest({ id: 'a' }));
-    const getItem = jest.spyOn(AsyncStorage, 'getItem');
-    // Only the status memory's own key fails (the supabase client reads its own keys too).
-    getItem.mockImplementation(async (key) => {
-      if (key === memoryKey && reads === 0) {
-        reads += 1;
-        throw new Error('disk');
-      }
-      return null;
-    });
-    const memoryKey = `liketoorder.requests.seen.v1.${userId}`;
-    const memoryReads = () => getItem.mock.calls.filter(([key]) => key === memoryKey).length;
-    let reads = 0;
-    const first = await renderHook(() => useRequestsCounts(), { wrapper });
-    await waitFor(() => expect(memoryReads()).toBe(1));
-    await act(flush);
-    await act(flush);
-    expect(first.result.current.sent).toBeUndefined();
-    // One failed read, not a tight retry loop.
-    expect(memoryReads()).toBe(1);
-    await first.unmount();
-
-    const second = await renderHook(() => useRequestsCounts(), { wrapper });
-    await waitFor(() => expect(second.result.current.sent).toBe(0));
-    expect(memoryReads()).toBe(2);
   });
 });
 
 describe('own cancel is not news (Decision 18)', () => {
   const useBoth = () => ({ counts: useRequestsCounts(), cancel: useCancelPickupRequest() });
 
-  it('does not raise the badge when the person cancels, also after the list is re-read', async () => {
-    serve(makeRequest({ id: 'a' }));
+  it('a cancel neither clears nor raises the number, and does not touch the flags', async () => {
+    serverUpdates = 1;
     const { result } = await renderHook(useBoth, { wrapper });
-    await waitFor(() => expect(result.current.counts.sent).toBe(0));
-
+    await waitFor(() => expect(result.current.counts.sent).toBe(1));
     cancelMock.mockResolvedValue(
       makeRequest({ id: 'a', status: 'cancelled', display_status: 'cancelled' }),
     );
     serve(makeRequest({ id: 'a', status: 'cancelled', display_status: 'cancelled' }));
     await act(async () => result.current.cancel.cancelRequest('a'));
     await waitFor(() => expect(cancelMock).toHaveBeenCalled());
-    await act(flush);
-    await refetchList();
-    await settled(() => result.current.counts.sent, 0);
+    await refetchCount();
+    // The server does not flag an own cancel: the earlier answer is still the only change.
+    await settled(() => result.current.counts.sent, 1);
+    expect(markSeenMock).not.toHaveBeenCalled();
   });
 
-  it('keeps the number as it was when the cancel fails and is retried', async () => {
-    serve(makeRequest({ id: 'a' }), makeRequest({ id: 'b' }));
+  it('a failed cancel keeps the number as it was', async () => {
+    serverUpdates = 1;
     const { result } = await renderHook(useBoth, { wrapper });
-    await waitFor(() => expect(result.current.counts.sent).toBe(0));
-    // b was answered by the seller: one real change.
-    serve(
-      makeRequest({ id: 'a' }),
-      makeRequest({ id: 'b', status: 'accepted', display_status: 'accepted' }),
-    );
-    await refetchList();
     await waitFor(() => expect(result.current.counts.sent).toBe(1));
-
     cancelMock.mockRejectedValueOnce(new RequestAppError('network'));
     await act(async () => result.current.cancel.cancelRequest('a'));
     await waitFor(() => expect(result.current.cancel.isError).toBe(true));
-    expect(result.current.counts.sent).toBe(1);
-
-    cancelMock.mockResolvedValueOnce(
-      makeRequest({ id: 'a', status: 'cancelled', display_status: 'cancelled' }),
-    );
-    serve(
-      makeRequest({ id: 'a', status: 'cancelled', display_status: 'cancelled' }),
-      makeRequest({ id: 'b', status: 'accepted', display_status: 'accepted' }),
-    );
-    await act(async () => result.current.cancel.cancelRequest('a'));
-    await waitFor(() => expect(cancelMock).toHaveBeenCalledTimes(2));
-    await act(flush);
-    await refetchList();
-    // Still only the seller's answer on b.
     await settled(() => result.current.counts.sent, 1);
-  });
-
-  it('still counts a seller answer and an expiry that come after a cancel of another request', async () => {
-    serve(makeRequest({ id: 'a' }), makeRequest({ id: 'b' }));
-    const { result } = await renderHook(useBoth, { wrapper });
-    await waitFor(() => expect(result.current.counts.sent).toBe(0));
-    cancelMock.mockResolvedValue(
-      makeRequest({ id: 'a', status: 'cancelled', display_status: 'cancelled' }),
-    );
-    serve(
-      makeRequest({ id: 'a', status: 'cancelled', display_status: 'cancelled' }),
-      makeRequest({ id: 'b', status: 'pending', display_status: 'expired' }),
-    );
-    await act(async () => result.current.cancel.cancelRequest('a'));
-    await act(flush);
-    await refetchList();
-    await waitFor(() => expect(result.current.counts.sent).toBe(1));
   });
 });
 
@@ -286,11 +234,8 @@ describe('the business owner numbers', () => {
   it('adds the waiting requests to the customer updates, and each part is its own number', async () => {
     businessMock.mockResolvedValue(ownerBusiness);
     waitingMock.mockResolvedValue({ server_now: NOW, waiting: 2 });
-    serve(makeRequest({ id: 'a' }));
+    serverUpdates = 1;
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
-    await waitFor(() => expect(result.current.sent).toBe(0));
-    serve(makeRequest({ id: 'a', status: 'accepted', display_status: 'accepted' }));
-    await refetchList();
     await waitFor(() => expect(result.current.total).toBe(3));
     expect(result.current.isOwner).toBe(true);
     expect(result.current.received).toBe(2);
@@ -298,7 +243,6 @@ describe('the business owner numbers', () => {
   });
 
   it('never calls the waiting count for a customer without a business', async () => {
-    serve(makeRequest({ id: 'a' }));
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
     await waitFor(() => expect(result.current.total).toBe(0));
     expect(result.current.isOwner).toBe(false);
@@ -308,7 +252,6 @@ describe('the business owner numbers', () => {
 
   it('shows no total while it is not known whether the person owns a business', async () => {
     businessMock.mockReturnValue(new Promise(() => undefined));
-    serve(makeRequest({ id: 'a' }));
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
     await act(flush);
     expect(result.current.isOwner).toBeUndefined();
@@ -318,7 +261,6 @@ describe('the business owner numbers', () => {
   it('shows no number for a waiting count that failed, not zero', async () => {
     businessMock.mockResolvedValue(ownerBusiness);
     waitingMock.mockRejectedValue(new RequestAppError('network'));
-    serve(makeRequest({ id: 'a' }));
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
     await waitFor(() => expect(result.current.sent).toBe(0));
     await act(flush);
@@ -328,11 +270,8 @@ describe('the business owner numbers', () => {
   it('shows no tab total when the waiting count failed, even with a Sent change to show', async () => {
     businessMock.mockResolvedValue(ownerBusiness);
     waitingMock.mockRejectedValue(new RequestAppError('network'));
-    serve(makeRequest({ id: 'a' }));
+    serverUpdates = 1;
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
-    await waitFor(() => expect(result.current.sent).toBe(0));
-    serve(makeRequest({ id: 'a', status: 'accepted', display_status: 'accepted' }));
-    await refetchList();
     await settled(() => result.current.sent, 1);
     // The Sent switch has its number, but the tab would say 1 when the real total is higher.
     expect(result.current.received).toBeUndefined();
@@ -342,7 +281,6 @@ describe('the business owner numbers', () => {
   it('shows no tab total while the waiting count is still loading', async () => {
     businessMock.mockResolvedValue(ownerBusiness);
     waitingMock.mockReturnValue(new Promise(() => undefined));
-    serve(makeRequest({ id: 'a' }));
     const { result } = await renderHook(() => useRequestsCounts(), { wrapper });
     await waitFor(() => expect(result.current.sent).toBe(0));
     expect(result.current.total).toBeUndefined();

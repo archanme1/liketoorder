@@ -13,6 +13,8 @@ export const requestKeys = {
   inbox: (filter: RequestFilter) => ['requests', 'inbox', filter] as const,
   businessDetail: (id: string) => ['requests', 'businessDetail', id] as const,
   waitingCount: ['requests', 'waitingCount'] as const,
+  // The customer's own requests changed since they last opened Sent (spec 12, server flag).
+  updatesCount: ['requests', 'updatesCount'] as const,
 };
 
 /**

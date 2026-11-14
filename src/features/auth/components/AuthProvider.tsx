@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import { clearStatusMemory } from '@/features/requests/statusMemory';
+import { removeLegacyStatusMemory } from '@/features/requests/legacyStatusMemory';
 import { supabase } from '@/lib/supabase';
 
 import { readRecoveryFlag, writeRecoveryFlag, writeRecoveryFlagStrict } from '../recoveryFlag';
@@ -61,6 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     recoveringRef.current = state.isRecovering;
   }, [state.isRecovering]);
 
+  // Spec 12: the Requests badge moved to the server; the old per-phone memory is removed once.
+  useEffect(() => {
+    void removeLegacyStatusMemory();
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -75,8 +80,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (event === 'SIGNED_OUT') {
         void writeRecoveryFlag(false);
-        // The Requests badge memory belongs to the person who signed out.
-        clearStatusMemory();
         queryClient.clear();
         setState((prev) => ({ ...prev, session: null, isRecovering: false, notice: null }));
         return;

@@ -1,4 +1,4 @@
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 
 import { RequestsTabScreen } from '@/features/requests/components/RequestsTabScreen';
@@ -8,6 +8,8 @@ import type { RequestKind } from '@/features/requests/kind';
 // /restaurants). It also answers /requests, so that link keeps working.
 export default function RequestsRoute() {
   const router = useRouter();
+  // Spec 12: the notification resolver sends ?notice=other-account; any other value is ignored.
+  const { notice } = useLocalSearchParams<{ notice?: string }>();
   const [focused, setFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
@@ -27,6 +29,12 @@ export default function RequestsRoute() {
     [router],
   );
   return (
-    <RequestsTabScreen focused={focused} onOpenSent={onOpenSent} onOpenReceived={onOpenReceived} />
+    <RequestsTabScreen
+      focused={focused}
+      onOpenSent={onOpenSent}
+      onOpenReceived={onOpenReceived}
+      notice={notice === 'other-account' ? 'other-account' : undefined}
+      onDismissNotice={() => router.setParams({ notice: undefined })}
+    />
   );
 }

@@ -129,6 +129,12 @@ function RootStack({ access, home, postAuth }: RootStackProps) {
   const reduceMotion = useReduceMotion();
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      {/* Spec 12: the primer and the tap resolver slide up as a modal. Not guarded here: the
+          resolver must be reachable signed out; the primer is guarded inside its own layout. */}
+      <Stack.Screen
+        name="notifications"
+        options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'default' }}
+      />
       <Stack.Protected
         guard={access.signedOutScreens || access.resetPassword}
         redirectTo={postAuth}
@@ -145,11 +151,6 @@ function RootStack({ access, home, postAuth }: RootStackProps) {
       <Stack.Protected guard={access.app} redirectTo={home}>
         <Stack.Screen name="profile/edit" />
         <Stack.Screen name="profile/notifications" />
-        {/* The notification permission primer (spec 12) slides up as a modal. */}
-        <Stack.Screen
-          name="notifications"
-          options={{ presentation: 'modal', animation: reduceMotion ? 'none' : 'default' }}
-        />
         <Stack.Screen name="requests" />
         {/* No business-based guard: the seller screens redirect after their own data loads. */}
         <Stack.Screen name="seller" />

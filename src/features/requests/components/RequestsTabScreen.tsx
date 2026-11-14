@@ -12,7 +12,12 @@ import { useTheme } from '@/theme/useTheme';
 
 import { requestKeys } from '../hooks/keys';
 import { useRequestsCounts } from '../hooks/useRequestsBadge';
-import { BUSINESS_CHECK_ERROR, SENT_FILTER_GROUP, sentEmptyMessage } from '../messages';
+import {
+  BUSINESS_CHECK_ERROR,
+  OTHER_ACCOUNT_NOTICE,
+  SENT_FILTER_GROUP,
+  sentEmptyMessage,
+} from '../messages';
 import type { BusinessRequest, CustomerRequest, RequestFilter } from '../schema';
 import type { TimeOptions } from '../time';
 
@@ -26,6 +31,9 @@ type RequestsTabScreenProps = TimeOptions & {
   focused: boolean;
   onOpenSent: (request: CustomerRequest) => void;
   onOpenReceived: (request: BusinessRequest) => void;
+  /** A tapped notification belonged to another account (spec 12): a neutral, dismissible line. */
+  notice?: 'other-account';
+  onDismissNotice?: () => void;
 };
 
 // The Requests tab. A customer sees the requests they sent. Anyone who owns a business (whatever
@@ -40,6 +48,8 @@ export function RequestsTabScreen({
   focused,
   onOpenSent,
   onOpenReceived,
+  notice,
+  onDismissNotice,
   timeZone,
   locale,
 }: RequestsTabScreenProps) {
@@ -85,6 +95,19 @@ export function RequestsTabScreen({
         <Text variant="title" accessibilityRole="header" maxFontSizeMultiplier={maxFontMultiplier}>
           Requests
         </Text>
+        {notice === 'other-account' ? (
+          <View style={{ gap: space.sm }}>
+            <Banner tone="info" message={OTHER_ACCOUNT_NOTICE} />
+            {onDismissNotice ? (
+              <Button
+                title="Dismiss"
+                variant="ghost"
+                accessibilityLabel="Dismiss the notification message"
+                onPress={onDismissNotice}
+              />
+            ) : null}
+          </View>
+        ) : null}
         {business.isError && !isOwner ? (
           <View style={{ gap: space.sm }}>
             <Banner message={BUSINESS_CHECK_ERROR} />

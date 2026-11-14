@@ -6,11 +6,17 @@ import type { ReactNode } from 'react';
 import { AuthContext, type AuthContextValue } from '@/features/auth/components/AuthProvider';
 import * as sellersApi from '@/features/sellers/api';
 
-import { RequestAppError, cancelTableRequest, countWaitingRequests, listMyRequests } from '../api';
+import {
+  RequestAppError,
+  cancelTableRequest,
+  countMyRequestUpdates,
+  countWaitingRequests,
+  listMyRequests,
+  markMyRequestsSeen,
+} from '../api';
 import { requestKeys } from '../hooks/keys';
 import { useCancelTableRequest } from '../hooks/useCancelTableRequest';
 import { useRequestsCounts } from '../hooks/useRequestsBadge';
-import { clearStatusMemory } from '../statusMemory';
 
 import { makeTableRequest } from '../__fixtures__/tableRequests';
 
@@ -18,6 +24,8 @@ jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
   listMyRequests: jest.fn(),
   countWaitingRequests: jest.fn(),
+  countMyRequestUpdates: jest.fn(),
+  markMyRequestsSeen: jest.fn(),
   cancelTableRequest: jest.fn(),
 }));
 jest.mock('@/features/sellers/api', () => ({
@@ -29,6 +37,10 @@ const listMock = jest.mocked(listMyRequests);
 const waitingMock = jest.mocked(countWaitingRequests);
 const cancelMock = jest.mocked(cancelTableRequest);
 const businessMock = jest.mocked(sellersApi.getMyBusiness);
+const updatesMock = jest.mocked(countMyRequestUpdates);
+const markSeenMock = jest.mocked(markMyRequestsSeen);
+/** The server's flag count (spec 12): an own cancel never raises it. */
+let serverUpdates = 0;
 
 const NOW = '2026-11-08T17:00:00Z';
 const flush = () => new Promise<void>((resolve) => setImmediate(() => resolve()));
@@ -62,15 +74,19 @@ function wrapper({ children }: { children: ReactNode }) {
 const serve = (...requests: ReturnType<typeof makeTableRequest>[]) =>
   listMock.mockResolvedValue({ server_now: NOW, requests, next_cursor: null });
 const refetchList = () => act(() => client.invalidateQueries({ queryKey: requestKeys.mine }));
+const refetchCount = () =>
+  act(() => client.invalidateQueries({ queryKey: requestKeys.updatesCount }));
 const useBoth = () => ({ counts: useRequestsCounts(), cancel: useCancelTableRequest() });
 const cancelled = (id: string) =>
   makeTableRequest({ id, status: 'cancelled', display_status: 'cancelled' });
 
 beforeEach(async () => {
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { gcTime: 0 } },
+  });
+  serverUpdates = 0;
   counter += 1;
   userId = `user-${counter}`;
-  clearStatusMemory();
   await flush();
   await AsyncStorage.clear();
   listMock.mockReset();
@@ -79,6 +95,9 @@ beforeEach(async () => {
   businessMock.mockReset();
   businessMock.mockResolvedValue(null);
   waitingMock.mockResolvedValue({ server_now: NOW, waiting: 0 });
+  updatesMock.mockReset();
+  updatesMock.mockImplementation(async () => serverUpdates);
+  markSeenMock.mockReset();
 });
 
 afterEach(async () => {
@@ -88,7 +107,7 @@ afterEach(async () => {
 });
 
 describe('own cancel of a table request is not news (Decision 18)', () => {
-  it('does not raise the badge, also after the list is re-read', async () => {
+  it('does not raise the badge, also after the list and the count are re-read', async () => {
     serve(makeTableRequest({ id: 'a' }));
     const { result } = await renderHook(useBoth, { wrapper });
     await waitFor(() => expect(result.current.counts.sent).toBe(0));
@@ -97,23 +116,22 @@ describe('own cancel of a table request is not news (Decision 18)', () => {
     serve(cancelled('a'));
     await act(async () => result.current.cancel.cancelRequest('a'));
     await waitFor(() => expect(cancelMock).toHaveBeenCalled());
-    await act(flush);
     await refetchList();
+    await refetchCount();
     await act(flush);
     await act(flush);
     expect(result.current.counts.sent).toBe(0);
+    expect(markSeenMock).not.toHaveBeenCalled();
   });
 
   it('keeps the number as it was when the cancel fails, and raises nothing on the retry', async () => {
-    serve(makeTableRequest({ id: 'a' }), makeTableRequest({ id: 'b' }));
-    const { result } = await renderHook(useBoth, { wrapper });
-    await waitFor(() => expect(result.current.counts.sent).toBe(0));
-    // b was answered by the restaurant: one real change.
+    // b was answered by the restaurant: one real change, flagged by the server.
+    serverUpdates = 1;
     serve(
       makeTableRequest({ id: 'a' }),
       makeTableRequest({ id: 'b', status: 'accepted', display_status: 'accepted' }),
     );
-    await refetchList();
+    const { result } = await renderHook(useBoth, { wrapper });
     await waitFor(() => expect(result.current.counts.sent).toBe(1));
 
     cancelMock.mockRejectedValueOnce(new RequestAppError('network'));
@@ -128,8 +146,8 @@ describe('own cancel of a table request is not news (Decision 18)', () => {
     );
     await act(async () => result.current.cancel.cancelRequest('a'));
     await waitFor(() => expect(cancelMock).toHaveBeenCalledTimes(2));
-    await act(flush);
     await refetchList();
+    await refetchCount();
     await act(flush);
     await act(flush);
     expect(result.current.counts.sent).toBe(1);

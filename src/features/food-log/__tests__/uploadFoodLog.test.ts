@@ -7,7 +7,7 @@ import { stripJpegMetadata } from '@/features/media/jpegMetadata';
 import { supabase } from '@/lib/supabase';
 
 import { FoodLogAppError } from '../api';
-import { phoneTimeZone, uploadFoodLog } from '../uploadFoodLog';
+import { phoneTimeZone, runFoodLogCleanup, uploadFoodLog } from '../uploadFoodLog';
 
 // A faithful fake of the parts of supabase-js this flow uses. Storage records the bytes it gets
 // and, like the real bucket, refuses an overwrite; finish refuses a reservation whose file is not
@@ -315,5 +315,59 @@ describe('uploadFoodLog: cleanup_required', () => {
     await expect(uploadFoodLog(INPUT)).rejects.toEqual(new FoodLogAppError('cleanup_required'));
     expect(rpcNames().filter((name) => name === 'begin_food_log_upload')).toHaveLength(2);
     expect(mockUpload).not.toHaveBeenCalled();
+  });
+});
+
+describe('runFoodLogCleanup', () => {
+  it('two calls at once share one run; a later call starts a new one', async () => {
+    const original = mockRpc.getMockImplementation();
+    let claims = 0;
+    mockRpc.mockImplementation(async (name: string, args: unknown) => {
+      if (name === 'claim_food_log_cleanup') {
+        claims += 1;
+        return { data: claims === 1 ? ['u1/old.jpg'] : [], error: null };
+      }
+      return original?.(name, args);
+    });
+    const first = runFoodLogCleanup();
+    const second = runFoodLogCleanup();
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    // One run: claim, remove, claim.
+    expect(rpcNames()).toEqual(['claim_food_log_cleanup', 'claim_food_log_cleanup']);
+    expect(mockRemove).toHaveBeenCalledTimes(1);
+
+    const third = runFoodLogCleanup();
+    expect(third).not.toBe(first);
+    await third;
+    expect(rpcNames()).toHaveLength(3);
+  });
+
+  it('a failed removal still finishes quietly and claims again', async () => {
+    const original = mockRpc.getMockImplementation();
+    mockRpc.mockImplementation(async (name: string, args: unknown) =>
+      name === 'claim_food_log_cleanup'
+        ? { data: ['u1/old.jpg'], error: null }
+        : original?.(name, args),
+    );
+    mockRemove.mockImplementation(async () => {
+      mockLog.push('remove');
+      return { data: null, error: { message: 'storage is down' } };
+    });
+    await expect(runFoodLogCleanup()).resolves.toBeUndefined();
+    expect(mockRemove).toHaveBeenCalledWith('food-logs', ['u1/old.jpg']);
+    expect(rpcNames()).toEqual(['claim_food_log_cleanup', 'claim_food_log_cleanup']);
+    expect(mockRemove.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRpc.mock.invocationCallOrder[1],
+    );
+  });
+
+  it('a failed claim finishes quietly too', async () => {
+    mockRpc.mockImplementation(async () => ({
+      data: null,
+      error: { code: '', message: 'TypeError: Network request failed', details: null },
+    }));
+    await expect(runFoodLogCleanup()).resolves.toBeUndefined();
+    expect(mockRemove).not.toHaveBeenCalled();
   });
 });

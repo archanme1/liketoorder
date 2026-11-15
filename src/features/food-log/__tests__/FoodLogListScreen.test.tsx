@@ -1,13 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { listCuisines } from '@/features/cuisines/api';
 import { signedUrls } from '@/features/media/api';
 
-import { CUISINES, foodLog, testClientOptions } from '../__fixtures__/foodLog';
+import { CUISINES, foodLog, resetModuleMocks, testClientOptions } from '../__fixtures__/foodLog';
 import { claimFoodLogCleanup, FoodLogAppError, listMyFoodLogs } from '../api';
 import { FoodLogListScreen } from '../components/FoodLogListScreen';
-import { FOOD_LOG_EMPTY } from '../messages';
+import { FOOD_LOG_EMPTY, LOAD_MORE_ERROR } from '../messages';
+import type { FoodLogPage } from '../schema';
 
 const mockRouter = { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: jest.fn() };
 jest.mock('expo-router', () => ({ useRouter: () => mockRouter }));
@@ -34,6 +35,24 @@ const mockedCuisines = jest.mocked(listCuisines);
 
 let client: QueryClient;
 
+/** A page that arrives when the test says so. */
+function heldPage() {
+  let resolve: (page: FoodLogPage) => void = () => {};
+  const promise = new Promise<FoodLogPage>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+const list = () => screen.getByTestId('food-log-list');
+const NETWORK = /Can't reach LikeToOrder/;
+
+/** Pull to refresh, as the RefreshControl would. */
+async function pullToRefresh() {
+  const control = list().props.refreshControl as { props: { onRefresh: () => void } };
+  await act(async () => control.props.onRefresh());
+}
+
 async function renderScreen() {
   client = new QueryClient(testClientOptions());
   // The app loads the cuisine list once per launch; seeded so labels don't wait on it.
@@ -58,6 +77,7 @@ afterEach(async () => {
   await cleanup();
   client.clear();
   jest.clearAllMocks();
+  resetModuleMocks('../api', '@/features/media/api', '@/features/cuisines/api');
 });
 
 describe('FoodLogListScreen states', () => {
@@ -137,5 +157,98 @@ describe('FoodLogListScreen paging and navigation', () => {
       pathname: '/food-log/[id]',
       params: { id: foodLog(1).id },
     });
+  });
+});
+
+describe('FoodLogListScreen loading more and refreshing', () => {
+  it('shows a footer spinner while the next page loads and never loads it twice', async () => {
+    const page2 = heldPage();
+    mockedList
+      .mockResolvedValueOnce({ items: [foodLog(1)], next_cursor: 'cursor-1' })
+      .mockReturnValueOnce(page2.promise);
+    await renderScreen();
+    await screen.findByRole('button', { name: /Meal 1\./ });
+    await fireEvent(list(), 'onEndReached');
+    expect(await screen.findByLabelText('Loading more food photos')).toBeOnTheScreen();
+    await fireEvent(list(), 'onEndReached');
+    expect(mockedList).toHaveBeenCalledTimes(2);
+
+    page2.resolve({ items: [foodLog(2)], next_cursor: null });
+    expect(await screen.findByRole('button', { name: /Meal 2\./ })).toBeOnTheScreen();
+    expect(screen.queryByLabelText('Loading more food photos')).toBeNull();
+  });
+
+  it('a failed next page keeps the rows, offers Try again and does not retry by itself', async () => {
+    mockedList
+      .mockResolvedValueOnce({ items: [foodLog(1)], next_cursor: 'cursor-1' })
+      .mockRejectedValueOnce(new FoodLogAppError('network'))
+      .mockResolvedValueOnce({ items: [foodLog(2)], next_cursor: null });
+    await renderScreen();
+    await screen.findByRole('button', { name: /Meal 1\./ });
+    await fireEvent(list(), 'onEndReached');
+    expect(await screen.findByText(LOAD_MORE_ERROR)).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: /Meal 1\./ })).toBeOnTheScreen();
+
+    // Reaching the end again doesn't loop on the failed page.
+    await fireEvent(list(), 'onEndReached');
+    expect(mockedList).toHaveBeenCalledTimes(2);
+
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Try loading more food photos again' }),
+    );
+    expect(await screen.findByRole('button', { name: /Meal 2\./ })).toBeOnTheScreen();
+    expect(mockedList).toHaveBeenLastCalledWith('cursor-1');
+    expect(screen.queryByText(LOAD_MORE_ERROR)).toBeNull();
+  });
+
+  it('pull to refresh starts again from the newest page', async () => {
+    mockedList
+      .mockResolvedValueOnce({ items: [foodLog(1)], next_cursor: 'cursor-1' })
+      .mockResolvedValueOnce({ items: [foodLog(2)], next_cursor: null })
+      .mockResolvedValueOnce({ items: [foodLog(9), foodLog(1)], next_cursor: 'cursor-2' });
+    await renderScreen();
+    await screen.findByRole('button', { name: /Meal 1\./ });
+    await fireEvent(list(), 'onEndReached');
+    await screen.findByRole('button', { name: /Meal 2\./ });
+
+    await pullToRefresh();
+    expect(await screen.findByRole('button', { name: /Meal 9\./ })).toBeOnTheScreen();
+    expect(mockedList).toHaveBeenCalledTimes(3);
+    expect(mockedList).toHaveBeenLastCalledWith(null);
+    // The older page is dropped; it loads again only when the end is reached.
+    expect(screen.queryByRole('button', { name: /Meal 2\./ })).toBeNull();
+    expect(list().props.refreshControl.props.refreshing).toBe(false);
+  });
+
+  it('a failed refresh keeps the rows and shows a banner with Try again', async () => {
+    mockedList
+      .mockResolvedValueOnce({ items: [foodLog(1)], next_cursor: null })
+      .mockRejectedValueOnce(new FoodLogAppError('network'))
+      .mockResolvedValueOnce({ items: [foodLog(1)], next_cursor: null });
+    await renderScreen();
+    await screen.findByRole('button', { name: /Meal 1\./ });
+
+    await pullToRefresh();
+    expect(await screen.findByText(NETWORK)).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: /Meal 1\./ })).toBeOnTheScreen();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Try refreshing again' }));
+    await waitFor(() => expect(screen.queryByText(NETWORK)).toBeNull());
+    expect(mockedList).toHaveBeenCalledTimes(3);
+  });
+
+  it('a failed refresh of an empty list shows the banner above the empty state', async () => {
+    mockedList
+      .mockResolvedValueOnce({ items: [], next_cursor: null })
+      .mockRejectedValueOnce(new FoodLogAppError('network'));
+    await renderScreen();
+    await screen.findByText(FOOD_LOG_EMPTY);
+
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['food-log', 'mine'] });
+    });
+    expect(await screen.findByText(NETWORK)).toBeOnTheScreen();
+    expect(screen.getByText(FOOD_LOG_EMPTY)).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Try refreshing again' })).toBeOnTheScreen();
   });
 });

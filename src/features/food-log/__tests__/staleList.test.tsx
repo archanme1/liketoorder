@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { listCuisines } from '@/features/cuisines/api';
 import { signedUrls } from '@/features/media/api';
 
-import { CUISINES, foodLog, testClientOptions } from '../__fixtures__/foodLog';
+import { CUISINES, foodLog, testClientOptions, resetModuleMocks } from '../__fixtures__/foodLog';
 import { claimFoodLogCleanup, deleteFoodLog, getFoodLog, listMyFoodLogs } from '../api';
 import { FoodLogDetailScreen } from '../components/FoodLogDetailScreen';
 import { FoodLogListScreen } from '../components/FoodLogListScreen';
@@ -71,6 +71,7 @@ afterEach(async () => {
   client.clear();
   alertSpy.mockRestore();
   jest.clearAllMocks();
+  resetModuleMocks('../api', '@/features/media/api', '@/features/cuisines/api');
 });
 
 describe('stale list after a delete', () => {

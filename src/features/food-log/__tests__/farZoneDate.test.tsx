@@ -7,7 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { listCuisines } from '@/features/cuisines/api';
 import { signedUrls } from '@/features/media/api';
 
-import { CUISINES, foodLog, testClientOptions } from '../__fixtures__/foodLog';
+import { CUISINES, foodLog, testClientOptions, resetModuleMocks } from '../__fixtures__/foodLog';
 import { claimFoodLogCleanup, getFoodLog, listMyFoodLogs } from '../api';
 import { FoodLogDetailScreen } from '../components/FoodLogDetailScreen';
 import { FoodLogListScreen } from '../components/FoodLogListScreen';
@@ -94,6 +94,7 @@ afterEach(async () => {
       { calendar: 'gregory', timeZone: 'UTC', uses24hourClock: false, firstWeekday: 1 },
     ] as ReturnType<typeof getCalendars>);
   jest.clearAllMocks();
+  resetModuleMocks('../api', '@/features/media/api', '@/features/cuisines/api');
 });
 
 describe('the date shown is local_date, with the phone far from UTC', () => {

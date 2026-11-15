@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { listCuisines } from '@/features/cuisines/api';
 import { signedUrls } from '@/features/media/api';
 
-import { CUISINES, foodLog, testClientOptions } from '../__fixtures__/foodLog';
+import { CUISINES, foodLog, resetModuleMocks, testClientOptions } from '../__fixtures__/foodLog';
 import { claimFoodLogCleanup, deleteFoodLog, FoodLogAppError, getFoodLog } from '../api';
 import { FoodLogDetailScreen } from '../components/FoodLogDetailScreen';
 import { FOOD_LOG_NOT_FOUND } from '../messages';
@@ -51,7 +51,12 @@ async function renderDetail(id = LOG.id) {
   client = new QueryClient(testClientOptions());
   client.setQueryDefaults(['cuisines'], { gcTime: Infinity });
   client.setQueryData(['cuisines'], CUISINES);
-  return render(
+  return render(detailTree(id));
+}
+
+/** The screen on the current client, so a second render sees what the first one cached. */
+function detailTree(id: string) {
+  return (
     <SafeAreaProvider
       initialMetrics={{
         frame: { x: 0, y: 0, width: 390, height: 844 },
@@ -61,11 +66,26 @@ async function renderDetail(id = LOG.id) {
       <QueryClientProvider client={client}>
         <FoodLogDetailScreen id={id} />
       </QueryClientProvider>
-    </SafeAreaProvider>,
+    </SafeAreaProvider>
   );
 }
 
+/** Taps Delete, then Delete in the confirm. */
+async function confirmDelete() {
+  await fireEvent.press(await screen.findByRole('button', { name: 'Delete this photo' }));
+  const buttons = alertSpy.mock.calls[0][2] as { text: string; onPress?: () => void }[];
+  await act(async () => buttons.find((b) => b.text === 'Delete')?.onPress?.());
+}
+
+function signedBatchesHolding(path: string) {
+  return client
+    .getQueryCache()
+    .findAll({ queryKey: ['media', 'signed', 'food-logs'] })
+    .filter((query) => query.queryKey.includes(path));
+}
+
 beforeEach(() => {
+  mockRouter.canGoBack.mockReturnValue(true);
   alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   mockedCuisines.mockResolvedValue(CUISINES);
   mockedClaim.mockResolvedValue([]);
@@ -79,6 +99,7 @@ afterEach(async () => {
   client.clear();
   alertSpy.mockRestore();
   jest.clearAllMocks();
+  resetModuleMocks('../api', '@/features/media/api', '@/features/cuisines/api');
 });
 
 describe('FoodLogDetailScreen states', () => {
@@ -196,6 +217,90 @@ describe('FoodLogDetailScreen actions', () => {
     const buttons = alertSpy.mock.calls[0][2] as { text: string; onPress?: () => void }[];
     await act(async () => buttons.find((b) => b.text === 'Delete')?.onPress?.());
     expect(await screen.findByText(/Can't reach LikeToOrder/)).toBeOnTheScreen();
+    expect(mockRouter.back).not.toHaveBeenCalled();
+  });
+});
+
+describe('FoodLogDetailScreen after a delete and on a background refresh', () => {
+  it("once the deleted log's screen has closed, its detail and signed URL are dropped", async () => {
+    mockedGet.mockResolvedValue(LOG);
+    mockedDelete.mockResolvedValue();
+    const { unmount } = await renderDetail();
+    await screen.findByText('Fresh pasta with basil');
+    await waitFor(() => expect(signedBatchesHolding(LOG.path)).toHaveLength(1));
+    await confirmDelete();
+    await waitFor(() => expect(mockRouter.back).toHaveBeenCalledTimes(1));
+    // Still cached while the closing screen is up, so it can't flash not-found.
+    expect(client.getQueryData(['food-log', LOG.id])).toBeDefined();
+
+    await unmount();
+    expect(client.getQueryData(['food-log', LOG.id])).toBeUndefined();
+    expect(signedBatchesHolding(LOG.path)).toHaveLength(0);
+  });
+
+  it('a deleted log opened again shows no data, only loading and then not-found', async () => {
+    mockedGet.mockResolvedValue(LOG);
+    mockedDelete.mockResolvedValue();
+    const { unmount } = await renderDetail();
+    await screen.findByText('Fresh pasta with basil');
+    await confirmDelete();
+    await waitFor(() => expect(mockRouter.back).toHaveBeenCalledTimes(1));
+    await unmount();
+
+    let reject: (error: unknown) => void = () => {};
+    mockedGet.mockReturnValue(
+      new Promise((_resolve, r) => {
+        reject = r;
+      }),
+    );
+    await render(detailTree(LOG.id));
+    expect(screen.getByLabelText('Loading photo')).toBeOnTheScreen();
+    expect(screen.queryByText('Fresh pasta with basil')).toBeNull();
+    expect(screen.queryByRole('button', { name: PHOTO_LABEL })).toBeNull();
+
+    await act(async () => reject(new FoodLogAppError('not_found')));
+    expect(await screen.findByText(FOOD_LOG_NOT_FOUND)).toBeOnTheScreen();
+    expect(screen.queryByText('Fresh pasta with basil')).toBeNull();
+  });
+
+  it('a failed background refresh keeps the photo and shows a banner with Try again', async () => {
+    mockedGet
+      .mockResolvedValueOnce(LOG)
+      .mockRejectedValueOnce(new FoodLogAppError('network'))
+      .mockResolvedValueOnce(LOG);
+    await renderDetail();
+    await screen.findByText('Fresh pasta with basil');
+
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['food-log', LOG.id] });
+    });
+    expect(await screen.findByText(/Can't reach LikeToOrder/)).toBeOnTheScreen();
+    expect(screen.getByText('Fresh pasta with basil')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: PHOTO_LABEL })).toBeOnTheScreen();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Try loading this photo again' }));
+    await waitFor(() => expect(screen.queryByText(/Can't reach LikeToOrder/)).toBeNull());
+    expect(mockedGet).toHaveBeenCalledTimes(3);
+  });
+
+  it('a background refresh that finds the log gone shows not-found, not the old data', async () => {
+    mockedGet.mockResolvedValueOnce(LOG).mockRejectedValueOnce(new FoodLogAppError('not_found'));
+    await renderDetail();
+    await screen.findByText('Fresh pasta with basil');
+
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['food-log', LOG.id] });
+    });
+    expect(await screen.findByText(FOOD_LOG_NOT_FOUND)).toBeOnTheScreen();
+    expect(screen.queryByText('Fresh pasta with basil')).toBeNull();
+  });
+
+  it('opened by a link, Back on not-found goes to the list', async () => {
+    mockRouter.canGoBack.mockReturnValue(false);
+    mockedGet.mockRejectedValue(new FoodLogAppError('not_found'));
+    await renderDetail();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Back' }));
+    expect(mockRouter.replace).toHaveBeenCalledWith('/food-log');
     expect(mockRouter.back).not.toHaveBeenCalled();
   });
 });

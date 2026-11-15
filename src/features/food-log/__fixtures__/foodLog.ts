@@ -42,3 +42,16 @@ export function testClientOptions() {
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { gcTime: 0 } },
   } as const;
 }
+
+/**
+ * Resets every jest.fn in the given mocked modules (calls and implementations), so one test's
+ * mockResolvedValue never reaches the next. Unlike jest.resetAllMocks it leaves the jest.setup.ts
+ * fakes (getCalendars, getLocales, the picker) alone. Paths resolve as they do from __tests__.
+ */
+export function resetModuleMocks(...paths: string[]) {
+  for (const path of paths) {
+    for (const value of Object.values(jest.requireMock<Record<string, unknown>>(path))) {
+      if (jest.isMockFunction(value)) value.mockReset();
+    }
+  }
+}

@@ -10,7 +10,7 @@ import { pickImage } from '@/features/media/pickImage';
 import { FoodLogProfileRow } from '@/features/profile/components/FoodLogProfileRow';
 import { size } from '@/theme/tokens';
 
-import { CUISINES, foodLog, testClientOptions } from '../__fixtures__/foodLog';
+import { CUISINES, foodLog, testClientOptions, resetModuleMocks } from '../__fixtures__/foodLog';
 import { claimFoodLogCleanup, FoodLogAppError, getFoodLog, listMyFoodLogs } from '../api';
 import { FoodLogDetailScreen } from '../components/FoodLogDetailScreen';
 import { FoodLogFormScreen } from '../components/FoodLogFormScreen';
@@ -131,6 +131,12 @@ afterEach(async () => {
   await cleanup();
   client?.clear();
   jest.clearAllMocks();
+  resetModuleMocks(
+    '../api',
+    '@/features/media/api',
+    '@/features/media/pickImage',
+    '@/features/cuisines/api',
+  );
 });
 
 describe('food log accessibility', () => {

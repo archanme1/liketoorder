@@ -10,6 +10,7 @@ import {
   listMyFoodLogs,
   updateFoodLog,
 } from '../api';
+import { resetModuleMocks, testClientOptions } from '../__fixtures__/foodLog';
 import { useFoodLog } from '../hooks/useFoodLog';
 import { useCreateFoodLog, useDeleteFoodLog, useUpdateFoodLog } from '../hooks/useFoodLogMutations';
 import { useMyFoodLogs } from '../hooks/useMyFoodLogs';
@@ -56,9 +57,7 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
-  client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { gcTime: 0 } },
-  });
+  client = new QueryClient(testClientOptions());
   mockedClaim.mockResolvedValue([]);
 });
 
@@ -66,6 +65,7 @@ afterEach(async () => {
   await cleanup();
   client.clear();
   jest.clearAllMocks();
+  resetModuleMocks('../api', '../uploadFoodLog');
 });
 
 describe('useMyFoodLogs', () => {

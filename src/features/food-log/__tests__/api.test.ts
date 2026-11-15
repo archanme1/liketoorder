@@ -155,6 +155,13 @@ describe('error mapping', () => {
     expect(mapFoodLogError(null).code).toBe('unknown');
   });
 
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'maps a P0001 named after a built-in (%s) to unknown, never a function',
+    (message) => {
+      expect(mapFoodLogError({ code: 'P0001', message }).code).toBe('unknown');
+    },
+  );
+
   it('never carries the upstream message', () => {
     const error = mapFoodLogError({ code: 'XX000', message: 'secret detail u1/abc.jpg' });
     expect(error.message).toBe('unknown');

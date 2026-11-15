@@ -6,7 +6,7 @@ import { signedUrls, uploadToBucket } from '@/features/media/api';
 import { pickImage } from '@/features/media/pickImage';
 import { prepareImage } from '@/features/media/prepareImage';
 
-import { CUISINES, foodLog, testClientOptions } from '../__fixtures__/foodLog';
+import { CUISINES, foodLog, resetModuleMocks, testClientOptions } from '../__fixtures__/foodLog';
 import {
   beginFoodLogUpload,
   claimFoodLogCleanup,
@@ -65,6 +65,21 @@ const LOG = foodLog(1);
 
 let client: QueryClient;
 
+/** A promise the test settles itself, to hold a save open. */
+function held<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+/** Lets a save that is still running after the form closed run to its end. */
+async function settleSaves() {
+  await waitFor(() => expect(client.isMutating()).toBe(0));
+  await act(async () => {});
+}
+
 async function renderForm(props: FoodLogFormScreenProps = { mode: 'create' }) {
   client = new QueryClient(testClientOptions());
   client.setQueryDefaults(['cuisines'], { gcTime: Infinity });
@@ -89,6 +104,7 @@ async function choosePhotoAndCuisine() {
 }
 
 beforeEach(() => {
+  mockRouter.canGoBack.mockReturnValue(true);
   mockedCuisines.mockResolvedValue(CUISINES);
   mockedPick.mockResolvedValue(PICKED);
   mockedPrepare.mockResolvedValue({
@@ -111,6 +127,13 @@ afterEach(async () => {
   await cleanup();
   client.clear();
   jest.clearAllMocks();
+  resetModuleMocks(
+    '../api',
+    '@/features/media/api',
+    '@/features/media/pickImage',
+    '@/features/media/prepareImage',
+    '@/features/cuisines/api',
+  );
 });
 
 describe('FoodLogFormScreen, create', () => {
@@ -282,6 +305,58 @@ describe('FoodLogFormScreen, create', () => {
     await fireEvent.press(saveButton());
     expect(await screen.findByText(new RegExp(DESCRIPTION_CONTACT))).toBeOnTheScreen();
   });
+
+  it('keeps Save disabled and busy while the upload runs', async () => {
+    const begin = held<{ id: string; path: string }>();
+    mockedBegin.mockReturnValue(begin.promise);
+    await renderForm();
+    await choosePhotoAndCuisine();
+    await fireEvent.press(saveButton());
+    await waitFor(() => expect(mockedBegin).toHaveBeenCalledTimes(1));
+    expect(saveButton()).toBeDisabled();
+    expect(saveButton()).toBeBusy();
+    begin.resolve({ id: LOG.id, path: LOG.path });
+    await waitFor(() => expect(mockRouter.back).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not go back when the form was closed before the upload ended', async () => {
+    const begin = held<{ id: string; path: string }>();
+    mockedBegin.mockReturnValue(begin.promise);
+    const { unmount } = await renderForm();
+    await choosePhotoAndCuisine();
+    await fireEvent.press(saveButton());
+    await waitFor(() => expect(mockedBegin).toHaveBeenCalledTimes(1));
+    await unmount();
+
+    begin.resolve({ id: LOG.id, path: LOG.path });
+    await settleSaves();
+    expect(mockedFinish).toHaveBeenCalledTimes(1);
+    expect(mockRouter.back).not.toHaveBeenCalled();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
+  it('goes to the list after saving when there is no screen to go back to', async () => {
+    mockRouter.canGoBack.mockReturnValue(false);
+    await renderForm();
+    await choosePhotoAndCuisine();
+    await fireEvent.press(saveButton());
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/food-log'));
+    expect(mockRouter.back).not.toHaveBeenCalled();
+  });
+
+  it('counts the trimmed text like the server and says Too long over 280', async () => {
+    await renderForm();
+    const field = () => screen.getByLabelText('Description');
+    await fireEvent.changeText(field(), '  Pasta  ' + cp(10));
+    expect(screen.getByText('5/280')).toBeOnTheScreen();
+
+    await fireEvent.changeText(field(), 'a'.repeat(280) + '   ');
+    expect(screen.getByText('280/280')).toBeOnTheScreen();
+
+    await fireEvent.changeText(field(), 'a'.repeat(281));
+    expect(screen.getByText('281/280 Too long')).toBeOnTheScreen();
+    expect(screen.getByLabelText('281 of 280 characters, too long')).toBeOnTheScreen();
+  });
 });
 
 describe('FoodLogFormScreen, edit', () => {
@@ -322,5 +397,46 @@ describe('FoodLogFormScreen, edit', () => {
     await renderForm({ mode: 'edit', id: LOG.id });
     expect(await screen.findByText(FOOD_LOG_NOT_FOUND)).toBeOnTheScreen();
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+  });
+
+  it('does not go back when the edit form was closed before the save ended', async () => {
+    const update = held<typeof LOG>();
+    mockedGet.mockResolvedValue(LOG);
+    mockedUpdate.mockReturnValue(update.promise);
+    const { unmount } = await renderForm({ mode: 'edit', id: LOG.id });
+    await screen.findByDisplayValue('Meal 1');
+    await fireEvent.press(saveButton());
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledTimes(1));
+    await unmount();
+
+    update.resolve(LOG);
+    await settleSaves();
+    expect(mockRouter.back).not.toHaveBeenCalled();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
+  it('opened by a link, goes to the list after saving', async () => {
+    mockRouter.canGoBack.mockReturnValue(false);
+    mockedGet.mockResolvedValue(LOG);
+    mockedUpdate.mockResolvedValue(LOG);
+    await renderForm({ mode: 'edit', id: LOG.id });
+    await screen.findByDisplayValue('Meal 1');
+    await fireEvent.press(saveButton());
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/food-log'));
+    expect(mockRouter.back).not.toHaveBeenCalled();
+  });
+
+  it('a failed background refresh keeps the form and shows a banner', async () => {
+    mockedGet.mockResolvedValueOnce(LOG).mockRejectedValueOnce(new FoodLogAppError('network'));
+    await renderForm({ mode: 'edit', id: LOG.id });
+    await screen.findByDisplayValue('Meal 1');
+
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['food-log', LOG.id] });
+    });
+    expect(await screen.findByText(/Can't reach LikeToOrder/)).toBeOnTheScreen();
+    expect(screen.getByDisplayValue('Meal 1')).toBeOnTheScreen();
+    expect(saveButton()).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Try loading this photo again' })).toBeOnTheScreen();
   });
 });

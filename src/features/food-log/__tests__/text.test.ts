@@ -89,6 +89,17 @@ describe('trimming', () => {
     expect(checkDescription(cp(8232) + 'x' + cp(8233))).toEqual({ ok: true, value: 'x' });
   });
 
+  it.each([
+    ['U+115F', 0x115f],
+    ['U+1160', 0x1160],
+    ['U+3164', 0x3164],
+    ['U+FFA0', 0xffa0],
+  ])('trims the Hangul filler %s at either edge, as the server does', (_name, code) => {
+    expect(trimDescription(cp(code) + 'kimchi' + cp(code))).toBe('kimchi');
+    expect(trimDescription(cp(code))).toBeNull();
+    expect(checkDescription(cp(code) + 'kimchi')).toEqual({ ok: true, value: 'kimchi' });
+  });
+
   it('keeps a newline inside', () => {
     const text = 'line one' + cp(10) + 'line two';
     expect(checkDescription(text)).toEqual({ ok: true, value: text });

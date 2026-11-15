@@ -5,9 +5,10 @@
 -- no client grants and no policies (Decision 10). The photo is reserved -> uploaded -> finished as
 -- in spec 06, into the private food-logs bucket, at a server-made path <author_id>/<log_id>.jpg.
 --
--- The hidden-character class (Decision 2) is written three times (table check, begin, update)
--- because a shared helper would be a fourth function in `private`, which spec 13 fixes at three.
--- Keep the three copies identical. It allows U+200D and U+FE0F (emoji) and refuses ASCII controls
+-- The hidden-character class (Decision 2) is written three times (table check, begin, update), and
+-- the trim and contact-info patterns twice (begin, update): the 05 pgTAP test pins the exact list of
+-- `private` functions, so a shared helper would need another approved edit there. Keep the copies
+-- identical; the 13 pgTAP file runs every range edge through all three places. It allows U+200D and U+FE0F (emoji) and refuses ASCII controls
 -- except newline, DEL and C1, U+00AD, U+061C, U+180E, U+200B, U+200C, U+200E, U+200F, U+2028,
 -- U+2029, U+202A-U+202E, U+2060-U+2064, U+2066-U+2069, U+FEFF, U+FFF9-U+FFFB and the tag block
 -- U+E0000-U+E007F. ASCII only: every code point is an escape.
@@ -34,7 +35,7 @@ create table public.food_logs (
 create trigger food_logs_set_updated_at before update on public.food_logs
   for each row execute function public.set_updated_at();
 create index food_logs_author_list_idx on public.food_logs (author_id, created_at desc, id desc) where status = 'ready';
-create index food_logs_author_date_idx on public.food_logs (author_id, local_date);   -- spec 14's grid
+create index food_logs_author_date_idx on public.food_logs (author_id, local_date) where status = 'ready';   -- spec 14's grid
 create index food_logs_author_pending_idx on public.food_logs (author_id, created_at) where status = 'pending';
 
 -- Started uploads in a rolling 24 hours (Decision 9): deleting a log never gives one back.
@@ -50,6 +51,8 @@ create table public.food_log_cleanup_queue (
   author_id  uuid not null,            -- no FK: rows must outlive a deleted account
   queued_at  timestamptz not null default now()
 );
+-- begin and claim read the caller's rows only; the table keeps rows of deleted accounts.
+create index food_log_cleanup_queue_author_idx on public.food_log_cleanup_queue (author_id, queued_at);
 
 -- Every deleted log queues its file in the same transaction, including the profiles cascade from
 -- account deletion.
@@ -86,16 +89,6 @@ language sql stable security definer set search_path = '' as $$
                     and l.author_id = (select auth.uid()));
 $$;
 
--- A ready log that is the caller's own or public. The select policy adds the caller's own folder
--- (Decisions 22, 23).
-create function private.food_log_is_readable(p_path text) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.food_logs l
-                  where l.path = p_path
-                    and l.status = 'ready'
-                    and (l.author_id = (select auth.uid()) or l.is_public));
-$$;
-
 -- Any row (pending or ready) still points at this path: the file must not be deleted.
 create function private.food_log_is_live(p_path text) returns boolean
 language sql stable security definer set search_path = '' as $$
@@ -103,10 +96,8 @@ language sql stable security definer set search_path = '' as $$
 $$;
 
 revoke execute on function private.food_log_upload_allowed(text) from public;
-revoke execute on function private.food_log_is_readable(text) from public;
 revoke execute on function private.food_log_is_live(text) from public;
 grant execute on function private.food_log_upload_allowed(text) to authenticated;
-grant execute on function private.food_log_is_readable(text) to authenticated;
 grant execute on function private.food_log_is_live(text) to authenticated;
 
 -- -- Functions ----------------------------------------------------------------
@@ -115,7 +106,8 @@ grant execute on function private.food_log_is_live(text) to authenticated;
 -- Error codes: profile_incomplete, invalid_input, invalid_text, contact_info, invalid_time_zone,
 -- too_many_pending, daily_limit, cleanup_required, not_found, upload_missing.
 
--- Reserves a server-made path. Validation first, then (under a per-user lock) expiry and limits.
+-- Reserves a server-made path. Cheap validation first, then (under a per-user lock) expiry and
+-- limits, then the zone, then the insert.
 create function public.begin_food_log_upload(
   p_cuisine_code text,
   p_description text,
@@ -130,8 +122,12 @@ declare
   v_path   text;
   c_hidden constant text := '[\x00-\x09\x0B-\x1F\u007F-\u009F\u00AD\u061C\u180E\u200B\u200C\u200E\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\uFFF9-\uFFFB\U000E0000-\U000E007F]';
   c_edge   constant text := '^[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+|[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+$';
+  c_mail   constant text := '[a-z0-9._%+-]+[ \u00A0\u2000-\u200A\u202F\u3000]*[@\uFF20][ \u00A0\u2000-\u200A\u202F\u3000]*[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}';
+  c_sep    constant text := '[][ \n\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000.()/_,+-]';
 begin
-  -- 1. Validate.
+  -- 1. Validate (cheap checks only; the zone is checked in step 7). The 1000-character cap comes
+  --    first, so a huge text never reaches the patterns below.
+  if char_length(p_description) > 1000 then raise exception 'invalid_input'; end if;
   if v_uid is null
      or not exists (select 1 from public.profiles where id = v_uid and username is not null) then
     raise exception 'profile_incomplete';
@@ -141,17 +137,13 @@ begin
     raise exception 'invalid_input';
   end if;
   if p_is_public is null then raise exception 'invalid_input'; end if;
-  if p_time_zone is null
-     or not exists (select 1 from pg_catalog.pg_timezone_names where name = p_time_zone) then
-    raise exception 'invalid_time_zone';
-  end if;
 
   v_desc := nullif(regexp_replace(p_description, c_edge, '', 'g'), '');
   if v_desc ~ c_hidden then raise exception 'invalid_text'; end if;
   if char_length(v_desc) > 280 then raise exception 'invalid_input'; end if;
-  -- Decision 11: an email, or 10+ digits once spaces, dots, dashes and brackets are ignored.
-  if v_desc ~* '[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}'
-     or regexp_replace(v_desc, '[][ .()-]', '', 'g') ~ '[0-9]{10,}' then
+  -- Decision 11: an email (spaces allowed around @ or a fullwidth @, none inside the domain), or
+  -- 10+ digits once whitespace and . ( ) [ ] - / _ , + are ignored.
+  if v_desc ~* c_mail or regexp_replace(v_desc, c_sep, '', 'g') ~ '[0-9]{10,}' then
     raise exception 'contact_info';
   end if;
 
@@ -180,7 +172,15 @@ begin
     raise exception 'daily_limit';
   end if;
 
-  -- 7, 8. The local date comes from the server clock in the caller's zone; the table check bounds it.
+  -- 7. The zone, after the limits: pg_timezone_names reads the whole time-zone database, so only a
+  --    caller within their limits pays for it. An invalid zone still records no start.
+  if p_time_zone is null
+     or not exists (select 1 from pg_catalog.pg_timezone_names where name = p_time_zone) then
+    raise exception 'invalid_time_zone';
+  end if;
+
+  -- 8. The local date comes from the server clock in the caller's zone; the table check bounds it
+  --    to the UTC date +-1, so a chosen zone can move it by about one day (a known limit, v1 16).
   insert into public.food_log_upload_starts (author_id) values (v_uid);
   v_path := v_uid::text || '/' || v_id::text || '.jpg';
   insert into public.food_logs (id, author_id, cuisine_code, description, is_public, local_date, path)
@@ -244,7 +244,12 @@ declare
   l        public.food_logs;
   c_hidden constant text := '[\x00-\x09\x0B-\x1F\u007F-\u009F\u00AD\u061C\u180E\u200B\u200C\u200E\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\uFFF9-\uFFFB\U000E0000-\U000E007F]';
   c_edge   constant text := '^[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+|[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+$';
+  c_mail   constant text := '[a-z0-9._%+-]+[ \u00A0\u2000-\u200A\u202F\u3000]*[@\uFF20][ \u00A0\u2000-\u200A\u202F\u3000]*[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}';
+  c_sep    constant text := '[][ \n\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000.()/_,+-]';
 begin
+  -- Same validation as begin, without the profile and zone checks (a caller without a profile has
+  -- no logs, so the update below gives not_found).
+  if char_length(p_description) > 1000 then raise exception 'invalid_input'; end if;
   if p_cuisine_code is null
      or not exists (select 1 from public.cuisines where code = p_cuisine_code) then
     raise exception 'invalid_input';
@@ -254,8 +259,7 @@ begin
   v_desc := nullif(regexp_replace(p_description, c_edge, '', 'g'), '');
   if v_desc ~ c_hidden then raise exception 'invalid_text'; end if;
   if char_length(v_desc) > 280 then raise exception 'invalid_input'; end if;
-  if v_desc ~* '[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}'
-     or regexp_replace(v_desc, '[][ .()-]', '', 'g') ~ '[0-9]{10,}' then
+  if v_desc ~* c_mail or regexp_replace(v_desc, c_sep, '', 'g') ~ '[0-9]{10,}' then
     raise exception 'contact_info';
   end if;
 
@@ -288,7 +292,8 @@ end $$;
 revoke execute on function public.delete_food_log(uuid) from public, anon, authenticated;
 grant execute on function public.delete_food_log(uuid) to authenticated;
 
--- A ready log that is the caller's own or public.
+-- A ready log that is the caller's own or public. path is null unless it is the caller's own: the
+-- path holds the author's id, and others read no file from storage anyway (Decision 23).
 create function public.get_food_log(p_id uuid) returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -303,7 +308,9 @@ begin
 
   return jsonb_build_object('id', l.id, 'cuisine_code', l.cuisine_code, 'description', l.description,
                             'is_public', l.is_public, 'local_date', l.local_date,
-                            'created_at', l.created_at, 'path', l.path, 'is_mine', l.author_id = v_uid);
+                            'created_at', l.created_at,
+                            'path', case when l.author_id = v_uid then l.path end,
+                            'is_mine', l.author_id = v_uid);
 end $$;
 revoke execute on function public.get_food_log(uuid) from public, anon, authenticated;
 grant execute on function public.get_food_log(uuid) to authenticated;
@@ -397,14 +404,15 @@ values ('food-logs', 'food-logs', false, 2097152, array['image/jpeg']);
 create policy food_logs_insert_own on storage.objects for insert to authenticated
   with check (bucket_id = 'food-logs' and (select private.food_log_upload_allowed(name)));
 
--- Everything in the caller's own folder, and ready public files. No anon policy. The folder clause
--- is needed twice over: Postgres applies select policies to an insert with RETURNING (the owner's
--- upload of a pending reservation, Decision 22) and to a delete with a WHERE clause (the owner's
--- cleanup of files whose row is gone, Decision 23); a delete policy alone is not enough.
+-- The caller's own folder only (Decision 23): nobody else reads any food-logs file from storage, so
+-- no one can list or download other people's photos. A later spec that shows uploads to others
+-- serves them through an Edge Function. The owner needs this policy: Postgres applies select
+-- policies to an insert with RETURNING (the upload of a pending reservation) and to a delete with a
+-- WHERE clause (the cleanup of files whose row is gone); a delete policy alone is not enough. No
+-- anon policy.
 create policy food_logs_select on storage.objects for select to authenticated
   using (bucket_id = 'food-logs'
-         and ((storage.foldername(name))[1] = (select auth.uid())::text
-              or (select private.food_log_is_readable(name))));
+         and (storage.foldername(name))[1] = (select auth.uid())::text);
 
 -- Only files in the caller's folder whose row is gone. Text-to-text folder comparison, so a
 -- malformed name never errors; it just doesn't match (fails closed).

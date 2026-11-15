@@ -8,9 +8,9 @@
 **Status:** 🚧 PR 1 (backend) built through gates A to C on `feature/food-log-uploads`, in review; PR 2 (the app) not started.
 
 ## Overview
-After this ships, any signed-in person with a finished profile, customer or seller alike, keeps a personal **food log**. They pick one photo from their phone's library, add an optional short description, choose the photo's **cuisine/country** (required, the same list as the map flags) and choose **public or private** (public by default). The server sets the time of the upload and the person's **local date** at that moment; nothing can be backdated. Every upload has its own **detail page** (full image, full description, flag, date) where the owner can change the description, cuisine and visibility, or delete it. The owner sees their uploads newest first, 50 at a time, from a **Food log** row on Profile.
+After this ships, any signed-in person with a finished profile, customer or seller alike, keeps a personal **food log**. They pick one photo from their phone's library, add an optional short description, choose the photo's **cuisine/country** (required, the same list as the map flags) and choose **public or private** (public by default). The server sets the time of the upload and the person's **local date** at that moment, in the time zone the phone sends; no date or time is ever sent, so an upload cannot be backdated beyond the zone choice (at most about one day, Decision 24). Every upload has its own **detail page** (full image, full description, flag, date) where the owner can change the description, cuisine and visibility, or delete it. The owner sees their uploads newest first, 50 at a time, from a **Food log** row on Profile.
 
-The photo is resized on the phone, and every piece of hidden metadata (EXIF, including GPS location) is removed before upload, with the same strict check as spec 06. Photos sit in a private bucket and are served by short-lived signed URLs. A private upload is readable only by its owner. A public one is readable by any signed-in user, never by guests, but in this spec nobody else has a screen that reaches it yet (Decision 3). The database enforces every limit and every ownership rule.
+The photo is resized on the phone, and every piece of hidden metadata (EXIF, including GPS location) is removed before upload, with the same strict check as spec 06. Photos sit in a private bucket and are served to their owner by short-lived signed URLs; nobody else can read or list any food-logs file from storage (Decision 23). A private upload is readable only by its owner. A public one's details are readable by any signed-in user through `get_food_log` (without its path), never by guests, but in this spec nobody else has a screen that reaches it yet (Decision 3); a later spec serves others' photos through an Edge Function. The database enforces every limit and every ownership rule.
 
 **Why now:** the request work (09 to 12) is done, and the activity grid (14, 15) needs uploads with `local_date`, `cuisine_code` and `is_public` to exist. The shared media code from spec 06 is ready for reuse.
 
@@ -99,10 +99,11 @@ All three tables: `enable row level security`, then `revoke all … from anon, a
 
 **Private helpers** (`private` schema, `security definer`, `stable`, `set search_path = ''`, execute revoked from `public` then granted to `authenticated` only):
 - `private.food_log_upload_allowed(p_path text) returns boolean`: a `pending` row with this exact path, less than 1 hour old, whose `author_id = auth.uid()`.
-- `private.food_log_is_readable(p_path text) returns boolean`: a `ready` row with this path that is either the caller's own or `is_public`. The select policy adds the caller's own folder on top of it (Decision 23).
 - `private.food_log_is_live(p_path text) returns boolean`: any row with this path exists (stops deletes of live files).
 
-The 05 test's exact list of `private` functions gains these three (approved edit).
+There is no read helper: the select policy is owner-folder only (Decision 23; `food_log_is_readable` existed until the review and was dropped). The 05 test's exact list of `private` functions gains these two (approved edit).
+
+**Trigger:** `public.food_logs_queue_cleanup()` (`security definer`, execute revoked from `public, anon, authenticated`) runs after every delete on `food_logs`, including the profiles cascade, and inserts `(path, author_id)` into `food_log_cleanup_queue` (`on conflict do nothing`).
 
 ### Field ownership
 
@@ -117,15 +118,15 @@ All `security definer`, `set search_path = ''`, each followed by `revoke execute
 
 | Function | Behaviour |
 |---|---|
-| `begin_food_log_upload(p_cuisine_code text, p_description text, p_is_public boolean, p_time_zone text) returns jsonb` | 1. Validate: profile has a username, else `profile_incomplete`; `p_cuisine_code` exists in `cuisines`, else `invalid_input`; `p_is_public` not null, else `invalid_input`; `p_time_zone` is in `pg_timezone_names`, else `invalid_time_zone`; description trimmed with `c_edge`, blank → null, then hidden characters → `invalid_text`, over 280 → `invalid_input`, an email or a 10-digit run → `contact_info` (Decision 11). 2. Take `pg_advisory_xact_lock(hashtextextended('food_log:' || uid, 0))`. 3. **Expire:** delete the caller's `pending` rows older than 1 hour (the trigger queues their paths) and the caller's `food_log_upload_starts` rows older than 24 hours (Decision 9b). 4. `cleanup_required` if 20 or more of the caller's queued files still exist in `storage.objects`. 5. `too_many_pending` if 3 `pending` rows remain. 6. `daily_limit` if 20 starts in the last 24 hours. 7. `local_date := (now() at time zone p_time_zone)::date` (the table check bounds it to the UTC date ±1). 8. Insert the start and the `pending` row; return `{ id, path }`. |
+| `begin_food_log_upload(p_cuisine_code text, p_description text, p_is_public boolean, p_time_zone text) returns jsonb` | 1. Validate (cheap checks): a raw description over 1000 characters → `invalid_input` first, before anything else (Decision 27); profile has a username, else `profile_incomplete`; `p_cuisine_code` exists in `cuisines`, else `invalid_input`; `p_is_public` not null, else `invalid_input`; description trimmed with `c_edge`, blank → null, then hidden characters → `invalid_text`, over 280 → `invalid_input`, an email or a 10-digit run → `contact_info` (Decisions 11, 26). 2. Take `pg_advisory_xact_lock(hashtextextended('food_log:' || uid, 0))`. 3. **Expire:** delete the caller's `pending` rows 1 hour old or older (the trigger queues their paths) and the caller's `food_log_upload_starts` rows 24 hours old or older (Decision 9b). 4. `cleanup_required` if 20 or more of the caller's queued files still exist in `storage.objects`. 5. `too_many_pending` if 3 `pending` rows remain. 6. `daily_limit` if 20 starts remain. 7. `p_time_zone` is in `pg_timezone_names`, else `invalid_time_zone` (after the limits, Decision 28; an invalid zone still records no start). 8. Insert the start and the `pending` row with `local_date := (now() at time zone p_time_zone)::date` (the table check bounds it to the UTC date ±1, Decision 24); return `{ id, path }`. |
 | `finish_food_log_upload(p_id uuid) returns jsonb` | The caller's `pending` row less than 1 hour old, else `not_found`. The object must exist in `storage.objects` (bucket `food-logs`, `name = path`) with `metadata->>'mimetype' = 'image/jpeg'` and a size of 1 to 2 097 152 bytes, else `upload_missing`. Sets `ready`; returns the log object. |
-| `update_food_log(p_id uuid, p_cuisine_code text, p_description text, p_is_public boolean) returns jsonb` | The caller's `ready` row, else `not_found`. Same validation as begin (no time zone). Returns the log object. |
+| `update_food_log(p_id uuid, p_cuisine_code text, p_description text, p_is_public boolean) returns jsonb` | Validates first, as begin's step 1 without the profile check (a caller without a profile has no logs, so the update gives `not_found`) and without a zone. Then the caller's `ready` row, else `not_found`. Returns the log object. |
 | `delete_food_log(p_id uuid) returns void` | Deletes the caller's row, pending or ready, else `not_found`. The trigger queues the path. |
-| `get_food_log(p_id uuid) returns jsonb` | A `ready` row that is the caller's own, or `is_public`; else `not_found`. |
+| `get_food_log(p_id uuid) returns jsonb` | A `ready` row that is the caller's own, or `is_public`; else `not_found`. `path` is null unless it is the caller's own (the key is still there; Decision 25). |
 | `list_my_food_logs(p_before text default null) returns jsonb` | The caller's `ready` rows, `(created_at desc, id desc)`, 50 a page, reading 51; `{ items, next_cursor }`. Cursor text `YYYY-MM-DD"T"HH24:MI:SS.US"Z"|<uuid>` exactly as `list_my_requests`, strict regex, anything else → `invalid_input`. |
 | `claim_food_log_cleanup() returns setof text` | For the caller: drop queue rows older than 10 minutes whose object no longer exists; return the queued paths whose object still exists. The app removes them through Storage and calls it again. |
 
-**Log object** (fixed key set, pinned by a pgTAP key-set test): `id, cuisine_code, description, is_public, local_date, created_at, path, is_mine`. It never holds `author_id`, `status`, `updated_at` or anything from `profiles`.
+**Log object** (fixed key set, pinned by a pgTAP key-set test for each of finish, update, get and list): `id, cuisine_code, description, is_public, local_date, created_at, path, is_mine`. It never holds `author_id`, `status`, `updated_at` or anything from `profiles`, and `path` (which holds the author's id) is null when the log is not the caller's. It is built inline in four functions; a change to it needs four edits and the four key-set tests.
 
 **Function allowlist (05 test, approved edit):** authenticated may additionally execute exactly the seven functions above. Anon executes no `public` function.
 
@@ -140,11 +141,10 @@ No request status transitions in this spec.
 ```sql
 create policy food_logs_insert_own on storage.objects for insert to authenticated
   with check (bucket_id = 'food-logs' and (select private.food_log_upload_allowed(name)));
--- Everything in the caller's own folder, and ready public files (Decision 23).
+-- The caller's own folder only (Decision 23).
 create policy food_logs_select on storage.objects for select to authenticated
   using (bucket_id = 'food-logs'
-         and ((storage.foldername(name))[1] = (select auth.uid())::text
-              or (select private.food_log_is_readable(name))));
+         and (storage.foldername(name))[1] = (select auth.uid())::text);
 create policy food_logs_delete_own on storage.objects for delete to authenticated
   using (bucket_id = 'food-logs'
          and (storage.foldername(name))[1] = (select auth.uid())::text
@@ -153,9 +153,9 @@ create policy food_logs_delete_own on storage.objects for delete to authenticate
 ```
 The folder comparison is text to text, so a malformed name never errors; it simply does not match (fails closed). A pgTAP test covers a non-UUID folder.
 
-The select policy needs the folder clause (Decision 23): Postgres applies select policies to a delete with a WHERE clause and to an insert with RETURNING, so a delete policy alone is not enough. Without it the owner could not see or delete their own orphan files (the cleanup would never empty) and the Storage API's insert could be refused for a pending reservation.
+The select policy is the owner's folder, and nothing else (Decision 23). The owner needs it: Postgres applies select policies to a delete with a WHERE clause and to an insert with RETURNING, so a delete policy alone is not enough; without it the owner could not see or delete their own orphan files (the cleanup would never empty) and the Storage API's insert could be refused for a pending reservation. Nobody else gets a select rule, so nobody can list the bucket (no folder names, so no user ids) or download another person's file, public or not.
 
-**Reading:** `signedUrls('food-logs', paths, 3600)` through the existing `useSignedUrls`; `PhotoTile` / `PhotoViewer` cache by path. A flip from public to private stops new URLs at once, but someone who already holds a signed URL can use it for up to 1 hour (Decision 10b; recorded in v1 §16 at gate C).
+**Reading:** the owner only: `signedUrls('food-logs', paths, 3600)` through the existing `useSignedUrls`; `PhotoTile` / `PhotoViewer` cache by path. A later spec that shows uploads to other people serves them through an Edge Function that checks visibility and signs with the service role (v1 §16); the public-to-private signed-URL hour (Decision 10b) applies to that design.
 
 **Cleanup ("row first, file later"):** the same outbox as spec 06 with its own queue: the delete trigger queues the path; after a delete and when the list screen opens, the app calls `claim_food_log_cleanup()`, removes the returned paths, and claims again. `begin_food_log_upload` raises `cleanup_required` at 20 queued files still in storage; the app runs the cleanup and retries once. No server sweeper in v1 (§16, with account deletion).
 
@@ -167,7 +167,7 @@ None.
 ## Components & hooks
 **`src/features/food-log/`** (new):
 - `schema.ts`: `FoodLog` (the 8 keys, strict), `FoodLogPage` (`items`, `next_cursor`), the form schema (cuisine required; description trimmed, ≤ 280, hidden-character class and contact-info check mirroring the server, Decisions 2 and 11).
-- `text.ts` (pure): `HIDDEN_FOOD_LOG` class, `hasContactInfo(text)` (email regex; strip spaces, `-`, `.`, `(`, `)`, `[`, `]`, then `[0-9]{10,}`), `trimDescription`. ASCII source with `\u` escapes only.
+- `text.ts` (pure): `HIDDEN_FOOD_LOG` class, `hasContactInfo(text)` and `trimDescription`, mirroring the server exactly (Decision 26): the email pattern allows spaces around `@` and the fullwidth `@` (U+FF20) but no spaces inside the domain; the digit rule strips whitespace and `.` `(` `)` `[` `]` `-` `/` `_` `,` `+`, then looks for `[0-9]{10,}`; plus the 1000-character cap (Decision 27). PR 2 mirrors both rules and the cap in the app, with tests for the same cases as pgTAP. ASCII source with `\u` escapes only.
 - `api.ts`: `beginFoodLogUpload`, `finishFoodLogUpload`, `updateFoodLog`, `deleteFoodLog`, `getFoodLog`, `listMyFoodLogs`, `claimFoodLogCleanup`; `FoodLogAppError` codes `'profile_incomplete' | 'invalid_input' | 'invalid_text' | 'contact_info' | 'invalid_time_zone' | 'too_many_pending' | 'daily_limit' | 'cleanup_required' | 'not_found' | 'upload_missing' | 'network' | 'unknown'` with `mapFoodLogError` and `messages.ts`. Storage calls stay in `media/api.ts`.
 - `uploadFoodLog.ts`: `prepareImage` → `beginFoodLogUpload` (with the phone's zone from `expo-localization` `getCalendars()[0].timeZone`, falling back to `Intl` resolved options) → `uploadToBucket('food-logs', path, bytes)` → `finishFoodLogUpload`. On upload or finish failure: `deleteFoodLog(id)` then the cleanup. On `cleanup_required`: cleanup, retry begin once. Prepares the image **before** begin, so a bad photo uses no daily start.
 - `hooks/`: `keys.ts` (`['food-log', 'mine']`, `['food-log', id]`), `useMyFoodLogs` (`useInfiniteQuery`, 50 a page, `next_cursor`), `useFoodLog(id)`, `useCreateFoodLog`, `useUpdateFoodLog`, `useDeleteFoodLog`, `useFoodLogCleanup`. Every create, update and delete invalidates the list and that log's detail.
@@ -192,7 +192,7 @@ None.
 - `app.config.ts`: `photosPermission` → "LikeToOrder uses your photos to add pictures to your food log, menu and listing." (Decision 18; native rebuild by Archan).
 - `.claude/skills/supabase-patterns/SKILL.md` (gate C, Decision 19): the `food_logs` logical model uses `path` (not `photo_path`); drop the `avatars` bucket row and `avatar_path` / `is_admin` from `profiles`; replace the `food_logs` direct-policy template with the functions-only rule and the `food-logs` bucket as built (1 h signed URLs, no "longer-lived" note).
 - `docs/product/v1.md` (gate C): §16 gains the public-to-private signed-URL hour (Decision 10b), the food-logs bucket in the storage-use item, and "report an upload" for the spec that first shows uploads to others (Decision 12); a changelog line at ship.
-- `CLAUDE.md`: add `food-log` to the feature-folder list at ship.
+- `CLAUDE.md`: `food-log` is already in the feature-folder list (no change needed).
 
 ## New dependencies
 No new dependencies. `expo-image-picker`, `expo-image-manipulator`, `expo-file-system`, `expo-image` and `expo-localization` are installed (spec 06). The `photosPermission` text change needs one native rebuild (`npx expo run:ios`, run by Archan after gate D).
@@ -223,13 +223,13 @@ Feature-specific rules:
   - PR 2: **D** feature code, routes, Profile row, `app.config.ts` text → *Archan rebuilds* → **E** jest tests + approved jest edit + app breaks → **F** Simulator run (Archan), review, ship.
 
 ## Known pitfalls (checklist)
-- [ ] A stale pending row (over 1 hour) must stop counting and be queued, not block the person (pgTAP, 59 vs 61 minutes).
-- [ ] Deleting a log must not give back a daily start (pgTAP: 20 starts, delete one, the 21st is still `daily_limit`).
+- [x] A stale pending row (over 1 hour) must stop counting and be queued, not block the person (pgTAP, 59 vs 61 minutes).
+- [x] Deleting a log must not give back a daily start (pgTAP: 20 starts, delete one, the 21st is still `daily_limit`).
 - [ ] A bad photo (too large, not an image, metadata) must fail before `begin`, using no daily start (jest).
 - [ ] The date shown must come from `local_date`, never `created_at` in the phone's zone (jest with a zone far from UTC).
-- [ ] Emoji with U+200D / U+FE0F accepted; the England, Scotland and Wales flags use tag characters (U+E0020 to U+E007F) and are refused with the rest of the hidden set (known and accepted, Decision 2).
-- [ ] Two dates written next to each other (for example "2026-11-14 2026-11-15") join into 16 digits once spaces and dashes are ignored and are refused as `contact_info` (known edge of Decision 11). Digits in other scripts are not counted (known limit).
-- [ ] Leftover seed data must not change pgTAP counts: own fixtures, counts of own rows only, rolled back.
+- [x] Emoji with U+200D / U+FE0F accepted; the England, Scotland and Wales flags use tag characters (U+E0020 to U+E007F) and are refused with the rest of the hidden set (known and accepted, Decision 2).
+- [x] Two dates written next to each other (for example "2026-11-14 2026-11-15") join into 16 digits once spaces and dashes are ignored and are refused as `contact_info` (known edge of Decision 11). Digits in other scripts are not counted (known limit).
+- [x] Leftover seed data must not change pgTAP counts: own fixtures, counts of own rows only, rolled back.
 - [ ] Test clients set `gcTime: 0` for mutations too.
 
 ## Out of scope
@@ -246,19 +246,20 @@ Feature-specific rules:
 
 ## Definition of done
 **PR 1 (pgTAP unless noted):**
-- [ ] RLS on for the three tables; exact `table_privs_are` (no privileges for anon or authenticated); the bucket row is private, 2 097 152 bytes, `{image/jpeg}`; exactly 3 `food-logs` policies and no update or ALL policy.
-- [ ] begin → upload → finish works for a profile-complete user; `local_date` follows the zone (`Pacific/Kiritimati` and `Pacific/Pago_Pago` around a UTC midnight give different dates); an unknown zone → `invalid_time_zone`; no username → `profile_incomplete`; unknown cuisine → `invalid_input`.
-- [ ] `created_at` is the server's `now()`; no function accepts a time or a date.
-- [ ] Description: trimmed; blank → null; 281 characters → `invalid_input`; "Ate on 2026-11-14" accepted; a 9-digit run accepted; "123-456-7890" (10 digits) → `contact_info`; "a@b.co" → `contact_info`; an emoji ZWJ sequence with U+FE0F (`E'\U0001F468\u200D\U0001F373 \u2764\uFE0F'`) accepted; U+202E (bidi override) → `invalid_text`; also U+200B, U+2066 and U+00AD → `invalid_text`; the table check refuses the same hidden characters on a direct superuser insert (23514).
-- [ ] Limits: 3 pending → the 4th `too_many_pending`; a pending row backdated to 61 minutes is deleted by the next begin, its path is queued, and it no longer counts; at 59 minutes it still counts and can still be uploaded to and finished; 20 starts in 24 hours → the 21st `daily_limit`, also after deleting one; a start backdated past 24 hours stops counting; 20 queued files still in storage → `cleanup_required`, 19 → allowed.
-- [ ] `finish_food_log_upload`: no object, wrong bucket, `image/png`, size 0, missing, `'abc'` or 2 097 153 → `upload_missing`.
-- [ ] Update changes only cuisine, description and visibility; delete queues the path; deleting the author's `auth.users` row queues every path (pending and ready).
-- [ ] Reads: the owner gets own private and public logs; another signed-in user gets a public ready log and `not_found` for a private or pending one; list returns only the caller's ready rows, 50 a page, no skip, repeat or empty last page across 123 rows (120 sharing one timestamp); a bad cursor → `invalid_input`; the log object has exactly the 8 keys.
-- [ ] **An outsider cannot:** read another person's private log (function or storage select); list another person's logs; update or delete another person's log (`not_found`, row unchanged); insert an object into another person's folder, an unreserved path, an expired (61 minutes) reservation or a malformed (non-UUID) folder; delete another person's file or any live file (0 rows); update any object (0 rows); read or write the three tables directly (42501); execute any spec 13 function or `private` helper as `anon`. `anon` reads no `food-logs` object.
-- [ ] Orphan files both ways (Decision 23): the owner sees, claims and deletes their own orphan file; the second user and the outsider neither see nor delete it, and their claims do not return it; others still see only ready public files.
-- [ ] End-to-end cleanup: 20 finished-then-deleted logs leave 20 orphan files, so begin raises `cleanup_required`; `claim_food_log_cleanup` returns exactly those paths; the owner removes them through the delete policy; begin is no longer blocked by the cleanup (and works again once the day has passed); queue rows older than 10 minutes whose file is gone are dropped.
-- [ ] The 05 allowlist and private list include the new names (approved edit); 03 and every other older pgTAP file pass unedited (Decision 21).
-- [ ] `npx supabase db reset`, `npx supabase test db`, `npm run typecheck` pass; `src/types/database.ts` regenerated, not hand-edited.
+- [x] RLS on for the three tables; exact `table_privs_are` (no privileges for anon or authenticated); the bucket row is private, 2 097 152 bytes, `{image/jpeg}`; exactly 3 `food-logs` policies and no update or ALL policy; no `food_log_is_readable` helper.
+- [x] begin, upload, finish works for a profile-complete user; `local_date` follows the zone (`Pacific/Kiritimati` and `Pacific/Pago_Pago` give different dates); an unknown, null or empty zone gives `invalid_time_zone`; no username gives `profile_incomplete`; an unknown cuisine gives `invalid_input`.
+- [x] Pinned known limit (Decision 24): at one instant `Etc/GMT+12` and `Etc/GMT-14` give different dates, the far-west one never before the UTC date minus 1.
+- [x] `created_at` is the server's `now()`; no function accepts a time or a date.
+- [x] Description: trimmed (edge spaces, U+00A0, U+3000, newlines; a leading U+2028 or trailing U+2029 is trimmed, not refused); blank becomes null in begin and update; 281 characters give `invalid_input`; over 1000 gives `invalid_input` before anything else, even before the profile check (Decision 27); "Ate on 2026-11-14" accepted; a 9-digit run accepted; 10 digits split by dashes, brackets and dots, a newline, `/`, `_`, `,`, `+` or Unicode spaces give `contact_info`; "a@b.co", "a @ b.co", a fullwidth @ and "dinner @ joes.com" give `contact_info`; "ate @ noon. Great" and a domain with a space inside are accepted (Decision 26); an emoji ZWJ sequence with U+FE0F accepted; every edge of the hidden class refused and its allowed neighbours accepted through begin, update and the table check alike; error order hidden, then length, then contact.
+- [x] Limits: 3 pending, the 4th gives `too_many_pending`; a pending row backdated to 61 minutes is deleted by the next begin, its path is queued, and it no longer counts; at 59 minutes it still counts and can still be uploaded to and finished; 20 starts in 24 hours, the 21st gives `daily_limit`, also after deleting one; a start 23 h 59 min old still counts, one exactly 24 hours old stops counting; 20 queued files still in storage give `cleanup_required` (before `too_many_pending`), 19 are allowed; bad input is reported before the limits and records no start, except the zone, which is checked after them (Decision 28).
+- [x] `finish_food_log_upload`: no object, wrong bucket, `image/png`, no mimetype, size 0, missing, `'abc'` or 2 097 153 give `upload_missing`; 1 byte and 2 097 152 bytes work.
+- [x] Update changes only cuisine, description and visibility; delete queues the path; deleting the author's `auth.users` row queues every path (pending and ready).
+- [x] Reads: the owner gets own private and public logs with their path; another signed-in user gets a public ready log with `path` null (Decision 25) and `not_found` for a private or pending one, and a log made private is `not_found` to them at once; list returns only the caller's ready rows, 50 a page, no skip, repeat or empty last page across 123 rows (120 sharing one timestamp), and for exactly 100 and exactly 50 rows; a bad cursor gives `invalid_input`; finish, update, get and list return exactly the 8 keys. A caller with no user id gets `not_found` from finish, update, delete and get, nothing from claim and an empty list page.
+- [x] **An outsider cannot:** read any of another person's files, public or private, or list the bucket (root, prefix and delimiter listings return nothing; Decision 23); read another person's private log; list another person's logs; update or delete another person's log (`not_found`, row unchanged); insert an object into another person's folder, an unreserved path, an expired (61 minutes) reservation or a malformed (non-UUID) folder (and the owner cannot upload at the path of their own ready log); delete another person's file or any live file (0 rows); update any object (0 rows); read or write the three tables directly (42501); execute any spec 13 function or `private` helper as `anon`. `anon` reads, deletes and updates no `food-logs` object.
+- [x] Orphan files both ways (Decision 23): the owner sees, claims and deletes their own orphan file (an orphan older than 10 minutes whose file still exists is kept and returned); the second user and the outsider neither see nor delete it, and their claims do not return it.
+- [x] End-to-end cleanup: 20 finished-then-deleted logs leave 20 orphan files, so begin raises `cleanup_required`; `claim_food_log_cleanup` returns exactly those paths; the owner removes them through the delete policy; begin is no longer blocked by the cleanup (and works again once the day has passed); queue rows older than 10 minutes whose file is gone are dropped.
+- [x] The 05 allowlist and private list include the new names (approved edit); 03 and every other older pgTAP file pass unedited (Decision 21).
+- [x] `npx supabase db reset`, `npx supabase test db`, `npm run typecheck` pass; `src/types/database.ts` regenerated, not hand-edited.
 
 **PR 2 (jest unless noted):**
 - [ ] Upload order prepare → begin → upload → finish; only `prepareImage`'s bytes reach Storage (never the picked URI); upload or finish failure deletes the pending log and runs the cleanup; `cleanup_required` → cleanup and one retry; a `too_large` photo never calls begin.
@@ -278,28 +279,31 @@ Feature-specific rules:
 - **Unit/component tests (jest)** in `src/features/food-log/__tests__/`: `text.test.ts`, `schema.test.ts`, `api.test.ts` (RPC names, args, every error code), `uploadFoodLog.test.ts`, the hooks (paging, invalidation), `FoodLogListScreen`, `FoodLogFormScreen` (create and edit), `FoodLogDetailScreen`, `FoodLogProfileRow`; plus the approved `ProfileScreen.test.tsx` edit.
 - **Deliberate breaks** (each turns a named test red, then is reverted):
   1. SQL: drop the author filter in `delete_food_log` — the outsider-delete test fails.
-  2. SQL: let `food_log_is_readable` ignore `is_public` — the outsider storage-select test fails.
+  2. SQL: let `get_food_log` ignore `is_public` — the "another user gets not_found for a private log" test fails. (Until the review this break targeted `food_log_is_readable`, which was dropped.)
   3. SQL: skip the daily cap — the 21st-start test fails.
   4. SQL: skip the 1-hour expiry in begin — the 61-minute pending test fails.
   5. SQL: change the digit run to 7 — the 9-digit test fails.
   6. SQL: drop U+202E from the hidden class — the bidi test fails.
   7. SQL: drop the zone check — the unknown-zone test fails.
   8. SQL: remove the folder clause from the `food_logs_select` policy (injected just before the orphan section) — the owner orphan-delete test fails, and so does the end-to-end cleanup. Injected at the top instead (8a), the Decision 22 upload-with-RETURNING test fails.
+  9. SQL: restore a public clause in the select policy (a definer helper passing ready public files) — the root, prefix and delimiter listing tests and the "another user does not see a ready public file" test fail.
+  10. SQL: remove the 1000-character cap from begin — the "1001 characters before anything else" tests fail.
+  11. SQL: return the path when the log is not the caller's — the "another user gets path null" test fails.
 
   SQL breaks run on scratch copies of the test file (the real file never holds a break), each applied through `lives_ok` inside the test transaction.
-  8. App: upload the picked URI's bytes instead of `prepareImage`'s — the stripped-bytes test fails.
-  9. App: skip list invalidation after delete — the stale-list test fails.
-  10. App: format the date from `created_at` — the far-zone date test fails.
+  12. App: upload the picked URI's bytes instead of `prepareImage`'s — the stripped-bytes test fails.
+  13. App: skip list invalidation after delete — the stale-list test fails.
+  14. App: format the date from `created_at` — the far-zone date test fails.
 - **Manual check, iOS Simulator (Archan, after the rebuild), Decision 15:** the new permission text; add a photo from the Simulator's Photos (its sample photos carry GPS); the stored file has no metadata (`exiftool` on the object downloaded from local Studio); the form, the 4 states, paging (seeded), edit, delete, private and public; the 10-digit and email messages; the largest text size; VoiceOver in the Simulator where possible.
 - **Real device, before launch (§16):** HEIC from a real iPhone camera, "Most Compatible", Android makes; VoiceOver and TalkBack; real-phone upload over a slow network.
 
 ## Decisions
-Approved by Archan on 2026-11-14: all 18 recommended defaults as written, with changes to 2, 9, 10 and 11, plus Decisions 19 and 20. Decisions 21 to 23 were added and approved during PR 1 (2026-11-14).
+Approved by Archan on 2026-11-14: all 18 recommended defaults as written, with changes to 2, 9, 10 and 11, plus Decisions 19 and 20. Decisions 21 to 23 were added and approved during PR 1 (2026-11-14); Decision 23 was rewritten and Decisions 24 to 28 added after the PR 1 review (approved 2026-11-15).
 
 1. **Who uploads; what a post is:** any signed-in user with a finished profile, customers and sellers alike, personal (not a business). A post is one photo, an optional description, a required cuisine and public/private. No place link and no dish-name field (§3).
 2. **Description:** optional, trimmed, 1 to 280 characters, newlines allowed. **Allowed:** U+200D and U+FE0F (emoji). **Refused** (`invalid_text`), written as escaped code points: ASCII controls except newline (`\x00-\x09\x0B-\x1F`), DEL and C1 (`\u007F-\u009F`), U+00AD, U+061C, U+180E, U+200B, U+200C, U+200E, U+200F, U+2028, U+2029, bidi overrides and embeddings U+202A to U+202E, U+2060 to U+2064, bidi isolates U+2066 to U+2069, U+FEFF, U+FFF9 to U+FFFB, and tags U+E0000 to U+E007F. Tests for an emoji sequence (accepted) and a bidi override (refused). Note: refusing U+200C (zero-width non-joiner) can affect some Persian and Indic spellings, and refusing tags removes the England, Scotland and Wales flag emoji; both follow the "other invisible formatting" rule and are listed in Known pitfalls.
-3. **Visibility:** public = readable by any signed-in user, never guests; private = owner only. In this spec the only UI is the owner's own list and detail; the server rules for others are built and tested now.
-4. **Local date:** the app sends its IANA zone name; the server checks it against `pg_timezone_names` and computes `(now() at time zone tz)::date`; a table check keeps it within the UTC date ±1. The client never sends a date or a time.
+3. **Visibility:** public = its details readable by any signed-in user through `get_food_log`, never guests; private = owner only. Files are the owner's only in this spec (Decision 23). In this spec the only UI is the owner's own list and detail; the server rules for others are built and tested now.
+4. **Local date:** the app sends its IANA zone name; the server checks it against `pg_timezone_names` and computes `(now() at time zone tz)::date`; a table check keeps it within the UTC date ±1. The client never sends a date or a time. The zone itself is the client's choice, so the date can be moved by about one day (Decision 24).
 5. **Photo:** one per upload; JPEG only in the bucket; `prepareImage` unchanged (1600 px, 0.8 then 0.6, 2 MB); HEIC, PNG and WebP sources are converted on the phone.
 6. **Camera:** library only in v1; no camera permission.
 7. **EXIF and GPS:** always stripped (`stripJpegMetadata` + the strict check); no option to keep; no server-side check (§16).
@@ -318,7 +322,12 @@ Approved by Archan on 2026-11-14: all 18 recommended defaults as written, with c
 20. **Older tests allowed to change:** `05-seller-onboarding.test.sql`, `ProfileScreen.test.tsx`, and `mediaIsolation.test.ts` only if forced. Anything else: stop and ask. (`03-navigation-shell.test.sql` was on this list until Decision 21.)
 21. **03 stays unedited (PR 1 planning):** the 03 ALLOWLIST lists tables guests (anon) may use on purpose. The three new tables grant anon nothing, so the 03 check already passes and covers them; adding them would only weaken it. Same as spec 06's `storage_cleanup_queue`.
 22. **SUPERSEDED by 23.** (PR 1 planning) The owner may read their own file at any status: `food_log_is_readable` passed the caller's own row whatever its status, so the Storage API's insert, if it uses RETURNING (which also applies the select policy), is not refused for a pending reservation.
-23. **The select policy also passes the caller's own folder (PR 1 gate B):** `food_logs_select` = bucket `food-logs` and (`(storage.foldername(name))[1] = (select auth.uid())::text` or `private.food_log_is_readable(name)`), and `food_log_is_readable` is the original rule (a ready row that is the caller's own or `is_public`). Reason: a storage delete with a WHERE clause, and an insert with RETURNING, also apply the select policy. Without the folder clause the owner could never see or delete their own orphan files (a rolled-back probe showed 0 rows seen, 0 deleted), so after 20 deleted photos every begin would fail with `cleanup_required` forever. The folder clause also covers Decision 22. Others still see only ready public files. Proved by the orphan tests both ways, the end-to-end cleanup test and break 8. The gate A migration was edited in place (it was not on `main`).
+23. **The select policy is the caller's own folder only (gate B, rewritten after the PR 1 review):** `food_logs_select` = bucket `food-logs` and `(storage.foldername(name))[1] = (select auth.uid())::text`, nothing else; `private.food_log_is_readable` was dropped. Others read nothing from storage: no file, public or private, and no listing (a root listing would otherwise show every user id with a public photo, security review S1). A later spec that shows uploads to other people serves their photos through an Edge Function that checks visibility and signs with the service role (recorded in v1 §16). The owner needs the policy: a storage delete with a WHERE clause, and an insert with RETURNING, also apply the select policy, so without it the owner could never see or delete their own orphan files (a rolled-back probe showed 0 rows seen, 0 deleted) and after 20 deleted photos every begin would fail with `cleanup_required` forever; it also covers Decision 22. Proved by the orphan tests both ways, the end-to-end cleanup test, the root, prefix and delimiter listing tests, and breaks 8 and 9. The migration was edited in place (it was not on `main`).
+24. **Backdating by the zone choice: accepted (review S2):** the zone is the client's choice and any name in `pg_timezone_names` is accepted, so at one instant a person can pick between two (rarely three) dates, about one day apart; the table check keeps the date within the UTC date ±1. Recorded in v1 §16; a pgTAP test pins it (`Etc/GMT+12` against `Etc/GMT-14`). A zone stored on the profile (changeable at most once a day) goes to spec 14, where the grid makes it matter.
+25. **`path` is null for others (review S3):** `get_food_log` returns `path` only when the log is the caller's own; the key stays, so the object keeps exactly 8 keys. The path holds the author's id, and others read no file anyway (Decision 23).
+26. **Wider contact-info rules (review S4):** the digit rule strips whitespace (ASCII space, newline and the Unicode spaces U+00A0, U+1680, U+2000 to U+200A, U+202F, U+205F, U+3000) and `.` `(` `)` `[` `]` `-` `/` `_` `,` `+` before looking for 10 or more digits; the email rule allows spaces around `@` and the fullwidth `@` (U+FF20) but no spaces inside the domain. False positives accepted: "dinner @ joes.com" is refused; "ate @ noon. Great" passes. PR 2 mirrors both rules in the app.
+27. **1000-character cap first (review S5):** begin and update refuse a raw description over 1000 characters with `invalid_input` before any other check, so a huge text never reaches the patterns.
+28. **Zone checked after the limits (review S6):** `pg_timezone_names` reads the whole time-zone database, so begin checks the zone after `daily_limit` and before the insert; an invalid zone still records no start. This is the one exception to "validation before limits", and a test documents it.
 
 ### Mismatches between the product spec and the code (found while writing this spec)
 1. `supabase-patterns` "Core tables" lists `profiles.avatar_path` and `is_admin`, and its Storage table lists an `avatars` bucket; none exist, and §15 Q4 puts avatar upload out of scope. Fixed at gate C (Decision 19).
@@ -331,11 +340,12 @@ Approved by Archan on 2026-11-14: all 18 recommended defaults as written, with c
 8. The brief mentioned profile images in storage; only `business-media` exists.
 9. Free-text checks in SQL block hidden characters only; no email or phone detection existed, so Decision 11's check is new.
 10. `app.config.ts`'s photo-library text spoke only of "menu and listing" (Decision 18; native rebuild).
-11. The 05 pgTAP test pins the exact `private` function list, so the three helpers need the approved edit.
+11. The 05 pgTAP test pins the exact `private` function list, so the two helpers (three until the review dropped `food_log_is_readable`) need the approved edit.
 12. `supabase-patterns` gives a `food_logs` template with direct table policies and the column name `photo_path`, which conflicts with the functions-only practice since spec 06; its local-date note (IANA zone checked against `pg_timezone_names`) matches Decision 4 but nothing built it yet. Fixed at gate C (Decision 19).
 13. There is no shared Supabase fake or shared test `QueryClient`; some older tests set `gcTime: 0` for queries only. Spec 13's tests build their own as in the Rules.
 14. (Found in PR 1 planning) This spec first said to add the three tables to the 03 ALLOWLIST; that list is for tables guests may use on purpose, so it was left unedited (Decision 21).
 15. (Found in PR 1 gate B) The storage policies as first written let the owner delete orphan files by the delete policy, but Postgres also applies the select policy to that delete, and the select rule needed a row; the owner could not clean up. Fixed by Decision 23. The `supabase-patterns` skill now records that a delete policy alone is not enough.
+16. (Found in the PR 1 review) A select rule that let any signed-in user read ready public files also let them list the bucket root (every user id with a public photo) and download every public photo: a feed, against the user story and v1 §3. Fixed by Decision 23 (owner folder only).
 
 ## Open questions
 None. All 18 resolved on 2026-11-14; see Decisions.

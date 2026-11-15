@@ -5,7 +5,7 @@
 - PR 2 (the app: feature code, routes, Profile row, permission text, jest tests, Simulator run): `feature/food-log-uploads-app`, created from `main` after PR 1 is merged
 **Product spec:** `docs/product/v1.md` §2 (food log uploads in v1), §3 (out of scope: feed, follows, tagging restaurants, multi-photo), §11 (Profile; Food log uploads; Shared rules: local date, private uploads), §14 row 13, §15 Q3 and Q4, §16 (account deletion and files, server-side photo metadata check, storage use, photo sources across phones, hidden-character class S2, lists are paginated, flaky-test and test-client notes)
 **Plan mode:** required — new table with RLS, a new storage bucket and storage policies, new security-definer functions and `private` helpers, new routes, a native setting change (photo-library text), well over ~5 files.
-**Status:** 🚧 PR 1 (backend) built through gates A to C on `feature/food-log-uploads`, in review; PR 2 (the app) not started.
+**Status:** ✅ Shipped. PR 1 (backend) merged as #29 (980ed49); PR 2 (the app) from `feature/food-log-uploads-app`, gates D to F plus the review fixes.
 
 ## Overview
 After this ships, any signed-in person with a finished profile, customer or seller alike, keeps a personal **food log**. They pick one photo from their phone's library, add an optional short description, choose the photo's **cuisine/country** (required, the same list as the map flags) and choose **public or private** (public by default). The server sets the time of the upload and the person's **local date** at that moment, in the time zone the phone sends; no date or time is ever sent, so an upload cannot be backdated beyond the zone choice (at most about one day, Decision 24). Every upload has its own **detail page** (full image, full description, flag, date) where the owner can change the description, cuisine and visibility, or delete it. The owner sees their uploads newest first, 50 at a time, from a **Food log** row on Profile.
@@ -193,6 +193,8 @@ None.
 - `.claude/skills/supabase-patterns/SKILL.md` (gate C, Decision 19): the `food_logs` logical model uses `path` (not `photo_path`); drop the `avatars` bucket row and `avatar_path` / `is_admin` from `profiles`; replace the `food_logs` direct-policy template with the functions-only rule and the `food-logs` bucket as built (1 h signed URLs, no "longer-lived" note).
 - `docs/product/v1.md` (gate C): §16 gains the public-to-private signed-URL hour (Decision 10b), the food-logs bucket in the storage-use item, and "report an upload" for the spec that first shows uploads to others (Decision 12); a changelog line at ship.
 - `CLAUDE.md`: `food-log` is already in the feature-folder list (no change needed).
+- `app/_layout.tsx` (added in PR 2, approved; not in the list above when the spec was written): one line, `<Stack.Screen name="food-log" />` inside the `Stack.Protected guard={access.app}` group, so the guard covers every `app/food-log/` route.
+- Native rebuild (PR 2, approved): none was made. `pickImage()` opens the system photo picker, which asks for no photo-library permission, so the new `photosPermission` text is checked at the next native rebuild (v1 §16).
 
 ## New dependencies
 No new dependencies. `expo-image-picker`, `expo-image-manipulator`, `expo-file-system`, `expo-image` and `expo-localization` are installed (spec 06). The `photosPermission` text change needs one native rebuild (`npx expo run:ios`, run by Archan after gate D).
@@ -225,12 +227,12 @@ Feature-specific rules:
 ## Known pitfalls (checklist)
 - [x] A stale pending row (over 1 hour) must stop counting and be queued, not block the person (pgTAP, 59 vs 61 minutes).
 - [x] Deleting a log must not give back a daily start (pgTAP: 20 starts, delete one, the 21st is still `daily_limit`).
-- [ ] A bad photo (too large, not an image, metadata) must fail before `begin`, using no daily start (jest).
-- [ ] The date shown must come from `local_date`, never `created_at` in the phone's zone (jest with a zone far from UTC).
+- [x] A bad photo (too large, not an image, metadata) must fail before `begin`, using no daily start (jest).
+- [x] The date shown must come from `local_date`, never `created_at` in the phone's zone (jest with a zone far from UTC).
 - [x] Emoji with U+200D / U+FE0F accepted; the England, Scotland and Wales flags use tag characters (U+E0020 to U+E007F) and are refused with the rest of the hidden set (known and accepted, Decision 2).
 - [x] Two dates written next to each other (for example "2026-11-14 2026-11-15") join into 16 digits once spaces and dashes are ignored and are refused as `contact_info` (known edge of Decision 11). Digits in other scripts are not counted (known limit).
 - [x] Leftover seed data must not change pgTAP counts: own fixtures, counts of own rows only, rolled back.
-- [ ] Test clients set `gcTime: 0` for mutations too.
+- [x] Test clients set `gcTime: 0` for mutations too.
 
 ## Out of scope
 - Community feed, comments, likes, saves, follows, tagging restaurants or places in posts, dish-name fields (v1 §3; Decision 1).
@@ -262,17 +264,17 @@ Feature-specific rules:
 - [x] `npx supabase db reset`, `npx supabase test db`, `npm run typecheck` pass; `src/types/database.ts` regenerated, not hand-edited.
 
 **PR 2 (jest unless noted):**
-- [ ] Upload order prepare → begin → upload → finish; only `prepareImage`'s bytes reach Storage (never the picked URI); upload or finish failure deletes the pending log and runs the cleanup; `cleanup_required` → cleanup and one retry; a `too_large` photo never calls begin.
-- [ ] The zone sent is the phone's (`getCalendars` fake), and no date or time is sent.
-- [ ] Form: Save disabled with a reason until photo and cuisine; one save at a time; the counter; the hint; client-side `contact_info` and hidden-character messages for the same cases as pgTAP (date, 9 digits, 10 digits, email, emoji, bidi); every `FoodLogAppError` code has a message.
-- [ ] List: 4 states, paging on `next_cursor`, "Private" as a word, row labels; detail: 4 states, not-found identical for each cause, delete confirm, close on success with no not-found flash; edit keeps the photo.
-- [ ] Every create, update and delete invalidates the list and the detail.
-- [ ] Profile shows the Food log row and opens `/food-log` (approved `ProfileScreen.test.tsx` edit).
-- [ ] The date shown is `local_date` (checked with a fake zone far from UTC).
-- [ ] Every touchable has a label and role; targets ≥ 44 pt; switch state as words.
-- [ ] `npm run lint`, `npm run typecheck`, `npm test` pass; spec 02 to 12 tests pass unedited except the approved list.
-- [ ] Byte and invisible-character checks pass, each proved on a scratch file first.
-- [ ] Simulator run passed (Archan, Decision 15).
+- [x] Upload order prepare → begin → upload → finish; only `prepareImage`'s bytes reach Storage (never the picked URI); upload or finish failure deletes the pending log and runs the cleanup; `cleanup_required` → cleanup and one retry; a `too_large` photo never calls begin.
+- [x] The zone sent is the phone's (`getCalendars` fake), and no date or time is sent.
+- [x] Form: Save disabled with a reason until photo and cuisine; one save at a time; the counter; the hint; client-side `contact_info` and hidden-character messages for the same cases as pgTAP (date, 9 digits, 10 digits, email, emoji, bidi); every `FoodLogAppError` code has a message.
+- [x] List: 4 states, paging on `next_cursor`, "Private" as a word, row labels; detail: 4 states, not-found identical for each cause, delete confirm, close on success with no not-found flash; edit keeps the photo.
+- [x] Every create, update and delete invalidates the list and the detail.
+- [x] Profile shows the Food log row and opens `/food-log` (approved `ProfileScreen.test.tsx` edit).
+- [x] The date shown is `local_date` (checked with a fake zone far from UTC).
+- [x] Every touchable has a label and role; targets ≥ 44 pt; switch state as words.
+- [x] `npm run lint`, `npm run typecheck`, `npm test` pass; spec 02 to 12 tests pass unedited except the approved list.
+- [x] Byte and invisible-character checks pass, each proved on a scratch file first.
+- [x] Simulator run passed (Archan, Decision 15): Profile row; add with the validation messages; detail; edit; delete; `exiftool` proof that the stored file has no metadata; paging with 55 seeded rows; not-found; the largest text size. VoiceOver and the real-device items stay before-launch (§16).
 
 ## Test plan
 - **Database tests (pgTAP)** in `supabase/tests/13-food-log-uploads.test.sql`: everything under PR 1 above, including the orphan-file tests in both directions and the end-to-end cleanup test (Decision 23); every special character built with `chr(<code point>)`; own fixtures with fixed ids (`...1301` to `...13xx`: owner, second user, outsider, user without a username, anon); `begin; ... rollback;`; `pg_temp.as_user` impersonation as in spec 11; storage fixtures and `pg_temp.put` as in spec 06; `set local storage.allow_delete_query = 'true'`; time moved by backdating fixture timestamps as the superuser (no sleeps); every non-ASCII test literal written as an escaped code point.

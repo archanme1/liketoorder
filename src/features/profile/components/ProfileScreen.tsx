@@ -9,6 +9,7 @@ import { NotificationsRow } from '@/features/notifications/components/Notificati
 import { SellerModeRow } from '@/features/sellers/components/SellerModeRow';
 import { useTheme } from '@/theme/useTheme';
 
+import { FoodLogProfileRow } from './FoodLogProfileRow';
 import { ProfileHeader } from './ProfileHeader';
 
 // The signed-in Profile tab. ProfileHeader handles the loading / empty / error / success states.
@@ -41,6 +42,7 @@ export function ProfileScreen() {
             router.push('/profile/edit');
           }}
         />
+        <FoodLogProfileRow />
         <SellerModeRow />
         <NotificationsRow />
         <Button

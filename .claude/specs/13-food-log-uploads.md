@@ -5,7 +5,7 @@
 - PR 2 (the app: feature code, routes, Profile row, permission text, jest tests, Simulator run): `feature/food-log-uploads-app`, created from `main` after PR 1 is merged
 **Product spec:** `docs/product/v1.md` §2 (food log uploads in v1), §3 (out of scope: feed, follows, tagging restaurants, multi-photo), §11 (Profile; Food log uploads; Shared rules: local date, private uploads), §14 row 13, §15 Q3 and Q4, §16 (account deletion and files, server-side photo metadata check, storage use, photo sources across phones, hidden-character class S2, lists are paginated, flaky-test and test-client notes)
 **Plan mode:** required — new table with RLS, a new storage bucket and storage policies, new security-definer functions and `private` helpers, new routes, a native setting change (photo-library text), well over ~5 files.
-**Status:** 📝 Spec written
+**Status:** 🚧 PR 1 (backend) built through gates A to C on `feature/food-log-uploads`, in review; PR 2 (the app) not started.
 
 ## Overview
 After this ships, any signed-in person with a finished profile, customer or seller alike, keeps a personal **food log**. They pick one photo from their phone's library, add an optional short description, choose the photo's **cuisine/country** (required, the same list as the map flags) and choose **public or private** (public by default). The server sets the time of the upload and the person's **local date** at that moment; nothing can be backdated. Every upload has its own **detail page** (full image, full description, flag, date) where the owner can change the description, cuisine and visibility, or delete it. The owner sees their uploads newest first, 50 at a time, from a **Food log** row on Profile.
@@ -95,11 +95,11 @@ create table public.food_log_cleanup_queue (
 The email and digit checks (Decision 11) live in the functions only, not as table checks, so an admin can still fix a row from the dashboard; the hidden-character, length and shape checks are both table checks and function checks.
 
 ### RLS and grants
-All three tables: `enable row level security`, then `revoke all … from anon, authenticated`, in the same migration. **No grants and no policies** on any of them: every read and write goes through the functions below (Decision 10). The `00_rls_enabled` test covers them; `03-navigation-shell.test.sql` adds them to its ALLOWLIST (approved edit).
+All three tables: `enable row level security`, then `revoke all … from anon, authenticated`, in the same migration. **No grants and no policies** on any of them: every read and write goes through the functions below (Decision 10). The `00_rls_enabled` test covers them. `03-navigation-shell.test.sql` stays unedited: its ALLOWLIST is for tables guests may use on purpose, and these three grant anon nothing, so its check already covers them (Decision 21).
 
 **Private helpers** (`private` schema, `security definer`, `stable`, `set search_path = ''`, execute revoked from `public` then granted to `authenticated` only):
 - `private.food_log_upload_allowed(p_path text) returns boolean`: a `pending` row with this exact path, less than 1 hour old, whose `author_id = auth.uid()`.
-- `private.food_log_is_readable(p_path text) returns boolean`: a `ready` row with this path that is either the caller's own or `is_public`.
+- `private.food_log_is_readable(p_path text) returns boolean`: a `ready` row with this path that is either the caller's own or `is_public`. The select policy adds the caller's own folder on top of it (Decision 23).
 - `private.food_log_is_live(p_path text) returns boolean`: any row with this path exists (stops deletes of live files).
 
 The 05 test's exact list of `private` functions gains these three (approved edit).
@@ -140,8 +140,11 @@ No request status transitions in this spec.
 ```sql
 create policy food_logs_insert_own on storage.objects for insert to authenticated
   with check (bucket_id = 'food-logs' and (select private.food_log_upload_allowed(name)));
+-- Everything in the caller's own folder, and ready public files (Decision 23).
 create policy food_logs_select on storage.objects for select to authenticated
-  using (bucket_id = 'food-logs' and (select private.food_log_is_readable(name)));
+  using (bucket_id = 'food-logs'
+         and ((storage.foldername(name))[1] = (select auth.uid())::text
+              or (select private.food_log_is_readable(name))));
 create policy food_logs_delete_own on storage.objects for delete to authenticated
   using (bucket_id = 'food-logs'
          and (storage.foldername(name))[1] = (select auth.uid())::text
@@ -149,6 +152,8 @@ create policy food_logs_delete_own on storage.objects for delete to authenticate
 -- No update policy: files are never overwritten (upsert false).
 ```
 The folder comparison is text to text, so a malformed name never errors; it simply does not match (fails closed). A pgTAP test covers a non-UUID folder.
+
+The select policy needs the folder clause (Decision 23): Postgres applies select policies to a delete with a WHERE clause and to an insert with RETURNING, so a delete policy alone is not enough. Without it the owner could not see or delete their own orphan files (the cleanup would never empty) and the Storage API's insert could be refused for a pending reservation.
 
 **Reading:** `signedUrls('food-logs', paths, 3600)` through the existing `useSignedUrls`; `PhotoTile` / `PhotoViewer` cache by path. A flip from public to private stops new URLs at once, but someone who already holds a signed URL can use it for up to 1 hour (Decision 10b; recorded in v1 §16 at gate C).
 
@@ -181,7 +186,6 @@ None.
 
 ## Files to change
 - `supabase/tests/05-seller-onboarding.test.sql` (approved): function allowlist + the exact `private` function list.
-- `supabase/tests/03-navigation-shell.test.sql` (approved): table ALLOWLIST gains `food_logs`, `food_log_upload_starts`, `food_log_cleanup_queue`.
 - `src/features/profile/components/ProfileScreen.tsx` and `src/features/profile/__tests__/ProfileScreen.test.tsx` (approved): the Food log row.
 - `src/features/media/__tests__/mediaIsolation.test.ts`: only if forced (it bans media importing `sellers/` or `menu/`; food-log importing media should not touch it).
 - `src/types/database.ts`: regenerate with `npm run db:types`.
@@ -212,7 +216,7 @@ Feature-specific rules:
 - **Deliberate-break proofs** (Test plan): each break turns a named test red, then is reverted. SQL breaks run inside the test transaction (`create or replace` in `lives_ok`, rolled back), never committed.
 - **Tests:** own `QueryClient` per test (`retry: false`, `gcTime: 0` for queries **and** mutations), `cleanup()` and `client.clear()` in `afterEach`; faithful fakes (the `jest.setup.ts` picker, manipulator, file-system and localization fakes as they are; a Storage fake shaped like `media/__tests__/api.test.ts` that records the bytes it got and refuses `upsert: true`); every RNTL v14 call awaited; `waitFor`, never fixed timers.
 - **Stale lists:** create, update and delete invalidate the list and the detail; a not-found detail after delete never flashes (close on success, as spec 06 Decision 31).
-- **Older tests:** only `05-seller-onboarding.test.sql`, `03-navigation-shell.test.sql`, `ProfileScreen.test.tsx`, and `mediaIsolation.test.ts` only if forced. Any other older test that needs a change: stop and ask.
+- **Older tests:** only `05-seller-onboarding.test.sql`, `ProfileScreen.test.tsx`, and `mediaIsolation.test.ts` only if forced. Any other older test that needs a change: stop and ask.
 - **Spec 04 display rule** wherever a cuisine appears (`CuisineLabel`).
 - Stage gates, stop and commit after each (no edits before "approved"):
   - PR 1: **A** migration + types → **B** pgTAP + approved pgTAP edits + SQL breaks → **C** skill and v1 §16 docs → review, CI, merge.
@@ -251,7 +255,9 @@ Feature-specific rules:
 - [ ] Update changes only cuisine, description and visibility; delete queues the path; deleting the author's `auth.users` row queues every path (pending and ready).
 - [ ] Reads: the owner gets own private and public logs; another signed-in user gets a public ready log and `not_found` for a private or pending one; list returns only the caller's ready rows, 50 a page, no skip, repeat or empty last page across 123 rows (120 sharing one timestamp); a bad cursor → `invalid_input`; the log object has exactly the 8 keys.
 - [ ] **An outsider cannot:** read another person's private log (function or storage select); list another person's logs; update or delete another person's log (`not_found`, row unchanged); insert an object into another person's folder, an unreserved path, an expired (61 minutes) reservation or a malformed (non-UUID) folder; delete another person's file or any live file (0 rows); update any object (0 rows); read or write the three tables directly (42501); execute any spec 13 function or `private` helper as `anon`. `anon` reads no `food-logs` object.
-- [ ] The 05 allowlist and private list and the 03 ALLOWLIST include the new names (approved edits); every other older pgTAP file passes unedited.
+- [ ] Orphan files both ways (Decision 23): the owner sees, claims and deletes their own orphan file; the second user and the outsider neither see nor delete it, and their claims do not return it; others still see only ready public files.
+- [ ] End-to-end cleanup: 20 finished-then-deleted logs leave 20 orphan files, so begin raises `cleanup_required`; `claim_food_log_cleanup` returns exactly those paths; the owner removes them through the delete policy; begin is no longer blocked by the cleanup (and works again once the day has passed); queue rows older than 10 minutes whose file is gone are dropped.
+- [ ] The 05 allowlist and private list include the new names (approved edit); 03 and every other older pgTAP file pass unedited (Decision 21).
 - [ ] `npx supabase db reset`, `npx supabase test db`, `npm run typecheck` pass; `src/types/database.ts` regenerated, not hand-edited.
 
 **PR 2 (jest unless noted):**
@@ -268,7 +274,7 @@ Feature-specific rules:
 - [ ] Simulator run passed (Archan, Decision 15).
 
 ## Test plan
-- **Database tests (pgTAP)** in `supabase/tests/13-food-log-uploads.test.sql`: everything under PR 1 above; own fixtures with fixed ids (`...1301` to `...13xx`: owner, second user, outsider, user without a username, anon); `begin; ... rollback;`; `pg_temp.as_user` impersonation as in spec 11; storage fixtures and `pg_temp.put` as in spec 06; `set local storage.allow_delete_query = 'true'`; time moved by backdating fixture timestamps as the superuser (no sleeps); every non-ASCII test literal written as an escaped code point.
+- **Database tests (pgTAP)** in `supabase/tests/13-food-log-uploads.test.sql`: everything under PR 1 above, including the orphan-file tests in both directions and the end-to-end cleanup test (Decision 23); every special character built with `chr(<code point>)`; own fixtures with fixed ids (`...1301` to `...13xx`: owner, second user, outsider, user without a username, anon); `begin; ... rollback;`; `pg_temp.as_user` impersonation as in spec 11; storage fixtures and `pg_temp.put` as in spec 06; `set local storage.allow_delete_query = 'true'`; time moved by backdating fixture timestamps as the superuser (no sleeps); every non-ASCII test literal written as an escaped code point.
 - **Unit/component tests (jest)** in `src/features/food-log/__tests__/`: `text.test.ts`, `schema.test.ts`, `api.test.ts` (RPC names, args, every error code), `uploadFoodLog.test.ts`, the hooks (paging, invalidation), `FoodLogListScreen`, `FoodLogFormScreen` (create and edit), `FoodLogDetailScreen`, `FoodLogProfileRow`; plus the approved `ProfileScreen.test.tsx` edit.
 - **Deliberate breaks** (each turns a named test red, then is reverted):
   1. SQL: drop the author filter in `delete_food_log` — the outsider-delete test fails.
@@ -278,6 +284,9 @@ Feature-specific rules:
   5. SQL: change the digit run to 7 — the 9-digit test fails.
   6. SQL: drop U+202E from the hidden class — the bidi test fails.
   7. SQL: drop the zone check — the unknown-zone test fails.
+  8. SQL: remove the folder clause from the `food_logs_select` policy (injected just before the orphan section) — the owner orphan-delete test fails, and so does the end-to-end cleanup. Injected at the top instead (8a), the Decision 22 upload-with-RETURNING test fails.
+
+  SQL breaks run on scratch copies of the test file (the real file never holds a break), each applied through `lives_ok` inside the test transaction.
   8. App: upload the picked URI's bytes instead of `prepareImage`'s — the stripped-bytes test fails.
   9. App: skip list invalidation after delete — the stale-list test fails.
   10. App: format the date from `created_at` — the far-zone date test fails.
@@ -285,7 +294,7 @@ Feature-specific rules:
 - **Real device, before launch (§16):** HEIC from a real iPhone camera, "Most Compatible", Android makes; VoiceOver and TalkBack; real-phone upload over a slow network.
 
 ## Decisions
-Approved by Archan on 2026-11-14: all 18 recommended defaults as written, with changes to 2, 9, 10 and 11, plus Decisions 19 and 20.
+Approved by Archan on 2026-11-14: all 18 recommended defaults as written, with changes to 2, 9, 10 and 11, plus Decisions 19 and 20. Decisions 21 to 23 were added and approved during PR 1 (2026-11-14).
 
 1. **Who uploads; what a post is:** any signed-in user with a finished profile, customers and sellers alike, personal (not a business). A post is one photo, an optional description, a required cuisine and public/private. No place link and no dish-name field (§3).
 2. **Description:** optional, trimmed, 1 to 280 characters, newlines allowed. **Allowed:** U+200D and U+FE0F (emoji). **Refused** (`invalid_text`), written as escaped code points: ASCII controls except newline (`\x00-\x09\x0B-\x1F`), DEL and C1 (`\u007F-\u009F`), U+00AD, U+061C, U+180E, U+200B, U+200C, U+200E, U+200F, U+2028, U+2029, bidi overrides and embeddings U+202A to U+202E, U+2060 to U+2064, bidi isolates U+2066 to U+2069, U+FEFF, U+FFF9 to U+FFFB, and tags U+E0000 to U+E007F. Tests for an emoji sequence (accepted) and a bidi override (refused). Note: refusing U+200C (zero-width non-joiner) can affect some Persian and Indic spellings, and refusing tags removes the England, Scotland and Wales flag emoji; both follow the "other invisible formatting" rule and are listed in Known pitfalls.
@@ -306,7 +315,10 @@ Approved by Archan on 2026-11-14: all 18 recommended defaults as written, with c
 17. **No lifetime storage cap** in v1; the food-logs bucket joins the §16 storage-use item.
 18. **Permission text:** "LikeToOrder uses your photos to add pictures to your food log, menu and listing." in PR 2; Archan rebuilds once.
 19. **Skill correction (mismatches 1 and 12):** at gate C, `supabase-patterns` gets the column name `path`, loses the `avatars` bucket and the `avatar_path` / `is_admin` columns, and its `food_logs` template becomes the functions-only storage rule as built.
-20. **Older tests allowed to change:** `05-seller-onboarding.test.sql`, `03-navigation-shell.test.sql`, `ProfileScreen.test.tsx`, and `mediaIsolation.test.ts` only if forced. Anything else: stop and ask.
+20. **Older tests allowed to change:** `05-seller-onboarding.test.sql`, `ProfileScreen.test.tsx`, and `mediaIsolation.test.ts` only if forced. Anything else: stop and ask. (`03-navigation-shell.test.sql` was on this list until Decision 21.)
+21. **03 stays unedited (PR 1 planning):** the 03 ALLOWLIST lists tables guests (anon) may use on purpose. The three new tables grant anon nothing, so the 03 check already passes and covers them; adding them would only weaken it. Same as spec 06's `storage_cleanup_queue`.
+22. **SUPERSEDED by 23.** (PR 1 planning) The owner may read their own file at any status: `food_log_is_readable` passed the caller's own row whatever its status, so the Storage API's insert, if it uses RETURNING (which also applies the select policy), is not refused for a pending reservation.
+23. **The select policy also passes the caller's own folder (PR 1 gate B):** `food_logs_select` = bucket `food-logs` and (`(storage.foldername(name))[1] = (select auth.uid())::text` or `private.food_log_is_readable(name)`), and `food_log_is_readable` is the original rule (a ready row that is the caller's own or `is_public`). Reason: a storage delete with a WHERE clause, and an insert with RETURNING, also apply the select policy. Without the folder clause the owner could never see or delete their own orphan files (a rolled-back probe showed 0 rows seen, 0 deleted), so after 20 deleted photos every begin would fail with `cleanup_required` forever. The folder clause also covers Decision 22. Others still see only ready public files. Proved by the orphan tests both ways, the end-to-end cleanup test and break 8. The gate A migration was edited in place (it was not on `main`).
 
 ### Mismatches between the product spec and the code (found while writing this spec)
 1. `supabase-patterns` "Core tables" lists `profiles.avatar_path` and `is_admin`, and its Storage table lists an `avatars` bucket; none exist, and §15 Q4 puts avatar upload out of scope. Fixed at gate C (Decision 19).
@@ -322,6 +334,8 @@ Approved by Archan on 2026-11-14: all 18 recommended defaults as written, with c
 11. The 05 pgTAP test pins the exact `private` function list, so the three helpers need the approved edit.
 12. `supabase-patterns` gives a `food_logs` template with direct table policies and the column name `photo_path`, which conflicts with the functions-only practice since spec 06; its local-date note (IANA zone checked against `pg_timezone_names`) matches Decision 4 but nothing built it yet. Fixed at gate C (Decision 19).
 13. There is no shared Supabase fake or shared test `QueryClient`; some older tests set `gcTime: 0` for queries only. Spec 13's tests build their own as in the Rules.
+14. (Found in PR 1 planning) This spec first said to add the three tables to the 03 ALLOWLIST; that list is for tables guests may use on purpose, so it was left unedited (Decision 21).
+15. (Found in PR 1 gate B) The storage policies as first written let the owner delete orphan files by the delete policy, but Postgres also applies the select policy to that delete, and the select rule needed a row; the owner could not clean up. Fixed by Decision 23. The `supabase-patterns` skill now records that a delete policy alone is not enough.
 
 ## Open questions
 None. All 18 resolved on 2026-11-14; see Decisions.

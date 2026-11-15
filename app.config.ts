@@ -53,7 +53,8 @@ const config: ExpoConfig = {
     [
       'expo-image-picker',
       {
-        photosPermission: 'LikeToOrder uses your photos to add pictures to your menu and listing.',
+        photosPermission:
+          'LikeToOrder uses your photos to add pictures to your food log, menu and listing.',
         // Library only (spec 06): no camera or microphone permission strings.
         cameraPermission: false,
         microphonePermission: false,

@@ -90,6 +90,29 @@ describe('useMyFoodLogs', () => {
   });
 });
 
+describe('useMyFoodLogs refresh', () => {
+  it('starts again from the newest page and drops the later ones', async () => {
+    mockedList
+      .mockResolvedValueOnce({ items: [log(1)], next_cursor: 'c-1' })
+      .mockResolvedValueOnce({ items: [log(2)], next_cursor: null })
+      .mockResolvedValueOnce({ items: [log(0), log(1)], next_cursor: 'c-2' });
+    const { result } = await renderHook(() => useMyFoodLogs(), { wrapper });
+    await waitFor(() => expect(result.current.logs).toHaveLength(1));
+    await act(async () => {
+      await result.current.fetchNextPage();
+    });
+    await waitFor(() => expect(result.current.logs).toHaveLength(2));
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    await waitFor(() => expect(result.current.logs.map((l) => l.id)).toEqual(['log-0', 'log-1']));
+    expect(mockedList).toHaveBeenCalledTimes(3);
+    expect(mockedList).toHaveBeenLastCalledWith(null);
+    expect(result.current.hasNextPage).toBe(true);
+  });
+});
+
 describe('useFoodLog', () => {
   it('returns my own log', async () => {
     mockedGet.mockResolvedValue(log(1));

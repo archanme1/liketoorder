@@ -1,5 +1,5 @@
-import { useInfiniteQuery, type InfiniteData } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
 
 import { listMyFoodLogs, type FoodLogAppError } from '../api';
 import type { FoodLog, FoodLogPage } from '../schema';
@@ -41,5 +41,16 @@ export function useMyFoodLogs() {
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   const logs = useMemo(() => flattenFoodLogPages(query.data), [query.data]);
-  return { ...query, logs };
+
+  // Pull to refresh starts again from the newest 50: later pages are dropped, then page 1 reloads.
+  const queryClient = useQueryClient();
+  const { refetch } = query;
+  const refresh = useCallback(async () => {
+    queryClient.setQueryData<InfiniteData<FoodLogPage, string | null>>(foodLogListKey, (data) =>
+      data ? { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) } : data,
+    );
+    await refetch();
+  }, [queryClient, refetch]);
+
+  return { ...query, logs, refresh };
 }

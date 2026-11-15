@@ -272,7 +272,7 @@ Feature-specific rules:
 - [ ] Every touchable has a label and role; targets ≥ 44 pt; switch state as words.
 - [ ] `npm run lint`, `npm run typecheck`, `npm test` pass; spec 02 to 12 tests pass unedited except the approved list.
 - [ ] Byte and invisible-character checks pass, each proved on a scratch file first.
-- [ ] Simulator run passed (Archan, Decision 15).
+- [x] Simulator run passed (Archan, Decision 15): Profile row; add with the validation messages; detail; edit; delete; `exiftool` proof that the stored file has no metadata; paging with 55 seeded rows; not-found; the largest text size. VoiceOver and the real-device items stay before-launch (§16).
 
 ## Test plan
 - **Database tests (pgTAP)** in `supabase/tests/13-food-log-uploads.test.sql`: everything under PR 1 above, including the orphan-file tests in both directions and the end-to-end cleanup test (Decision 23); every special character built with `chr(<code point>)`; own fixtures with fixed ids (`...1301` to `...13xx`: owner, second user, outsider, user without a username, anon); `begin; ... rollback;`; `pg_temp.as_user` impersonation as in spec 11; storage fixtures and `pg_temp.put` as in spec 06; `set local storage.allow_delete_query = 'true'`; time moved by backdating fixture timestamps as the superuser (no sleeps); every non-ASCII test literal written as an escaped code point.

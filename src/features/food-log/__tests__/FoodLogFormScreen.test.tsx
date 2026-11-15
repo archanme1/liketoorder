@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { listCuisines } from '@/features/cuisines/api';
 import { signedUrls, uploadToBucket } from '@/features/media/api';
@@ -209,6 +209,32 @@ describe('FoodLogFormScreen, create', () => {
     expect(mockedBegin).toHaveBeenCalledTimes(1);
     expect(mockedPrepare).toHaveBeenCalledTimes(1);
     expect(mockedFinish).toHaveBeenCalledTimes(1);
+  });
+
+  it('the in-code guard turns away a second tap that lands before the first one renders', async () => {
+    // Both presses are started together, so both find Save still enabled (the disabled state
+    // hasn't rendered yet). Only the in-code guard can stop the second one.
+    let finishBegin: (value: { id: string; path: string }) => void = () => {};
+    mockedBegin.mockReturnValue(
+      new Promise((resolve) => {
+        finishBegin = resolve;
+      }),
+    );
+    await renderForm();
+    await choosePhotoAndCuisine();
+    // Pressability's onClick (the path a screen-reader activation takes) calls onPress and reads
+    // `disabled` from the last render. Two clicks in one act land before the disabled Save renders.
+    const click = saveButton().props.onClick as (event: unknown) => void;
+    const event = { nativeEvent: {}, currentTarget: 1, target: 1, stopPropagation: () => {} };
+    await act(async () => {
+      click(event);
+      click(event);
+    });
+    await waitFor(() => expect(mockedBegin).toHaveBeenCalled());
+    finishBegin({ id: LOG.id, path: LOG.path });
+    await waitFor(() => expect(mockRouter.back).toHaveBeenCalled());
+    expect(mockedBegin).toHaveBeenCalledTimes(1);
+    expect(mockedPrepare).toHaveBeenCalledTimes(1);
   });
 
   it.each([

@@ -148,4 +148,10 @@ describe('ProfileScreen', () => {
     await fireEvent.press(await screen.findByRole('button', { name: 'Sign out' }));
     expect(await screen.findByText(authErrorMessage('unknown'))).toBeTruthy();
   });
+
+  it('"Food log" opens the food log (spec 13)', async () => {
+    await renderScreen();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Food log' }));
+    expect(mockRouter.push).toHaveBeenCalledWith('/food-log');
+  });
 });

@@ -86,14 +86,14 @@ language sql stable security definer set search_path = '' as $$
                     and l.author_id = (select auth.uid()));
 $$;
 
--- The caller's own file at any status (so the owner's upload passes a select check on insert,
--- Decision 22), or a ready public one.
+-- A ready log that is the caller's own or public. The select policy adds the caller's own folder
+-- (Decisions 22, 23).
 create function private.food_log_is_readable(p_path text) returns boolean
 language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.food_logs l
                   where l.path = p_path
-                    and (l.author_id = (select auth.uid())
-                         or (l.status = 'ready' and l.is_public)));
+                    and l.status = 'ready'
+                    and (l.author_id = (select auth.uid()) or l.is_public));
 $$;
 
 -- Any row (pending or ready) still points at this path: the file must not be deleted.
@@ -397,9 +397,14 @@ values ('food-logs', 'food-logs', false, 2097152, array['image/jpeg']);
 create policy food_logs_insert_own on storage.objects for insert to authenticated
   with check (bucket_id = 'food-logs' and (select private.food_log_upload_allowed(name)));
 
--- The caller's own files, and ready public ones. No anon policy.
+-- Everything in the caller's own folder, and ready public files. No anon policy. The folder clause
+-- is needed twice over: Postgres applies select policies to an insert with RETURNING (the owner's
+-- upload of a pending reservation, Decision 22) and to a delete with a WHERE clause (the owner's
+-- cleanup of files whose row is gone, Decision 23); a delete policy alone is not enough.
 create policy food_logs_select on storage.objects for select to authenticated
-  using (bucket_id = 'food-logs' and (select private.food_log_is_readable(name)));
+  using (bucket_id = 'food-logs'
+         and ((storage.foldername(name))[1] = (select auth.uid())::text
+              or (select private.food_log_is_readable(name))));
 
 -- Only files in the caller's folder whose row is gone. Text-to-text folder comparison, so a
 -- malformed name never errors; it just doesn't match (fails closed).

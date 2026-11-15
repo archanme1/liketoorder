@@ -3,6 +3,7 @@ import { ImageManipulator } from 'expo-image-manipulator';
 import { getCalendars } from 'expo-localization';
 
 import { MediaError } from '@/features/media/errors';
+import * as jpegMetadata from '@/features/media/jpegMetadata';
 import { stripJpegMetadata } from '@/features/media/jpegMetadata';
 import { supabase } from '@/lib/supabase';
 
@@ -241,6 +242,16 @@ describe('uploadFoodLog: a bad photo uses no daily start', () => {
     encodedBytes = new Uint8Array([1, 2, 3, 4]);
     await expect(uploadFoodLog(INPUT)).rejects.toEqual(new MediaError('not_an_image'));
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('a photo whose metadata survives the strip never calls begin', async () => {
+    // The strip removes every metadata segment it knows, so the final check is made to find one.
+    jest.spyOn(jpegMetadata, 'assertNoHiddenMetadata').mockImplementation(() => {
+      throw new MediaError('metadata_present', 'APP1');
+    });
+    await expect(uploadFoodLog(INPUT)).rejects.toEqual(new MediaError('metadata_present', 'APP1'));
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockUpload).not.toHaveBeenCalled();
   });
 });
 

@@ -15,7 +15,7 @@ Any function or query that returns rows which grow with use (requests, a seller'
 After editing anything in `supabase/templates/`, run `npx supabase stop` then `npx supabase start`: `db reset` does not refresh Kong's template mount, and a stale mount makes GoTrue silently send its default link email instead of our code template.
 
 ## Core tables (logical model — created across specs)
-- `profiles` (id = auth.users.id, username unique, display_name, bio, avatar_path, city, is_seller, is_admin)
+- `profiles` (id = auth.users.id, username unique, display_name, bio, city, is_seller) — no avatar column (avatars are out of scope, v1 §15 Q4) and no admin flag (admins use the Supabase dashboard)
 - `cuisines` (code PK — permanent: ISO alpha-2 `IT` or kebab slug `street-food`; kind `country|neutral`; name (`en-x-icu`); generated `flag`; icon (neutral only); sort_order) — read-only to clients (spec 04)
 - `businesses` (id, owner_id → profiles unique, type `restaurant|homemade` fixed after creation, name, cuisine_code → cuisines, accepts_table_requests (restaurant only), map_lat/map_lng = public point (restaurant exact, homemade shifted), public_address (restaurant only), is_listed mirrors profiles.is_seller) — spec 05. Clients select only the public columns (not owner_id / is_listed) and update only name, cuisine_code, accepts_table_requests; everything else goes through functions.
 - `business_locations` (business_id PK, place_id, formatted_address, lat, lng, resolved_at) — exact location for every business; no client grants, read via `get_my_business()` (owner) and `get_my_pickup_address(request_id)` (spec 09: only the requesting customer, only at `accepted`/`completed`, homemade only).
@@ -28,7 +28,7 @@ After editing anything in `supabase/templates/`, run `npx supabase stop` then `n
 - `pickup_requests` (spec 09: id, business_id, customer_id, status `pending|accepted|declined|expired|cancelled|completed|no_show`, pickup_at, items jsonb snapshot `[{item_id,name,unit_price_minor,quantity}]` read from `menu_items` in SQL, order_text, note, currency_code, `unique (customer_id, idempotency_key)`, expires_at, responded_at; spec 10: `accepted_address text`, the cook's `formatted_address` copied in SQL by `respond_to_request` when a **homemade** request is accepted, null otherwise and never set before `accepted`; spec 10b: `decline_reason` (one of `sold_out|closed_then|too_busy|cannot_prepare|time_not_possible|other`, only on `declined` rows) and `response_note` (1 to 200 characters; the accept note, or the written text when the reason is `other`; never with a fixed reason), four named table checks, written only by `respond_to_request`). RLS on, **no grants and no policies**, for customers and for the business owner alike. Customers use `submit_pickup_request`, `list_my_requests`, `get_my_pickup_request`, `cancel_pickup_request`, `get_my_pickup_address` (returns `accepted_address`, falling back to the live address only for a row with `responded_at is null`); sellers use `respond_to_request`, `mark_request_outcome`, `list_business_requests`, `get_business_request`, `count_waiting_requests`. The cron job `pickup-requests-expire` runs `private.expire_pickup_requests()` every minute. Reads return `server_now` and a server-computed `display_status`. Spec 11 chose a **separate `table_requests` table** (see "Table requests (spec 11)" below); `list_my_pickup_requests` was dropped in spec 11 PR 2.
 - **One request object:** `private.pickup_request_json(request_id, now, seller_view)` builds it for every function. Every object carries `kind` (`'pickup'` or `'table'`, always present; spec 11), so the pickup customer view is 16 keys and the seller view 18. Customer view = 15 keys without it (`id, business_id, business_name, business_type, status, display_status, pickup_at, items, order_text, note, currency_code, expires_at, created_at`, plus spec 10b's `decline_reason` and `response_note`, always present, null when not set); seller view adds `customer_name` (display name, else username) and `responded_at` (17 keys). Neither ever holds `accepted_address`, `place_id`, coordinates, the customer's id or email. A key-set pgTAP test pins both.
 - **Seller inbox cursor:** `list_business_requests(p_status, p_before text)` pages 50 at a time by `(created_at desc, id desc)`. The cursor is the text `YYYY-MM-DD"T"HH24:MI:SS.US"Z"|<uuid>` (UTC, six microsecond digits) built in SQL and sent back untouched by the app (never parse it into a JS `Date`); a strict regex rejects anything else with `invalid_input`; it reads 51 rows so `next_cursor` is null on the last page. `p_status`: see "Request list filters (spec 11c)" below (the spec 10 raw display-status values are refused since 11c).
-- `food_logs` (id, author_id, photo_path, description, cuisine_code, is_public, created_at default now(), local_date date not null)
+- `food_logs` (spec 13: id, author_id → profiles, cuisine_code → cuisines, description null or 1 to 280 trimmed, is_public default true, local_date (server-set), path unique `<author_id>/<id>.jpg`, status `pending|ready`, created_at, updated_at) plus `food_log_upload_starts` (author_id, started_at; the rolling 24-hour count, so a delete gives no start back) and `food_log_cleanup_queue` (path PK, author_id with no FK, queued_at). All three: RLS on, **no grants and no policies**; see "Food log uploads (spec 13)" below.
 - `promotions` (business_id, starts_at, ends_at, status `draft|active|ended`, activated_by)
 - `reports` (business_id, reporter_id, reason, note, status `open|confirmed|rejected`, reviewed_by)
 
@@ -60,17 +60,8 @@ Every new callable function: revoke execute from anon/public, grant only where t
 **Read-only lookup tables** (e.g. `cuisines`): `revoke all … from anon, authenticated`, then `grant select … to anon, authenticated`; one `for select to anon, authenticated using (true)` policy; no write grants or policies (only migrations change it; seed rows in the migration, not `seed.sql`). `using (true)` is only for tables with no user-owned or private data. Add the table to the ALLOWLIST block in `supabase/tests/03-navigation-shell.test.sql` only together with its own pgTAP checks for **both** anon and authenticated: `table_privs_are('public', '<table>', '<role>', array['SELECT'])` and `not has_any_column_privilege('<role>', 'public.<table>', 'INSERT, UPDATE, REFERENCES')` — the allowlist removes the table from the generic anon check, so these are what still catch a stray write grant. If keys are permanent, add a `before update or delete … for each row` guard trigger that blocks key changes and deletes, plus a `before truncate … for each statement` trigger on the same function (row triggers don't fire on TRUNCATE), and revoke execute on the function from `public, anon, authenticated`. Reference keys from other tables as `<x>_code text not null references public.<table>(code) on update restrict on delete restrict`.
 
 ## RLS templates
+Since spec 06 the default for user-owned data is **functions only**: RLS on, `revoke all`, no grants and no policies, and every read and write through `security definer` functions that take the owner from `auth.uid()` (see "Food log uploads (spec 13)"). Direct policies are for the few tables clients read or write themselves (catalogs, `businesses` public columns). Shape of a direct owner policy, when one is right:
 ```sql
-alter table public.food_logs enable row level security;
-
--- read: public rows, or my own
-create policy "food_logs_select" on public.food_logs for select
-  using (is_public or author_id = (select auth.uid()));
-
--- insert: only as myself
-create policy "food_logs_insert" on public.food_logs for insert
-  with check (author_id = (select auth.uid()));
-
 -- owner of a business
 create policy "menu_items_owner_write" on public.menu_items for all
   using (exists (select 1 from public.businesses b
@@ -96,7 +87,7 @@ Expiry: the `pg_cron` job sets `expired` where `status='pending' and expires_at 
 
 ## Server-owned values
 - `created_at timestamptz not null default now()`; clients never send it (exclude from insert grants or overwrite in a `before insert` trigger).
-- `food_logs.local_date`: computed in a `before insert` trigger from `now()` and the client-supplied IANA timezone validated against `pg_timezone_names` — so no backdating.
+- `food_logs.local_date` (spec 13): computed inside `begin_food_log_upload` as `(now() at time zone p_time_zone)::date`, after the client-sent IANA zone name is checked against `pg_timezone_names` (`invalid_time_zone`); a table check keeps it within the UTC date of `created_at` ±1. The client sends only the zone name, never a date or a time, so an upload cannot be backdated beyond the zone choice: because the zone itself is the client's choice, the date can move by **at most about one day** (spec 13 Decision 24, a known limit in v1 §16; a zone stored on the profile is planned for spec 14). The zone is checked after the rate limits, since `pg_timezone_names` reads the whole time-zone database (Decision 28).
 - Idempotency: `idempotency_key uuid`, unique **per customer** (`unique (customer_id, idempotency_key)`), generated client-side once per form session. The submit function looks the key up first and returns that row unchanged, before any other check; it also takes a per-customer `pg_advisory_xact_lock` so concurrent calls serialise, and still inserts with `on conflict do nothing` and re-selects.
 - Free text from customers (`order_text`, `note`) refuses hidden characters in both the function and a table check: ASCII controls except newline, DEL, C1 controls, zero-width (U+200B-200D, U+FEFF) and bidi overrides/isolates (U+202A-202E, U+2066-2069). Mirror the same set in the app's strip.
 - Per-customer limits that count rows (spec 11b: 3 pending, 1 pending per business, 10 submits per customer per business per kind in a rolling 24 hours, any status) read the customer's own table rows under that lock. A pending row past `expires_at` does not count. This needs no counter table or cleanup job.
@@ -109,10 +100,11 @@ Exact address: the owner reads it through `get_my_business()`. `get_my_pickup_ad
 ## Storage
 | Bucket | Public? | Path | Notes |
 |---|---|---|---|
-| `food-logs` | private | `<uid>/<uuid>.jpg` | served with signed URLs; public uploads can use longer-lived signed URLs |
+| `food-logs` | **private** | `<author_id>/<log_id>.jpg` | spec 13: created in the migration (2 MB, `image/jpeg` only); **owner-folder only**: only the owner can read or list their files (signed URLs, 1 h). Others' public photos are served later through an Edge Function, never by a storage select rule (a select rule for others also lets them list the bucket root, which shows every user id) |
 | `business-media` | **private** | `<business_id>/<photo_id>.jpg` | spec 06: created in the migration (2 MB, jpeg/png/webp); signed URLs (1 h), so photos vanish when seller mode is off. Never a user id in the path (would link a listing to an account) |
-| `avatars` | public | `<uid>/avatar.jpg` | |
-User-folder policy pattern: `(storage.foldername(name))[1] = (select auth.uid())::text`. Photos go through `src/features/media` `prepareImage` (max 1600 px long edge, JPEG 0.8 → 0.6 retry, EXIF/GPS check on the output bytes) before upload. Buckets are created in migrations (`insert into storage.buckets …`), not `config.toml`, so local and remote match.
+User-folder policy pattern: `(storage.foldername(name))[1] = (select auth.uid())::text` (text to text, so a malformed name fails closed without a cast guard).
+
+**A delete policy alone is not enough (spec 13 Decision 23):** Postgres applies the **select** policies to a `delete` with a WHERE clause (which is how the Storage API removes files) and to an `insert … returning`. So the owner must be able to select every file they may delete or upload: give the select policy an owner clause (the owner's folder, or `owns_business` on it). For a person's own files that clause is the whole policy (spec 13); a "visible to others" clause on a user-id folder lets anyone list the folders, so serve others' files through an Edge Function instead. A select rule that needs a live row (`ready` and public) silently blocks the owner from deleting orphan files: the delete returns 0 rows, the cleanup queue never empties, and `cleanup_required` blocks every later upload. Test it in pgTAP with a delete as the owner of a file whose row is gone, and with an insert using `returning`. Photos go through `src/features/media` `prepareImage` (max 1600 px long edge, JPEG 0.8 → 0.6 retry, EXIF/GPS check on the output bytes) before upload. Buckets are created in migrations (`insert into storage.buckets …`), not `config.toml`, so local and remote match.
 
 **Reserve → upload → finish (business-media):** the client never picks a path.
 1. `begin_photo_upload(kind, item_id)` checks the limit under the business lock, inserts a `pending` row and returns `{photo_id, path}`. Cover/item: a new reservation replaces the pending one for that slot (retry). Pending rows expire after 1 hour.
@@ -121,7 +113,14 @@ User-folder policy pattern: `(storage.foldername(name))[1] = (select auth.uid())
 
 **Cleanup outbox ("row first, file later"):** an `AFTER DELETE` trigger on `business_photos` (also fires on FK cascades) writes the path to `storage_cleanup_queue` in the same transaction. The app calls `claim_photo_cleanup()`, removes the returned paths via the Storage API, and calls it again; the server drops queue rows older than 10 minutes whose object is gone (a younger row may have an upload in flight). `begin_photo_upload` raises `cleanup_required` while 20 or more queued files are still in storage, so a client that never cleans up can't grow storage without limit; the app runs the cleanup and retries once. The delete policy allows only files whose row is gone (`not private.photo_is_live(name)`). No server sweeper in v1.
 
-**`private` schema for cross-table policies:** a policy can't read columns clients have no privilege on (e.g. `businesses.owner_id`), so it calls a `security definer stable` helper with `set search_path = ''` in the `private` schema (not in `[api] schemas`, so PostgREST can't call it): `private.business_is_public`, `owns_business`, `photo_upload_allowed`, `photo_is_public`, `photo_is_live`. Revoke execute from `public`, grant to `anon, authenticated`. Guard casts in policies: `case when (storage.foldername(name))[1] ~ '<uuid regex>' then … ::uuid … else false end`, so a malformed name fails closed instead of erroring.
+**Food log uploads (spec 13), the same pattern for a person's own files:**
+- `begin_food_log_upload(cuisine_code, description, is_public, time_zone)` validates first (a raw description over 1000 characters → `invalid_input` before anything else; profile, cuisine, visibility; description: trim, hidden characters → `invalid_text`, over 280 → `invalid_input`, contact info → `contact_info`), then takes `pg_advisory_xact_lock(hashtextextended('food_log:' || uid, 0))`, expires the caller's pending rows 1 hour old (the trigger queues their paths) and starts 24 hours old, then checks `cleanup_required` (20 queued files still in storage), `too_many_pending` (3) and `daily_limit` (20 starts in 24 hours, kept in `food_log_upload_starts` so deleting never gives one back), then the zone (`invalid_time_zone`, after the limits), and returns `{id, path}`.
+- Contact info (spec 13 Decision 26): an email, with spaces allowed around `@` or a fullwidth `@` (U+FF20) but none inside the domain; or 10+ digits once whitespace (including Unicode spaces) and `.` `(` `)` `[` `]` `-` `/` `_` `,` `+` are removed. A deterrent, not a control; the app mirrors it.
+- `finish_food_log_upload(id)` needs a fresh pending row and its object (`image/jpeg`, 1 byte to 2 MB). `update_food_log` changes only cuisine, description and visibility of a ready row; `delete_food_log` removes a pending or ready row (the trigger queues the path); `get_food_log` returns a ready row that is the caller's or public, with `path` null unless it is the caller's (the path holds the author's id); `list_my_food_logs(p_before)` pages the caller's ready rows 50 at a time on the `(created_at, id)` text cursor; `claim_food_log_cleanup()` works like `claim_photo_cleanup` per author. Every missing, someone else's or someone else's private id gives the same `not_found`. The log object has exactly 8 keys (`id, cuisine_code, description, is_public, local_date, created_at, path, is_mine`), never `author_id` or `status`, built inline in four functions (four edits and four key-set tests for any change).
+- Storage policies (authenticated only, none for anon): insert only at a fresh pending path of the caller (`private.food_log_upload_allowed`); select **the caller's own folder only**; delete only in the caller's folder and only when no row points at the file (`private.food_log_is_live`); no update policy. The two helpers are granted to `authenticated` only. pgTAP checks that an outsider's root, prefix and delimiter listings (`storage.search`, `storage.list_objects_with_delimiter`) return nothing.
+- The hidden-character class (spec 13 Decision 2) allows U+200D and U+FE0F (emoji) and is written with escapes only, once in the table check and once in each writing function (a shared helper would be another `private` function).
+
+**`private` schema for cross-table policies:** a policy can't read columns clients have no privilege on (e.g. `businesses.owner_id`), so it calls a `security definer stable` helper with `set search_path = ''` in the `private` schema (not in `[api] schemas`, so PostgREST can't call it): `private.business_is_public`, `owns_business`, `photo_upload_allowed`, `photo_is_public`, `photo_is_live` (spec 06), and `food_log_upload_allowed`, `food_log_is_live` (spec 13). Revoke execute from `public`, then grant only to the roles whose policies call the helper: `anon, authenticated` for spec 06's (guests read public business photos), **`authenticated` only** for helpers of user-only data such as spec 13's. A cast in a policy needs a guard (`case when (storage.foldername(name))[1] ~ '<uuid regex>' then … ::uuid … else false end`) so a malformed name fails closed instead of erroring; a text-to-text comparison (`(storage.foldername(name))[1] = (select auth.uid())::text`) needs none. The 05 pgTAP test pins the exact list of `private` functions.
 
 **pgTAP on storage:** insert into `storage.objects (bucket_id, name, metadata)` as the impersonated role to simulate an upload (RLS applies). Supabase blocks direct SQL deletes on `storage.objects` with a statement trigger (42501); `set local storage.allow_delete_query = 'true'` first so delete tests exercise the policy — a refused delete then removes 0 rows rather than erroring. CI's database-only `supabase db start` + `db reset` includes the full storage schema (checked in spec 06), so no Storage container is needed for tests.
 
@@ -158,42 +157,44 @@ Secrets via `npx supabase secrets set` — never in `EXPO_PUBLIC_*`.
 - **Daily cap across kinds:** both submit functions take a shared `request_daily:<uid>` advisory lock right after their kind lock, so a cap counted over two tables holds under concurrent submits of different kinds.
 
 ## App api layer
+Every Supabase call lives in the feature's `api.ts` and goes through an RPC (tables with no grants can't be read with `.from()`); errors are mapped to the feature's error codes.
 ```ts
 // src/features/food-log/api.ts
 import { supabase } from '@/lib/supabase';
-export async function listFoodLogsByDay(userId: string, day: string) {
-  const { data, error } = await supabase.from('food_logs')
-    .select('id, description, photo_path, cuisine:cuisines(code,name,flag,icon), created_at')
-    .eq('author_id', userId).eq('local_date', day).order('created_at');
-  if (error) throw error;
-  return data;
+export async function listMyFoodLogs(before?: string) {
+  const { data, error } = await supabase.rpc('list_my_food_logs', before ? { p_before: before } : {});
+  if (error) throw mapFoodLogError(error);
+  return FoodLogPage.parse(data);        // zod: { items, next_cursor }; the cursor is sent back untouched
 }
 ```
-Hooks wrap these with react-query: keys like `['food-logs', userId, day]`; invalidate on mutation success.
+Hooks wrap these with react-query: keys like `['food-log', 'mine']` and `['food-log', id]`; invalidate the list and the detail on every mutation success. Storage calls stay in `src/features/media/api.ts`.
 
 ## Activity grid query
-Aggregate in SQL, not the app:
+Aggregate in SQL, not the app, inside a `security definer` RPC (the table has no client grants), for example `activity_grid(p_from date)` for the caller, ready rows only:
 ```sql
 select local_date, count(*) as n,
        case when count(distinct cuisine_code) = 1 then min(cuisine_code) end as single_cuisine
-from public.food_logs
-where author_id = $1 and local_date >= $2
-group by local_date;
+  from public.food_logs
+ where author_id = (select auth.uid()) and status = 'ready' and local_date >= p_from
+ group by local_date;
 ```
-Expose via an RPC `activity_grid(p_user uuid, p_from date)` that applies the public/private rule (visitors count public only).
+A grid for another person (spec 14 decides) must count `is_public` rows only.
 
 ## pgTAP skeleton
 ```sql
 begin;
-select plan(3);
+select plan(4);
 select ok((select relrowsecurity from pg_class where oid = 'public.food_logs'::regclass), 'RLS on');
--- impersonate outsider
+-- impersonate an outsider
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated"}';
-select is((select count(*) from public.food_logs where not is_public)::int, 0, 'outsider sees no private logs');
-select throws_ok($$ select public.respond_to_request('...', 'accepted') $$, 'forbidden');
+select throws_ok($$ select count(*) from public.food_logs $$, '42501', null, 'no direct table access');
+select throws_ok($$ select public.get_food_log('<a private log id>') $$, 'P0001', 'not_found', 'another person''s private log is not_found');
+select is((select count(*)::int from storage.objects where bucket_id = 'food-logs' and name like '<owner id>/%'), 0,
+  'the outsider sees none of the owner''s private files');
 select * from finish();
 rollback;
 ```
+Build special characters in test literals with `chr(<code point>)` (or `E'\u…'` written by a script), and run the no-non-ASCII byte check before running the file.
 
 Plain `psql` runs of a test file (for example the deliberate-break proofs): pgTAP is not installed in the local database between runs, so the runner creates the extension **inside the rolled-back transaction** (`begin; create extension if not exists pgtap with schema extensions; set search_path = public, extensions;`, then the test file). The file's own `rollback` removes the extension and any mutation with it. A break proof applies its mutation through `lives_ok`, after `plan` (plan + 1), with a `do` block that takes `pg_get_functiondef`, `replace`s the text and raises if nothing changed.

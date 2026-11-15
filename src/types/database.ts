@@ -129,6 +129,66 @@ isOneToOne: true
                   Relationships: [
                     
                   ]
+                },"food_log_cleanup_queue": {
+                  Row: {
+                    "author_id": string,"path": string,"queued_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"path": string,"queued_at"?: string
+                  }
+                  Update: {
+                    "author_id"?: string,"path"?: string,"queued_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"food_log_upload_starts": {
+                  Row: {
+                    "author_id": string,"started_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"started_at"?: string
+                  }
+                  Update: {
+                    "author_id"?: string,"started_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "food_log_upload_starts_author_id_fkey"
+      columns: ["author_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"food_logs": {
+                  Row: {
+                    "author_id": string,"created_at": string,"cuisine_code": string,"description": string | null,"id": string,"is_public": boolean,"local_date": string,"path": string,"status": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id": string,"created_at"?: string,"cuisine_code": string,"description"?: string | null,"id"?: string,"is_public"?: boolean,"local_date": string,"path": string,"status"?: string,"updated_at"?: string
+                  }
+                  Update: {
+                    "author_id"?: string,"created_at"?: string,"cuisine_code"?: string,"description"?: string | null,"id"?: string,"is_public"?: boolean,"local_date"?: string,"path"?: string,"status"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "food_logs_author_id_fkey"
+      columns: ["author_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "food_logs_cuisine_code_fkey"
+      columns: ["cuisine_code"]
+isOneToOne: false
+      referencedRelation: "cuisines"
+      referencedColumns: ["code"]
+    }
+                  ]
                 },"map_rate_limits": {
                   Row: {
                     "caller_key": string,"calls": number,"kind": string,"window_start": string
@@ -326,6 +386,9 @@ isOneToOne: false
             "apply_places_refresh":
 { Args: { "p_business_id": string,"p_lat": number,"p_lng": number,"p_outcome": string }; Returns: undefined
                            },
+"begin_food_log_upload":
+{ Args: { "p_cuisine_code": string,"p_description": string,"p_is_public": boolean,"p_time_zone": string }; Returns: Json
+                           },
 "begin_photo_upload":
 { Args: { "p_kind": string,"p_menu_item_id"?: string }; Returns: Json
                            },
@@ -337,6 +400,9 @@ isOneToOne: false
                            },
 "cancel_table_request":
 { Args: { "p_request_id": string }; Returns: Json
+                           },
+"claim_food_log_cleanup":
+{ Args: Record<PropertyKey, never>; Returns: string[]
                            },
 "claim_photo_cleanup":
 { Args: Record<PropertyKey, never>; Returns: string[]
@@ -370,14 +436,23 @@ isOneToOne: false
 "delete_business_photo":
 { Args: { "p_photo_id": string }; Returns: undefined
                            },
+"delete_food_log":
+{ Args: { "p_id": string }; Returns: undefined
+                           },
 "delete_menu_item":
 { Args: { "p_item_id": string }; Returns: undefined
+                           },
+"finish_food_log_upload":
+{ Args: { "p_id": string }; Returns: Json
                            },
 "finish_photo_upload":
 { Args: { "p_photo_id": string }; Returns: Json
                            },
 "get_business_request":
 { Args: { "p_request_id": string }; Returns: Json
+                           },
+"get_food_log":
+{ Args: { "p_id": string }; Returns: Json
                            },
 "get_homemade_details":
 { Args: { "p_business_id": string }; Returns: Json
@@ -402,6 +477,9 @@ isOneToOne: false
                            },
 "list_business_requests":
 { Args: { "p_before"?: string,"p_status"?: string }; Returns: Json
+                           },
+"list_my_food_logs":
+{ Args: { "p_before"?: string }; Returns: Json
                            },
 "list_my_requests":
 { Args: { "p_before"?: string,"p_status"?: string }; Returns: Json
@@ -456,6 +534,9 @@ isOneToOne: false
                            },
 "unregister_push_token":
 { Args: { "p_token": string }; Returns: undefined
+                           },
+"update_food_log":
+{ Args: { "p_cuisine_code": string,"p_description": string,"p_id": string,"p_is_public": boolean }; Returns: Json
                            },
 "update_menu_item":
 { Args: { "p_description": string,"p_is_available": boolean,"p_item_id": string,"p_name": string,"p_price_minor": number }; Returns: undefined

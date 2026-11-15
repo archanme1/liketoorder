@@ -1,7 +1,8 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { deleteFoodLog, updateFoodLog, type FoodLogFields } from '../api';
 import type { FoodLog } from '../schema';
+import { FOOD_LOG_BUCKET } from '../shared';
 import { runFoodLogCleanup, uploadFoodLog, type UploadFoodLogInput } from '../uploadFoodLog';
 
 import { foodLogKey, foodLogListKey } from './keys';
@@ -44,5 +45,18 @@ export function useDeleteFoodLog(id: string) {
       // refetch would flash "This photo isn't available." before it goes.
       void queryClient.invalidateQueries({ queryKey: foodLogKey(id), refetchType: 'none' });
     },
+  });
+}
+
+/**
+ * Drops a deleted log's cached detail and every signed URL batch holding its path, so opening its
+ * id again shows not-found at once, never its old data. Called once the detail screen has closed:
+ * removing the detail while that screen is still mounted would refetch it there.
+ */
+export function forgetFoodLog(queryClient: QueryClient, id: string, path: string) {
+  queryClient.removeQueries({ queryKey: foodLogKey(id), exact: true });
+  queryClient.removeQueries({
+    queryKey: ['media', 'signed', FOOD_LOG_BUCKET],
+    predicate: (query) => query.queryKey.includes(path),
   });
 }

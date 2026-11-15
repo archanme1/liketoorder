@@ -13,8 +13,7 @@ import {
   type FoodLogFields,
 } from './api';
 import type { FoodLog } from './schema';
-
-export const FOOD_LOG_BUCKET = 'food-logs';
+import { FOOD_LOG_BUCKET } from './shared';
 
 /** The phone's IANA zone. The server turns it into the local date; no date or time is sent. */
 export function phoneTimeZone(): string {
@@ -27,6 +26,9 @@ let cleanupInFlight: Promise<void> | null = null;
  * Drains the food log cleanup outbox: claim, remove, claim. The server decides which files are
  * gone; a failed removal stays queued for the next run. Never throws. Calls made while a run is in
  * progress share it.
+ *
+ * A path queued after a shared run's first claim (a delete during a run) is not in that run; it
+ * stays queued for the next one (the next list open, delete or failed upload).
  */
 export function runFoodLogCleanup(): Promise<void> {
   cleanupInFlight ??= (async () => {

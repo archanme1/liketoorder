@@ -62,7 +62,10 @@ export function mapFoodLogError(error: unknown): FoodLogAppError {
     details,
   } = error as Partial<Omit<PostgrestError, 'details'> & { details: string | null }>;
 
-  if (code === 'P0001' && message in KNOWN_CODES) return new FoodLogAppError(KNOWN_CODES[message]);
+  // Own keys only: "constructor" or "toString" must not count as codes.
+  if (code === 'P0001' && Object.hasOwn(KNOWN_CODES, message)) {
+    return new FoodLogAppError(KNOWN_CODES[message]);
+  }
   if (code === '22P02') return new FoodLogAppError('not_found');
   if (code === '23514' || code === '23503') return new FoodLogAppError('invalid_input');
   if (!code && /network|fetch/i.test(`${message} ${details ?? ''}`)) {

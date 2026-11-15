@@ -3,6 +3,8 @@ import { MediaError, mediaErrorMessage } from '@/features/media/errors';
 import { FoodLogAppError, type FoodLogErrorCode } from './api';
 import { DESCRIPTION_CONTACT, DESCRIPTION_HIDDEN } from './schema';
 
+export const FOOD_LOG_NOT_FOUND = "This photo isn't available.";
+
 export function foodLogErrorMessage(code: FoodLogErrorCode): string {
   switch (code) {
     case 'profile_incomplete':
@@ -22,7 +24,7 @@ export function foodLogErrorMessage(code: FoodLogErrorCode): string {
     case 'cleanup_required':
       return "We're tidying up old photos. Try again in a moment.";
     case 'not_found':
-      return "This photo isn't available.";
+      return FOOD_LOG_NOT_FOUND;
     case 'upload_missing':
       return "The photo didn't finish uploading. Please try again.";
     case 'network':
@@ -40,7 +42,6 @@ export function foodLogFlowMessage(error: unknown): string {
 }
 
 export const FOOD_LOG_EMPTY = 'No food photos yet. Add your first one.';
-export const FOOD_LOG_NOT_FOUND = "This photo isn't available.";
 export const DESCRIPTION_HINT = "Don't add phone numbers, emails or addresses.";
 export const PUBLIC_ON = 'Anyone signed in can see this';
 export const PUBLIC_OFF = 'Only you can see this';

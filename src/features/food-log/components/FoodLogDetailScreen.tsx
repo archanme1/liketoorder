@@ -1,4 +1,6 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Alert, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { Banner, Button, ErrorState, Skeleton, Text } from '@/components/ui';
@@ -12,22 +14,23 @@ import { useTheme } from '@/theme/useTheme';
 
 import { formatLocalDate } from '../date';
 import { useFoodLog } from '../hooks/useFoodLog';
-import { useDeleteFoodLog } from '../hooks/useFoodLogMutations';
+import { useFoodLogBack } from '../hooks/useFoodLogBack';
+import { forgetFoodLog, useDeleteFoodLog } from '../hooks/useFoodLogMutations';
 import { DELETE_MESSAGE, DELETE_TITLE, foodLogErrorMessage, foodLogFlowMessage } from '../messages';
 import type { FoodLog } from '../schema';
-import { FOOD_LOG_BUCKET } from '../uploadFoodLog';
+import { cuisineName, FOOD_LOG_BUCKET } from '../shared';
 
 import { FoodLogFrame } from './FoodLogFrame';
-import { cuisineName } from './FoodLogRow';
 import { FoodLogNotFound } from './FoodLogNotFound';
+import { FoodLogRefreshError } from './FoodLogRefreshError';
 
 // One of my uploads: the full image (tap for the viewer), the full description, the cuisine, the
 // date and the visibility as a word, with Edit and Delete in the fixed top part.
 export function FoodLogDetailScreen({ id }: { id: string }) {
-  const router = useRouter();
   const { space, size } = useTheme();
   const query = useFoodLog(id);
-  const back = () => (router.canGoBack() ? router.back() : router.replace('/food-log'));
+  const back = useFoodLogBack();
+  const log = query.data;
 
   if (query.isPending) {
     return (
@@ -44,7 +47,8 @@ export function FoodLogDetailScreen({ id }: { id: string }) {
       </FoodLogFrame>
     );
   }
-  if (query.isError) {
+  // A failed background refresh keeps the photo on screen; not-found always replaces it.
+  if (query.isError && (log === undefined || query.error.code === 'not_found')) {
     return (
       <FoodLogFrame>
         {query.error.code === 'not_found' ? (
@@ -59,23 +63,51 @@ export function FoodLogDetailScreen({ id }: { id: string }) {
       </FoodLogFrame>
     );
   }
-  return <FoodLogDetails log={query.data} onClose={back} />;
+  if (log === undefined) return null;
+  return (
+    <FoodLogDetails
+      log={log}
+      onClose={back}
+      refreshError={
+        query.isError ? (
+          <FoodLogRefreshError
+            message={foodLogErrorMessage(query.error.code)}
+            onRetry={() => void query.refetch()}
+            retrying={query.isFetching}
+            retryLabel="Try loading this photo again"
+          />
+        ) : null
+      }
+    />
+  );
 }
 
 function FoodLogDetails({
   log,
   onClose,
+  refreshError,
 }: {
   log: FoodLog & { path: string };
   onClose: () => void;
+  refreshError: ReactNode;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { space, weight } = useTheme();
   const { width } = useWindowDimensions();
   const cuisine = useCuisine(log.cuisine_code);
   const remove = useDeleteFoodLog(log.id);
   const viewer = usePhotoViewer();
   const { urlFor, renew } = useSignedUrls(FOOD_LOG_BUCKET, [log.path]);
+
+  // Once a deleted log's screen has gone, its cached detail and signed URL go too.
+  const deleted = useRef(false);
+  useEffect(
+    () => () => {
+      if (deleted.current) forgetFoodLog(queryClient, log.id, log.path);
+    },
+    [queryClient, log.id, log.path],
+  );
 
   const date = formatLocalDate(log.local_date);
   const photoName = `Food photo, ${cuisineName(cuisine)}, ${date}`;
@@ -89,7 +121,13 @@ function FoodLogDetails({
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => remove.mutate(undefined, { onSuccess: onClose }),
+        onPress: () =>
+          remove.mutate(undefined, {
+            onSuccess: () => {
+              deleted.current = true;
+              onClose();
+            },
+          }),
       },
     ]);
   }
@@ -121,6 +159,7 @@ function FoodLogDetails({
         </View>
       }
     >
+      {refreshError}
       {remove.isError ? <Banner message={foodLogFlowMessage(remove.error)} /> : null}
       <PhotoTile
         path={log.path}

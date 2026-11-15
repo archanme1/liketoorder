@@ -1,7 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
@@ -16,6 +15,7 @@ import { useTheme } from '@/theme/useTheme';
 
 import { FoodLogAppError } from '../api';
 import { useFoodLog } from '../hooks/useFoodLog';
+import { useFoodLogBack } from '../hooks/useFoodLogBack';
 import { useCreateFoodLog, useUpdateFoodLog } from '../hooks/useFoodLogMutations';
 import {
   CUISINE_REQUIRED_REASON,
@@ -27,25 +27,32 @@ import {
   PUBLIC_ON,
 } from '../messages';
 import { descriptionMessage, foodLogFormSchema, type FoodLog, type FoodLogForm } from '../schema';
-import { charCount, checkDescription, MAX_DESCRIPTION_CHARS, normalizeDescription } from '../text';
-import { FOOD_LOG_BUCKET } from '../uploadFoodLog';
+import { FOOD_LOG_BUCKET } from '../shared';
+import {
+  charCount,
+  checkDescription,
+  MAX_DESCRIPTION_CHARS,
+  normalizeDescription,
+  trimDescription,
+} from '../text';
 
 import { FoodLogFrame } from './FoodLogFrame';
 import { FoodLogNotFound } from './FoodLogNotFound';
+import { FoodLogRefreshError } from './FoodLogRefreshError';
 
 export type FoodLogFormScreenProps = { mode: 'create' } | { mode: 'edit'; id: string };
 
 /** Add photo (create) or Edit photo (edit: the photo itself can't change, Decision 8). */
 export function FoodLogFormScreen(props: FoodLogFormScreenProps) {
   if (props.mode === 'edit') return <EditFoodLog id={props.id} />;
-  return <FoodLogFormBody log={null} />;
+  return <FoodLogFormBody log={null} refreshError={null} />;
 }
 
 function EditFoodLog({ id }: { id: string }) {
-  const router = useRouter();
   const { space, size } = useTheme();
   const query = useFoodLog(id);
-  const back = () => (router.canGoBack() ? router.back() : router.replace('/food-log'));
+  const back = useFoodLogBack();
+  const log = query.data;
 
   if (query.isPending) {
     return (
@@ -63,7 +70,8 @@ function EditFoodLog({ id }: { id: string }) {
       </FoodLogFrame>
     );
   }
-  if (query.isError) {
+  // A failed background refresh keeps the form on screen; not-found always replaces it.
+  if (query.isError && (log === undefined || query.error.code === 'not_found')) {
     return (
       <FoodLogFrame>
         {query.error.code === 'not_found' ? (
@@ -78,11 +86,32 @@ function EditFoodLog({ id }: { id: string }) {
       </FoodLogFrame>
     );
   }
-  return <FoodLogFormBody log={query.data} />;
+  if (log === undefined) return null;
+  return (
+    <FoodLogFormBody
+      log={log}
+      refreshError={
+        query.isError ? (
+          <FoodLogRefreshError
+            message={foodLogErrorMessage(query.error.code)}
+            onRetry={() => void query.refetch()}
+            retrying={query.isFetching}
+            retryLabel="Try loading this photo again"
+          />
+        ) : null
+      }
+    />
+  );
 }
 
-function FoodLogFormBody({ log }: { log: (FoodLog & { path: string }) | null }) {
-  const router = useRouter();
+function FoodLogFormBody({
+  log,
+  refreshError,
+}: {
+  log: (FoodLog & { path: string }) | null;
+  refreshError: ReactNode;
+}) {
+  const close = useFoodLogBack();
   const { colors, space, radius } = useTheme();
   const { width } = useWindowDimensions();
   const photoSize = Math.max(width - space.lg * 2, 0);
@@ -112,15 +141,15 @@ function FoodLogFormBody({ log }: { log: (FoodLog & { path: string }) | null }) 
         : undefined;
   const pending = create.isPending || update.isPending;
 
-  function close() {
-    if (log) {
-      router.back();
-    } else if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/food-log');
-    }
-  }
+  // A save keeps running after the person leaves the form; when it ends, only a form still on
+  // screen goes back (a late back would leave the list too).
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   async function submit(values: FoodLogForm) {
     const check = checkDescription(values.description);
@@ -142,7 +171,7 @@ function FoodLogFormBody({ log }: { log: (FoodLog & { path: string }) | null }) 
       } else {
         return;
       }
-      close();
+      if (mounted.current) close();
     } catch (error) {
       if (
         error instanceof FoodLogAppError &&
@@ -174,7 +203,9 @@ function FoodLogFormBody({ log }: { log: (FoodLog & { path: string }) | null }) 
     }
   }
 
-  const count = charCount(description);
+  // Counted like the server: the trimmed text, in code points.
+  const count = charCount(trimDescription(normalizeDescription(description)) ?? '');
+  const tooLong = count > MAX_DESCRIPTION_CHARS;
 
   return (
     <FoodLogFrame
@@ -195,6 +226,7 @@ function FoodLogFormBody({ log }: { log: (FoodLog & { path: string }) | null }) 
         </>
       }
     >
+      {refreshError}
       {banner ? <Banner message={banner} /> : null}
       {log ? (
         <View style={{ gap: space.xs }}>
@@ -261,10 +293,10 @@ function FoodLogFormBody({ log }: { log: (FoodLog & { path: string }) | null }) 
               multiline
             />
             <Text
-              color={count > MAX_DESCRIPTION_CHARS ? 'danger' : 'textMuted'}
-              accessibilityLabel={`${count} of ${MAX_DESCRIPTION_CHARS} characters`}
+              color={tooLong ? 'danger' : 'textMuted'}
+              accessibilityLabel={`${count} of ${MAX_DESCRIPTION_CHARS} characters${tooLong ? ', too long' : ''}`}
             >
-              {`${count}/${MAX_DESCRIPTION_CHARS}`}
+              {`${count}/${MAX_DESCRIPTION_CHARS}${tooLong ? ' Too long' : ''}`}
             </Text>
           </View>
         )}

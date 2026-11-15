@@ -10,9 +10,10 @@ import { useFoodLogCleanup } from '../hooks/useFoodLogCleanup';
 import { useMyFoodLogs } from '../hooks/useMyFoodLogs';
 import { FOOD_LOG_EMPTY, foodLogErrorMessage, LOAD_MORE_ERROR } from '../messages';
 import type { FoodLog } from '../schema';
-import { FOOD_LOG_BUCKET } from '../uploadFoodLog';
+import { FOOD_LOG_BUCKET } from '../shared';
 
 import { FoodLogFrame } from './FoodLogFrame';
+import { FoodLogRefreshError } from './FoodLogRefreshError';
 import { FoodLogRow } from './FoodLogRow';
 
 const logKey = (log: FoodLog) => log.id;
@@ -37,6 +38,14 @@ export function FoodLogListScreen() {
 
   const firstLoadFailed = query.isError && query.data === undefined;
   const refreshFailed = query.isRefetchError && !isFetchNextPageError;
+  const refreshError = refreshFailed ? (
+    <FoodLogRefreshError
+      message={foodLogErrorMessage(query.error?.code ?? 'unknown')}
+      onRetry={() => void query.refetch()}
+      retrying={query.isFetching}
+      retryLabel="Try refreshing again"
+    />
+  ) : null;
 
   const loadMore = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
@@ -89,7 +98,11 @@ export function FoodLogListScreen() {
           retrying={query.isFetching}
         />
       ) : logs.length === 0 ? (
-        <EmptyState message={FOOD_LOG_EMPTY} />
+        // A failed refresh is shown here too: an empty list may be out of date.
+        <View style={[styles.fill, { gap: space.md, paddingTop: space.lg }]}>
+          {refreshError}
+          <EmptyState message={FOOD_LOG_EMPTY} />
+        </View>
       ) : (
         <FlatList
           testID="food-log-list"
@@ -99,20 +112,7 @@ export function FoodLogListScreen() {
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
           contentContainerStyle={{ gap: space.md, paddingVertical: space.lg }}
-          ListHeaderComponent={
-            refreshFailed ? (
-              <View style={{ gap: space.sm }}>
-                <Banner message={foodLogErrorMessage(query.error?.code ?? 'unknown')} />
-                <Button
-                  title="Try again"
-                  variant="secondary"
-                  accessibilityLabel="Try refreshing again"
-                  onPress={() => void query.refetch()}
-                  loading={query.isFetching}
-                />
-              </View>
-            ) : undefined
-          }
+          ListHeaderComponent={refreshError ?? undefined}
           ListFooterComponent={
             isFetchingNextPage ? (
               <View style={[styles.footer, { padding: space.lg }]}>
@@ -144,4 +144,5 @@ export function FoodLogListScreen() {
 
 const styles = StyleSheet.create({
   footer: { alignItems: 'center' },
+  fill: { flex: 1 },
 });

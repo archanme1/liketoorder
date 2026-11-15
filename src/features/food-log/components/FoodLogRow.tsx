@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui';
-import { CuisineLabel, UNKNOWN_CUISINE } from '@/features/cuisines/components/CuisineLabel';
+import { CuisineLabel } from '@/features/cuisines/components/CuisineLabel';
 import { useCuisine } from '@/features/cuisines/hooks/useCuisines';
 import { PhotoTile } from '@/features/media/components/PhotoTile';
 import { useTheme } from '@/theme/useTheme';
@@ -10,11 +10,7 @@ import { useTheme } from '@/theme/useTheme';
 import { formatLocalDate } from '../date';
 import { NO_DESCRIPTION } from '../messages';
 import type { FoodLog } from '../schema';
-
-/** The country name for spoken labels; the same words CuisineLabel uses while loading. */
-export function cuisineName(cuisine: { data?: { name: string }; isPending: boolean }): string {
-  return cuisine.data?.name ?? (cuisine.isPending ? 'Loading cuisine' : UNKNOWN_CUISINE);
-}
+import { cuisineName } from '../shared';
 
 /** "Food photo, Italy, Sat, Nov 14, 2026. Pasta. Private" (Private only when private). */
 export function foodLogRowLabel(log: FoodLog, cuisineName: string, locale?: string): string {

@@ -173,6 +173,57 @@ describe('ActivitySection: choosing a day', () => {
   });
 });
 
+describe('ActivitySection: a refresh that moves today', () => {
+  // Review Q7: past midnight a refetch moves the server's today. The chosen day stays chosen and
+  // Previous / Next follow the new range.
+  it('keeps the chosen day and lets Next day reach the new today', async () => {
+    await renderSection();
+    await fireEvent.press(await screen.findByTestId('activity-cell-2026-11-12'));
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeDisabled();
+
+    mockedActivity.mockResolvedValue(
+      activityJson({
+        today: '2026-11-13',
+        days: [
+          { date: '2026-11-12', count: 3 },
+          { date: '2026-11-13', count: 1 },
+        ],
+      }),
+    );
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['food-log', 'activity'] });
+    });
+
+    expect(await screen.findByRole('button', { name: 'Nov 13, 1 upload, today' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Nov 12, 3 uploads', selected: true })).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Thu, Nov 12, 2026' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeEnabled();
+    expect(screen.queryByText('Last day of this range')).toBeNull();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Next day' }));
+    expect(await screen.findByRole('header', { name: 'Fri, Nov 13, 2026' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeDisabled();
+  });
+
+  it('keeps a chosen day that falls before the new range, with Previous day disabled', async () => {
+    await renderSection();
+    const oldFrom = activityFrom('2026-11-12', 17);
+    await fireEvent.press(await screen.findByTestId(`activity-cell-${oldFrom}`));
+
+    // A week later the range starts a week later, so the chosen day is before it.
+    mockedActivity.mockResolvedValue(activityJson({ today: '2026-11-19' }));
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['food-log', 'activity'] });
+    });
+
+    expect(await screen.findByRole('button', { name: 'Nov 19, no uploads, today' })).toBeTruthy();
+    expect(screen.queryByTestId(`activity-cell-${oldFrom}`)).toBeNull();
+    expect(screen.getByRole('header', { name: 'Sun, Jul 19, 2026' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Previous day' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeEnabled();
+  });
+});
+
 describe('ActivitySection: list view and buttons', () => {
   it('"Show as list" lists only the days with uploads, newest first', async () => {
     await renderSection();
@@ -187,6 +238,29 @@ describe('ActivitySection: list view and buttons', () => {
     expect(screen.queryByTestId('activity-cell-2026-11-12')).toBeNull();
     await fireEvent.press(screen.getByRole('button', { name: 'Show as grid' }));
     expect(screen.getByTestId('activity-cell-2026-11-12')).toBeTruthy();
+  });
+
+  it('goes back to the grid when the section becomes empty (review Q2)', async () => {
+    await renderSection();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Show as list' }));
+    expect(screen.getAllByTestId(/^activity-day-/)).toHaveLength(4);
+
+    // The last photo is deleted: empty, so the toggle is hidden and the grid shows.
+    mockedActivity.mockResolvedValue(activityJson({ days: [], stats: ZERO_STATS }));
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['food-log', 'activity'] });
+    });
+    expect(await screen.findByText(ACTIVITY_EMPTY)).toBeTruthy();
+    expect(screen.getByTestId('activity-cell-2026-11-12')).toBeTruthy();
+
+    // A new photo: the section comes back as the grid, with "Show as list" to switch.
+    mockedActivity.mockResolvedValue(activityJson({ days: [{ date: '2026-11-12', count: 1 }] }));
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['food-log', 'activity'] });
+    });
+    expect(await screen.findByRole('button', { name: 'Nov 12, 1 upload, today' })).toBeTruthy();
+    expect(screen.queryAllByTestId(/^activity-day-/)).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Show as list' })).toBeTruthy();
   });
 
   it('"View full year" opens /food-log/year', async () => {

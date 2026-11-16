@@ -4,10 +4,14 @@ import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 
 import {
+  foodLogActivitySchema,
+  foodLogDaySchema,
   foodLogPageSchema,
   foodLogReservationSchema,
   foodLogSchema,
   type FoodLog,
+  type FoodLogActivity,
+  type FoodLogDay,
   type FoodLogPage,
   type FoodLogReservation,
 } from './schema';
@@ -147,6 +151,29 @@ export async function listMyFoodLogs(before: string | null): Promise<FoodLogPage
   );
   if (error) throw mapFoodLogError(error);
   return parse(foodLogPageSchema, data);
+}
+
+/**
+ * My activity for the last `weeks` weeks (spec 14). Only the zone name is sent: the server works
+ * out today, the range and every count and streak.
+ */
+export async function getMyFoodLogActivity(
+  timeZone: string,
+  weeks: number,
+): Promise<FoodLogActivity> {
+  const { data, error } = await supabase.rpc('get_my_food_log_activity', {
+    p_time_zone: timeZone,
+    p_weeks: weeks,
+  });
+  if (error) throw mapFoodLogError(error);
+  return parse(foodLogActivitySchema, data);
+}
+
+/** My ready logs on one local date, oldest first (at most 60). */
+export async function listMyFoodLogsOn(date: string): Promise<FoodLogDay> {
+  const { data, error } = await supabase.rpc('list_my_food_logs_on', { p_date: date });
+  if (error) throw mapFoodLogError(error);
+  return parse(foodLogDaySchema, data);
 }
 
 /** Drops queue rows whose file is gone and returns the queued paths whose file still exists. */

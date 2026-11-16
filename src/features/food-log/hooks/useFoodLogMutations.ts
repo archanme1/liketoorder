@@ -5,7 +5,17 @@ import type { FoodLog } from '../schema';
 import { FOOD_LOG_BUCKET } from '../shared';
 import { runFoodLogCleanup, uploadFoodLog, type UploadFoodLogInput } from '../uploadFoodLog';
 
-import { foodLogKey, foodLogListKey } from './keys';
+import { foodLogActivityPrefix, foodLogDayPrefix, foodLogKey, foodLogListKey } from './keys';
+
+/**
+ * The activity grid and the day panels (spec 14) count and list ready logs, so every change to a
+ * log marks them stale too. Not awaited: a mutation never waits for these refetches. The open day
+ * panel sits under the detail page, so after a delete it refetches like the list does.
+ */
+function invalidateActivity(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: foodLogActivityPrefix });
+  void queryClient.invalidateQueries({ queryKey: foodLogDayPrefix });
+}
 
 /** prepare -> begin -> upload -> finish; then the list and the new log's detail are refetched. */
 export function useCreateFoodLog() {
@@ -15,6 +25,7 @@ export function useCreateFoodLog() {
     onSuccess: (log) => {
       void queryClient.invalidateQueries({ queryKey: foodLogListKey });
       void queryClient.invalidateQueries({ queryKey: foodLogKey(log.id) });
+      invalidateActivity(queryClient);
     },
   });
 }
@@ -28,6 +39,7 @@ export function useUpdateFoodLog(id: string) {
       queryClient.setQueryData(foodLogKey(id), log);
       void queryClient.invalidateQueries({ queryKey: foodLogListKey });
       void queryClient.invalidateQueries({ queryKey: foodLogKey(id) });
+      invalidateActivity(queryClient);
     },
   });
 }
@@ -44,6 +56,7 @@ export function useDeleteFoodLog(id: string) {
       // Marked stale but not refetched: the detail screen is still open while it closes, and a
       // refetch would flash "This photo isn't available." before it goes.
       void queryClient.invalidateQueries({ queryKey: foodLogKey(id), refetchType: 'none' });
+      invalidateActivity(queryClient);
     },
   });
 }

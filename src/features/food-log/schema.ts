@@ -22,6 +22,28 @@ export const foodLogPageSchema = z.strictObject({
 });
 export type FoodLogPage = z.infer<typeof foodLogPageSchema>;
 
+const localDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const countSchema = z.number().int().nonnegative();
+
+// get_my_food_log_activity (spec 14): every key set is fixed and pinned by pgTAP. days holds only
+// days with an upload, in ascending order; the server works out today, from and every stat.
+export const foodLogActivitySchema = z.strictObject({
+  today: localDateSchema,
+  from: localDateSchema,
+  days: z.array(z.strictObject({ date: localDateSchema, count: z.number().int().positive() })),
+  stats: z.strictObject({
+    total_this_year: countSchema,
+    current_streak: countSchema,
+    longest_streak: countSchema,
+    cuisines_tried: countSchema,
+  }),
+});
+export type FoodLogActivity = z.infer<typeof foodLogActivitySchema>;
+
+// list_my_food_logs_on: one date's ready logs, oldest first, at most 60 (no cursor).
+export const foodLogDaySchema = z.strictObject({ items: z.array(foodLogSchema) });
+export type FoodLogDay = z.infer<typeof foodLogDaySchema>;
+
 export const foodLogReservationSchema = z.strictObject({ id: z.string(), path: z.string() });
 export type FoodLogReservation = z.infer<typeof foodLogReservationSchema>;
 

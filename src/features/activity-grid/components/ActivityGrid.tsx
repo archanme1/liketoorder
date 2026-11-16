@@ -135,12 +135,14 @@ const GridCell = memo(function GridCell({
   onSelectDate,
 }: GridCellProps) {
   const { colors, size, radius, stroke } = useTheme();
-  // The selected day has a 2 pt text border, today a primary one; an empty day a thin outline so
-  // its shape shows (Decision 2). Both states are also in the label, never shown by colour alone.
+  // The selected day has a 2 pt text border; today a 1 pt text border, dark enough to show on the
+  // darkest shade; today when selected keeps the 2 pt border and adds an inner light ring, so it
+  // still reads as today. An empty day gets a thin outline so its shape shows (Decision 2). Today
+  // and selected are also in the label and the state, never shown by colour alone.
   const border = selected
     ? { borderWidth: stroke.selected, borderColor: colors.text }
     : isToday
-      ? { borderWidth: stroke.selected, borderColor: colors.primary }
+      ? { borderWidth: stroke.today, borderColor: colors.text }
       : level === 0
         ? { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.gridOutline }
         : null;
@@ -161,7 +163,14 @@ const GridCell = memo(function GridCell({
         },
         border,
       ]}
-    />
+    >
+      {selected && isToday ? (
+        <View
+          testID={`activity-today-ring-${date}`}
+          style={[styles.fill, { borderWidth: stroke.today, borderColor: colors.bg }]}
+        />
+      ) : null}
+    </Pressable>
   );
 });
 
@@ -198,4 +207,5 @@ const styles = StyleSheet.create({
   legend: { alignItems: 'center', justifyContent: 'flex-end' },
   months: { position: 'relative' },
   month: { position: 'absolute', top: 0 },
+  fill: { flex: 1 },
 });

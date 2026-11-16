@@ -64,8 +64,9 @@ export const opacity = { disabled: 0.5, pressed: 0.8 };
 // they wrap and stay whole instead of being cut. Body text is not capped.
 export const maxFontMultiplier = 1.6;
 
-// Border widths: a selected option gets a thicker border as well as a check icon.
-export const stroke = { selected: 2 };
+// Border widths: a selected option gets a thicker border as well as a check icon. today: the
+// activity grid marks today with a thinner dark outline than the selected day (spec 14).
+export const stroke = { selected: 2, today: 1 };
 
 // The homemade "somewhere in this area" circle (spec 08): the primary colour, translucent fill with
 // a firmer outline so the edge still reads without relying on the fill alone.

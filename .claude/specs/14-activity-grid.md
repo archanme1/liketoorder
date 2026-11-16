@@ -13,7 +13,7 @@
 
 **Plan mode:** required. New security-definer functions with a migration and pgTAP, a change to the Profile screen, a new route and a new feature folder, and well over 5 files.
 
-**Status:** In progress. PR 1 (backend, gates A to C) merged as #31 (25f898c). PR 2 (the app) in progress on `feature/activity-grid-app`: gate D.
+**Status:** In progress. PR 1 (backend, gates A to C) merged as #31 (25f898c). PR 2 (the app) in progress on `feature/activity-grid-app`: gates D (code, helper tests, seed) and E (screen and route tests, the approved ProfileScreen edit, app breaks 8 to 12) done; gate F (Simulator run) next.
 
 ## Overview
 After this ships, any signed-in person with a finished profile, customer or seller, sees their own **activity grid** at the top of Profile:
@@ -421,6 +421,14 @@ PR 1 review: the ticked items are proven by pgTAP (travel by the stored-date fix
   - no time is shown;
   - a tap opens `/food-log/[id]`.
 - [ ] Create, update and delete invalidate the activity and the day queries (stale-list test).
+- [ ] After a delete from a detail opened from the day panel, the panel no longer shows the row, and the grid count and the current streak shrink (`activityInvalidation.test.tsx`).
+- [ ] `useFoodLogActivity` (added at gate E):
+  - sends the `getCalendars` zone and the week count, and keeps 17 and 53 weeks apart;
+  - is fresh for 60 s with no `refetchInterval` (no polling);
+  - refetches when the app returns to the foreground once stale, and not while fresh (`focusManager`, no fake timers).
+- [ ] The api parses both replies strictly: an extra or a missing key, a `days` item with a cuisine, or a ninth key on a log object gives `unknown` (`activityApi.test.ts`).
+- [ ] `/food-log/year` through the real router opens the year screen, never the `[id]` detail screen with an id "year": `get_food_log` is never called (`yearRoute.test.tsx`, break 12). The order of the Stack screens does not matter (12b, observed green).
+- [ ] Pull to refresh on Profile and on Your year refetches the activity.
 - [ ] The `activity-grid` folder imports nothing from `food-log` or `cuisines` (isolation test).
 - [ ] `foodLogsData`:
   - plans streaks, gaps, a day with 4 or more uploads, private rows and a run ending yesterday;
@@ -459,6 +467,7 @@ PR 1 review: the ticked items are proven by pgTAP (travel by the stored-date fix
   9. App: skip the activity invalidation after delete. The stale-grid test fails.
   10. App: render the flag in a day-panel row without hiding it from screen readers. The display-rule test fails.
   11. App: make the Next day button 32 pt. The 44 pt test fails.
+  12. App (added at gate E): rename `app/food-log/year.tsx`. The year-route test fails: `/food-log/year` lands on the `[id]` detail screen. 12b, moving the `year` screen below `[id]` in `_layout.tsx`, is an observation that stays green, because expo-router ranks a static segment above a dynamic one.
 - **Manual check, iOS Simulator (Archan, Decision 10).** After a local reset:
   ```
   npx supabase db reset

@@ -41,7 +41,6 @@ begin
 
   v_today      := (now() at time zone p_time_zone)::date;
   v_from       := v_today - extract(dow from v_today)::int - 7 * (p_weeks - 1);   -- a Sunday; at most 371 days
-  v_year_start := make_date(extract(year from v_today)::int, 1, 1);
 
   if v_uid is null then
     return jsonb_build_object(
@@ -50,9 +49,12 @@ begin
                                   'longest_streak', 0, 'cuisines_tried', 0));
   end if;
 
+  v_year_start := make_date(extract(year from v_today)::int, 1, 1);
+
   -- d: one row per date with a ready upload, up to today (a later local_date, logged in a zone
-  -- ahead, counts nowhere until its day comes). At most one row per day of the account's life,
-  -- read through food_logs_author_date_idx. islands: runs of consecutive dates (gaps and islands).
+  -- ahead, counts nowhere until its day comes). The scan reads every ready row of the caller (at
+  -- most 20 starts a day) through food_logs_author_date_idx and groups them to at most one row per
+  -- day of the account's life. islands: runs of consecutive dates (gaps and islands).
   with d as (
     select l.local_date, count(*)::int as n
       from public.food_logs l

@@ -13,7 +13,7 @@
 
 **Plan mode:** required. New security-definer functions with a migration and pgTAP, a change to the Profile screen, a new route and a new feature folder, and well over 5 files.
 
-**Status:** In progress. PR 1 (backend, gates A to C) merged as #31 (25f898c). PR 2 (the app) in progress on `feature/activity-grid-app`: gates D (code, helper tests, seed) and E (screen and route tests, the approved ProfileScreen edit, app breaks 8 to 12) done; gate F (Simulator run) next.
+**Status:** In progress. PR 1 (backend, gates A to C) merged as #31 (25f898c). PR 2 (the app) in progress on `feature/activity-grid-app`: gates D (code, helper tests, seed) and E (screen and route tests, the approved ProfileScreen edit, app breaks 8 to 12) done; gate F (Simulator run) passed on 2026-11-16; review next.
 
 ## Overview
 After this ships, any signed-in person with a finished profile, customer or seller, sees their own **activity grid** at the top of Profile:
@@ -327,13 +327,13 @@ Feature-specific rules:
 
 ## Known pitfalls (checklist)
 - [x] **Late-night upload:** a log made at 23:30 local time (already the next UTC day) appears on its local day. pgTAP has a fixture whose `local_date` differs from the UTC date of its `created_at`.
-- [ ] **Daylight saving:** `local_date` is a date, so 23- and 25-hour days need nothing special. `buildWeeks` and the streak are tested across a change (`America/Toronto` dates).
+- [x] **Daylight saving:** `local_date` is a date, so 23- and 25-hour days need nothing special. `buildWeeks` and the streak are tested across a change (`America/Toronto` dates).
 - [x] **Travel:** going east or across the date line can skip a calendar day and break the streak; going west repeats a day, and both uploads land on one date. Accepted and documented; the grid shows what was stored.
 - [x] **A date after "today":** a `local_date` later than the server's today in the current zone (logged in a zone ahead, then the phone's zone moved back) is left out of the grid and the stats until that day comes. pgTAP covers it.
 - [x] **Year boundary:** on Jan 1 `total_this_year` restarts while the streak continues across the years.
-- [ ] **Week start:** weeks start on Sunday whatever the phone's locale.
-- [ ] **Wrong phone clock:** the grid still ends at the server's today. Jest: the server says Nov 12 while the phone clock says Nov 20.
-- [ ] **Not counted:** pending uploads and deleted logs never count, and deleting can shorten a streak.
+- [x] **Week start:** weeks start on Sunday whatever the phone's locale.
+- [x] **Wrong phone clock:** the grid still ends at the server's today. Jest: the server says Nov 12 while the phone clock says Nov 20.
+- [x] **Not counted:** pending uploads and deleted logs never count, and deleting can shorten a streak.
 - [x] **Seed data:** leftover seed rows must not change pgTAP counts. pgTAP uses its own fixtures and ids (`00000000-0000-0000-0014-...`) and rolls back.
 
 PR 1 review: the ticked items are proven by pgTAP (travel by the stored-date fixtures and a test comment). Daylight saving: the streak half is pgTAP (runs across the 2025 America/Toronto changes); `buildWeeks` closes it at PR 2. Not counted: pending rows are pgTAP; "deleting can shorten a streak" closes with the PR 2 stale-grid test. Week start and wrong phone clock close at PR 2 (jest).
@@ -391,17 +391,17 @@ PR 1 review: the ticked items are proven by pgTAP (travel by the stored-date fix
 - [x] `npx supabase db reset`, `npx supabase test db` and `npm run typecheck` pass. `src/types/database.ts` is regenerated, not hand-edited.
 
 **PR 2 (jest unless noted):**
-- [ ] `grid.ts` and `localDate.ts`:
+- [x] `grid.ts` and `localDate.ts`:
   - the intensity buckets 0, 1, 2 to 3, 4 or more;
   - `buildWeeks` for each weekday of today, across a month end, a year end and a DST change;
   - the month labels;
   - `formatShortDate`.
-- [ ] `ActivityGrid`:
+- [x] `ActivityGrid`:
   - every cell has its passed label, role `button` and selected state;
   - today and the selected day are said in the label, not only shown by a border;
   - the legend and the summary are spoken;
   - empty squares use `gridOutline`.
-- [ ] `ActivitySection`:
+- [x] `ActivitySection`:
   - the 4 states;
   - the zone sent is the phone's (the `getCalendars` fake) and no date is sent;
   - the grid ends at the server's today even when the phone clock is days off;
@@ -412,33 +412,33 @@ PR 1 review: the ticked items are proven by pgTAP (travel by the stored-date fix
   - "View full year" goes to `/food-log/year`;
   - a failed refresh keeps the grid and shows a banner;
   - the empty state's Add photo goes to `/food-log/new`.
-- [ ] **44 pt alternatives (Decision 11):**
+- [x] **44 pt alternatives (Decision 11):**
   - a test reaches each grid action without pressing a cell: choose a day from the list view, move with Previous and Next day, open an upload from a panel row;
   - each of those controls has a minimum height and width of at least `size.touch` (44).
-- [ ] `DayPanel`:
+- [x] `DayPanel`:
   - the 4 states and "Nothing logged on <date>.";
   - rows show `CuisineLabel` with the flag hidden from screen readers, the trimmed description and "Private" as a word;
   - no time is shown;
   - a tap opens `/food-log/[id]`.
-- [ ] Create, update and delete invalidate the activity and the day queries (stale-list test).
-- [ ] After a delete from a detail opened from the day panel, the panel no longer shows the row, and the grid count and the current streak shrink (`activityInvalidation.test.tsx`).
-- [ ] `useFoodLogActivity` (added at gate E):
+- [x] Create, update and delete invalidate the activity and the day queries (stale-list test).
+- [x] After a delete from a detail opened from the day panel, the panel no longer shows the row, and the grid count and the current streak shrink (`activityInvalidation.test.tsx`).
+- [x] `useFoodLogActivity` (added at gate E):
   - sends the `getCalendars` zone and the week count, and keeps 17 and 53 weeks apart;
   - is fresh for 60 s with no `refetchInterval` (no polling);
   - refetches when the app returns to the foreground once stale, and not while fresh (`focusManager`, no fake timers).
-- [ ] The api parses both replies strictly: an extra or a missing key, a `days` item with a cuisine, or a ninth key on a log object gives `unknown` (`activityApi.test.ts`).
-- [ ] `/food-log/year` through the real router opens the year screen, never the `[id]` detail screen with an id "year": `get_food_log` is never called (`yearRoute.test.tsx`, break 12). The order of the Stack screens does not matter (12b, observed green).
-- [ ] Pull to refresh on Profile and on Your year refetches the activity.
-- [ ] The `activity-grid` folder imports nothing from `food-log` or `cuisines` (isolation test).
-- [ ] `foodLogsData`:
+- [x] The api parses both replies strictly: an extra or a missing key, a `days` item with a cuisine, or a ninth key on a log object gives `unknown` (`activityApi.test.ts`).
+- [x] `/food-log/year` through the real router opens the year screen, never the `[id]` detail screen with an id "year": `get_food_log` is never called (`yearRoute.test.tsx`, break 12). The order of the Stack screens does not matter (12b, observed green).
+- [x] Pull to refresh on Profile and on Your year refetches the activity.
+- [x] The `activity-grid` folder imports nothing from `food-log` or `cuisines` (isolation test).
+- [x] `foodLogsData`:
   - plans streaks, gaps, a day with 4 or more uploads, private rows and a run ending yesterday;
   - every `created_at` is within the UTC date +/-1 of its `local_date` and not after `now`;
   - no date has more than 6 rows;
   - only `seed-*@example.com` accounts are used.
-- [ ] Profile shows the section (approved `ProfileScreen.test.tsx` edit). Every other older test that renders `ProfileScreen` passes unedited.
-- [ ] `npm run lint`, `npm run typecheck` and `npm test` pass. Older tests pass unedited except the approved list.
-- [ ] The byte and invisible-character checks pass, each proved on a scratch file first.
-- [ ] The Simulator run passed (Archan, Decision 10), including Archan's judgement of the four shades and the outline.
+- [x] Profile shows the section (approved `ProfileScreen.test.tsx` edit). Every other older test that renders `ProfileScreen` passes unedited.
+- [x] `npm run lint`, `npm run typecheck` and `npm test` pass. Older tests pass unedited except the approved list.
+- [x] The byte and invisible-character checks pass, each proved on a scratch file first.
+- [x] The Simulator run passed (Archan, Decision 10, 2026-11-16), including Archan's judgement of the four shades and the outline: Profile with data and stats, the day panel with Previous and Next, the list view, a delete from the panel updating the grid and the streak, Your year and pull to refresh, the empty-state account, the largest text size, and a time-zone change moving only today. VoiceOver and TalkBack across the grid, touch accuracy, Android and Hermes `Intl` stay before-launch real-device checks (v1 section 16).
 
 ## Test plan
 - **Database tests (pgTAP)** in `supabase/tests/14-activity-grid.test.sql`:

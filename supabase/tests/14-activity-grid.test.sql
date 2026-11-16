@@ -8,7 +8,7 @@
 -- Each streak scenario has its own user so the cases cannot interfere; seeded rows of other
 -- accounts cannot change any count here, because both functions read only auth.uid()'s rows.
 begin;
-select plan(78);
+select plan(90);
 
 -- -- Helpers (pg_temp) -------------------------------------------------------
 -- Ids: users 00000000-0000-0000-0014-<n>; logs ...-0514-<n>.
@@ -53,10 +53,15 @@ end $$;
 -- -- Fixtures (as postgres) ---------------------------------------------------
 -- 1 owner   2 second user   3 outsider   4 today run   5 yesterday run   6 broken run
 -- 7 private-only run   8 long run across a year   9 New Year   10 sixty rows   11 future date
+-- 12 range edge   13 DST start (March)   14 DST end (November)   15 a zone ahead (Kiritimati)
+--
+-- Travel is covered by what is stored, not by a zone history: going west repeats a date (two
+-- users and one user's several uploads on one date: users 1, 2, 4), and going east or across the
+-- date line skips one (user 6's missed day resets the streak). The grid shows the stored dates.
 insert into auth.users (id, email)
-select pg_temp.u(n), 'grid14_' || n || '@example.test' from generate_series(1, 11) n;
+select pg_temp.u(n), 'grid14_' || n || '@example.test' from generate_series(1, 15) n;
 update public.profiles set username = 'grid14_' || right(id::text, 2)
- where id in (select pg_temp.u(n) from generate_series(1, 11) n);
+ where id in (select pg_temp.u(n) from generate_series(1, 15) n);
 
 -- 1: late night (local T-3, created 03:30 UTC on T-2), a pending row, a private and a public row
 -- on one date, and an ordered day (two rows at the same time, then id order; one pending).
@@ -70,9 +75,10 @@ select pg_temp.log(106, 1, pg_temp.t() - 10, ((pg_temp.t() - 10) + time '08:00')
 select pg_temp.log(107, 1, pg_temp.t() - 10, ((pg_temp.t() - 10) + time '08:00') at time zone 'UTC');
 select pg_temp.log(108, 1, pg_temp.t() - 10, ((pg_temp.t() - 10) + time '07:00') at time zone 'UTC',
                    p_status => 'pending');
--- 2: a public and a private log on T-4.
+-- 2: a public and a private log on T-4, and a ready MX log on T-10, the owner's ordered day.
 select pg_temp.log(201, 2, pg_temp.t() - 4, p_cuisine => 'JP', p_public => true);
 select pg_temp.log(202, 2, pg_temp.t() - 4, p_cuisine => 'JP', p_public => false);
+select pg_temp.log(203, 2, pg_temp.t() - 10, ((pg_temp.t() - 10) + time '09:00') at time zone 'UTC', p_cuisine => 'MX');
 -- 4: T, T-1, T-2 with repeated and neutral cuisines, plus a pending JP row.
 select pg_temp.log(401, 4, pg_temp.t(), p_cuisine => 'IT');
 select pg_temp.log(402, 4, pg_temp.t(), p_cuisine => 'street-food');
@@ -106,6 +112,18 @@ select pg_temp.log(1000 + n, 10, pg_temp.t() - 6, ((pg_temp.t() - 6) + time '00:
   from generate_series(1, 60) n;
 -- 11: one log dated T+1, made now (inside the check), which is after today in Pacific/Pago_Pago.
 select pg_temp.log(1101, 11, pg_temp.t() + 1, now());
+-- 12: one log on the first day of the 1-week range (its Sunday) and one the day before.
+select pg_temp.log(1201, 12, pg_temp.t() - extract(dow from pg_temp.t())::int);
+select pg_temp.log(1202, 12, pg_temp.t() - extract(dow from pg_temp.t())::int - 1);
+-- 13, 14: runs across the America/Toronto clock changes of 2025 (Mar 9, a 23-hour day; Nov 2, a
+-- 25-hour day), each made at 23:30 Toronto time, which is already the next UTC day.
+-- Mar 7 to Mar 10 and Oct 31 to Nov 3.
+select pg_temp.log(1300 + d, 13, make_date(2025, 3, 7) + (d - 1), ((make_date(2025, 3, 7) + (d - 1)) + time '23:30') at time zone 'America/Toronto')
+  from generate_series(1, 4) d;
+select pg_temp.log(1400 + d, 14, make_date(2025, 10, 31) + (d - 1), ((make_date(2025, 10, 31) + (d - 1)) + time '23:30') at time zone 'America/Toronto')
+  from generate_series(1, 4) d;
+-- 15: one log dated today in Pacific/Kiritimati (UTC+14), made now (inside the check).
+select pg_temp.log(1501, 15, (now() at time zone 'Pacific/Kiritimati')::date, now());
 
 -- -- 1. Signatures and grants -------------------------------------------------
 select ok(to_regprocedure('public.get_my_food_log_activity(text, integer)') is not null,
@@ -178,6 +196,11 @@ select is((public.get_my_food_log_activity('Pacific/Pago_Pago', 1)->>'today')::d
   'today follows Pacific/Pago_Pago');
 select isnt(public.get_my_food_log_activity('Pacific/Kiritimati', 1)->'today', public.get_my_food_log_activity('Pacific/Pago_Pago', 1)->'today',
   'the two zones (25 hours apart) give different todays at one instant');
+select pg_temp.as_user(15);
+select ok((now() at time zone 'Pacific/Kiritimati')::date = any(pg_temp.dates(public.get_my_food_log_activity('Pacific/Kiritimati', 1))),
+  'a log dated today in Pacific/Kiritimati is in days when called with that zone');
+select is(public.get_my_food_log_activity('Pacific/Kiritimati', 1)->'stats'->'current_streak', '1'::jsonb,
+  'and it makes a current streak of 1 in that zone');
 
 -- -- 7. days ---------------------------------------------------------------------------------
 select pg_temp.as_user(1);
@@ -202,9 +225,27 @@ select is_empty(
 select ok(not (pg_temp.t() - 7 = any(pg_temp.dates(public.get_my_food_log_activity('UTC', 1))))
       and not (pg_temp.t() - 10 = any(pg_temp.dates(public.get_my_food_log_activity('UTC', 1)))),
   'a 1-week range leaves out older days');
+select is((select e->'count' from jsonb_array_elements(public.get_my_food_log_activity('UTC', 17)->'days') e
+            where (e->>'date')::date = pg_temp.t() - 10),
+  '3'::jsonb, 'two users with ready rows on one date: the owner''s count holds only their own rows');
+select is(public.get_my_food_log_activity('UTC', 17)->'stats'->'cuisines_tried', '1'::jsonb,
+  'the owner''s cuisines tried holds only their own cuisine (not the second user''s JP and MX)');
+select pg_temp.as_user(2);
+select is(pg_temp.ids(public.list_my_food_logs_on(pg_temp.t() - 10)), array[pg_temp.lid(203)],
+  'fixture: the second user has a ready row of their own on the owner''s T-10');
+select is(public.get_my_food_log_activity('UTC', 17)->'stats'->'cuisines_tried', '2'::jsonb,
+  'the second user''s cuisines tried holds their JP and MX only');
+-- The range edge: the first day of the range is its Sunday, from.
+select pg_temp.as_user(12);
+select is(pg_temp.dates(public.get_my_food_log_activity('UTC', 1)), array[pg_temp.t() - extract(dow from pg_temp.t())::int],
+  'a log on from (the range''s first Sunday) is in a 1-week range, and the day before is not');
+select is(pg_temp.dates(public.get_my_food_log_activity('UTC', 2)),
+  array[pg_temp.t() - extract(dow from pg_temp.t())::int - 1, pg_temp.t() - extract(dow from pg_temp.t())::int],
+  'a 2-week range holds both');
 
 -- -- 8. Streaks -------------------------------------------------------------------------------
 select pg_temp.as_user(4);
+select ok(pg_temp.t() = any(pg_temp.dates(public.get_my_food_log_activity('UTC', 17))), 'today''s own uploads are in days');
 select is(public.get_my_food_log_activity('UTC', 17)->'stats'->'current_streak', '3'::jsonb,
   'current streak: today logged gives the run that includes today');
 select is(public.get_my_food_log_activity('UTC', 17)->'stats'->'longest_streak', '3'::jsonb, 'longest streak of the today run');
@@ -229,8 +270,18 @@ select is(public.get_my_food_log_activity('UTC', 17)->'stats'->'longest_streak',
   'longest streak: the 4-day run across a year boundary beats the 2-day run after a gap');
 select is(public.get_my_food_log_activity('UTC', 17)->'stats'->'current_streak', '0'::jsonb,
   'an old run is not a current streak');
+-- Daylight saving: local_date is a date, so 23- and 25-hour days need nothing special.
+select pg_temp.as_user(13);
+select is(public.get_my_food_log_activity('America/Toronto', 17)->'stats'->'longest_streak', '4'::jsonb,
+  'a streak across the March clock change (America/Toronto, a 23-hour day) is unbroken');
+select pg_temp.as_user(14);
+select is(public.get_my_food_log_activity('America/Toronto', 17)->'stats'->'longest_streak', '4'::jsonb,
+  'a streak across the November clock change (America/Toronto, a 25-hour day) is unbroken');
 
 -- -- 9. New Year (total_this_year) -----------------------------------------------------------------
+-- These pin the result. They do not catch a switch to date_trunc('year', v_today): on a date it is
+-- cast to timestamptz and back in the same session zone, so it gives Jan 1 too (the gate B break
+-- proof showed these three stay green). Only the source check in section 2 catches that switch.
 select pg_temp.as_user(9);
 select is(public.get_my_food_log_activity('UTC', 17)->'stats'->'total_this_year', '1'::jsonb,
   'total this year: the Jan 1 upload counts and the Dec 31 upload does not');
@@ -318,6 +369,8 @@ select is(public.list_my_food_logs_on(pg_temp.t() - 10), '{"items": []}'::jsonb,
 select pg_temp.as_user(1);
 select is(public.list_my_food_logs_on(pg_temp.t() - 4), '{"items": []}'::jsonb,
   'the second user''s public log on T-4 gives the owner an empty day list');
+select is(pg_temp.ids(public.list_my_food_logs_on(pg_temp.t() - 10)), array[pg_temp.lid(106), pg_temp.lid(107), pg_temp.lid(105)],
+  'two users with ready rows on one date: the owner''s day list holds only their own rows');
 select ok(not (pg_temp.t() - 4 = any(pg_temp.dates(public.get_my_food_log_activity('UTC', 17)))),
   'the owner''s activity holds none of the second user''s days');
 select pg_temp.as_nobody();

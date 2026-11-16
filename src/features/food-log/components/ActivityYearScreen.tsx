@@ -8,7 +8,7 @@ import { FoodLogFrame } from './FoodLogFrame';
 // "Your year" (spec 14 Decision 6): the last 53 weeks, opened at the current week, with the same
 // stats, legend, list view and day panel as Profile. Its chosen day is its own.
 export function ActivityYearScreen() {
-  const { refreshing, onRefresh } = useActivityRefresh();
+  const { refreshing, onRefresh } = useActivityRefresh(53);
   return (
     <FoodLogFrame
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}

@@ -23,7 +23,7 @@ export function ProfileScreen() {
   const { notice, dismissNotice } = useSession();
   const signOut = useSignOut();
   // Pull to refresh reloads the activity grid and its open day (spec 14).
-  const activityRefresh = useActivityRefresh();
+  const activityRefresh = useActivityRefresh(17);
 
   // The reset form passes ?notice=password-updated; the session notice is the fallback for when
   // the route guard got here first.

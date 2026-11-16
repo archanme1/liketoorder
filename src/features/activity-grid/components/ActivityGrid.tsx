@@ -177,27 +177,35 @@ const GridCell = memo(function GridCell({
 function Legend({ labels }: { labels: LegendLabels }) {
   const { colors, space, size, radius } = useTheme();
   return (
-    <View accessible accessibilityLabel={labels.spoken} style={[styles.row, styles.legend]}>
-      <Text variant="caption" color="textMuted" style={{ marginRight: space.xs }}>
-        {labels.less}
-      </Text>
-      {LEVELS.map((level) => (
-        <View
-          key={level}
-          style={{
-            width: size.gridCell,
-            height: size.gridCell,
-            marginRight: size.gridGap,
-            borderRadius: radius.grid,
-            backgroundColor: colors[LEVEL_COLORS[level]],
-            borderWidth: level === 0 ? StyleSheet.hairlineWidth : 0,
-            borderColor: colors.gridOutline,
-          }}
-        />
-      ))}
-      <Text variant="caption" color="textMuted" style={{ marginLeft: space.xs }}>
-        {labels.more}
-      </Text>
+    // One spoken element; the words and sample squares inside are hidden from screen readers.
+    <View accessible accessibilityLabel={labels.spoken}>
+      <View
+        testID="activity-legend-samples"
+        style={[styles.row, styles.legend]}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+      >
+        <Text variant="caption" color="textMuted" style={{ marginRight: space.xs }}>
+          {labels.less}
+        </Text>
+        {LEVELS.map((level) => (
+          <View
+            key={level}
+            style={{
+              width: size.gridCell,
+              height: size.gridCell,
+              marginRight: size.gridGap,
+              borderRadius: radius.grid,
+              backgroundColor: colors[LEVEL_COLORS[level]],
+              borderWidth: level === 0 ? StyleSheet.hairlineWidth : 0,
+              borderColor: colors.gridOutline,
+            }}
+          />
+        ))}
+        <Text variant="caption" color="textMuted" style={{ marginLeft: space.xs }}>
+          {labels.more}
+        </Text>
+      </View>
     </View>
   );
 }

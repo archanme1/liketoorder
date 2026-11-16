@@ -460,6 +460,9 @@ isOneToOne: false
 "get_my_business":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
+"get_my_food_log_activity":
+{ Args: { "p_time_zone": string,"p_weeks": number }; Returns: Json
+                           },
 "get_my_pickup_address":
 { Args: { "p_request_id": string }; Returns: Json
                            },
@@ -480,6 +483,9 @@ isOneToOne: false
                            },
 "list_my_food_logs":
 { Args: { "p_before"?: string }; Returns: Json
+                           },
+"list_my_food_logs_on":
+{ Args: { "p_date": string }; Returns: Json
                            },
 "list_my_requests":
 { Args: { "p_before"?: string,"p_status"?: string }; Returns: Json

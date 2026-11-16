@@ -87,7 +87,7 @@ Expiry: the `pg_cron` job sets `expired` where `status='pending' and expires_at 
 
 ## Server-owned values
 - `created_at timestamptz not null default now()`; clients never send it (exclude from insert grants or overwrite in a `before insert` trigger).
-- `food_logs.local_date` (spec 13): computed inside `begin_food_log_upload` as `(now() at time zone p_time_zone)::date`, after the client-sent IANA zone name is checked against `pg_timezone_names` (`invalid_time_zone`); a table check keeps it within the UTC date of `created_at` ±1. The client sends only the zone name, never a date or a time, so an upload cannot be backdated beyond the zone choice: because the zone itself is the client's choice, the date can move by **at most about one day** (spec 13 Decision 24, a known limit in v1 §16; a zone stored on the profile is planned for spec 14). The zone is checked after the rate limits, since `pg_timezone_names` reads the whole time-zone database (Decision 28).
+- `food_logs.local_date` (spec 13): computed inside `begin_food_log_upload` as `(now() at time zone p_time_zone)::date`, after the client-sent IANA zone name is checked against `pg_timezone_names` (`invalid_time_zone`); a table check keeps it within the UTC date of `created_at` ±1. The client sends only the zone name, never a date or a time, so an upload cannot be backdated beyond the zone choice: because the zone itself is the client's choice, the date can move by **at most about one day** (spec 13 Decision 24, a known limit in v1 §16; spec 14 kept the per-call zone, Decision 7, and a zone stored on the profile is to be revisited when grids or streaks are shown to other people). The zone is checked after the rate limits, since `pg_timezone_names` reads the whole time-zone database (Decision 28).
 - Idempotency: `idempotency_key uuid`, unique **per customer** (`unique (customer_id, idempotency_key)`), generated client-side once per form session. The submit function looks the key up first and returns that row unchanged, before any other check; it also takes a per-customer `pg_advisory_xact_lock` so concurrent calls serialise, and still inserts with `on conflict do nothing` and re-selects.
 - Free text from customers (`order_text`, `note`) refuses hidden characters in both the function and a table check: ASCII controls except newline, DEL, C1 controls, zero-width (U+200B-200D, U+FEFF) and bidi overrides/isolates (U+202A-202E, U+2066-2069). Mirror the same set in the app's strip.
 - Per-customer limits that count rows (spec 11b: 3 pending, 1 pending per business, 10 submits per customer per business per kind in a rolling 24 hours, any status) read the customer's own table rows under that lock. A pending row past `expires_at` does not count. This needs no counter table or cleanup job.
@@ -170,15 +170,17 @@ export async function listMyFoodLogs(before?: string) {
 Hooks wrap these with react-query: keys like `['food-log', 'mine']` and `['food-log', id]`; invalidate the list and the detail on every mutation success. Storage calls stay in `src/features/media/api.ts`.
 
 ## Activity grid query
-Aggregate in SQL, not the app, inside a `security definer` RPC (the table has no client grants), for example `activity_grid(p_from date)` for the caller, ready rows only:
-```sql
-select local_date, count(*) as n,
-       case when count(distinct cuisine_code) = 1 then min(cuisine_code) end as single_cuisine
-  from public.food_logs
- where author_id = (select auth.uid()) and status = 'ready' and local_date >= p_from
- group by local_date;
-```
-A grid for another person (spec 14 decides) must count `is_public` rows only.
+Built in spec 14 (`supabase/migrations/20261115200520_activity_grid.sql`). Aggregate in SQL, never in the app, inside `security definer` RPCs (the table has no client grants), for the caller only (`auth.uid()`; no user id argument), `ready` rows only, by `local_date` (never the date of `created_at`):
+- `get_my_food_log_activity(p_time_zone text, p_weeks integer)` returns `{ today, from, days: [{ date, count }], stats: { total_this_year, current_streak, longest_streak, cuisines_tried } }`.
+  - **The client never sends a date.** It sends its IANA zone name, and the server works out `today := (now() at time zone p_time_zone)::date`, so the phone clock decides nothing. `from` is the Sunday `p_weeks - 1` weeks before today's week (at most 53 weeks, 371 days).
+  - Checks in order: weeks (`invalid_input`), then the zone against `pg_catalog.pg_timezone_names` (`invalid_time_zone`).
+  - Nothing after `today` counts, in `days` or in any stat (a log made in a zone ahead waits for its day).
+  - The year starts at `make_date(extract(year from v_today)::int, 1, 1)`, **not** `date_trunc('year', ...)`: on a `date`, `date_trunc` goes through `timestamptz` in the session time zone. pgTAP pins it with a source check.
+  - Streaks are gaps and islands over the distinct dates (`local_date - row_number()`); the current streak is the run ending today, or yesterday when today has none yet.
+- `list_my_food_logs_on(p_date date)` returns `{ items }` with spec 13's 8-key log object, oldest first, `limit 60` with no cursor. The comment beside the limit ties it to the 20-starts-per-24-hours cap and the UTC +/-1 `local_date` check: change the limit if either changes. The date only picks which day to show.
+- The per-day single cuisine (flag or globe) is **spec 15's**, not in these functions; it adds its own field or function.
+
+A grid for another person does not exist in v1. A spec that adds one gets its own function and counts `is_public` rows only.
 
 ## pgTAP skeleton
 ```sql

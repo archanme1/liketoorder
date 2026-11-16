@@ -23,8 +23,9 @@ Tests are a contract derived from the **spec** (`.claude/specs/<name>.md` → De
 - For each screen in the spec test: loading, empty, error-with-retry, success.
 - Test validation messages from zod schemas.
 - Accessibility: assert key touchables expose `accessibilityLabel`.
-- Use fake timers for time-based rules (expiry windows, streaks); set a fixed timezone via `process.env.TZ` when testing dates.
-- Activity-grid logic: test pure functions directly (intensity buckets 0 / 1 / 2–3 / 4+, flag vs 🌍 rule, streaks, local-date grouping).
+- Prefer passing the time or date in as an argument (for example `now` or `today`), so tests use fixed values instead of the real clock.
+- For activity-grid tests: no fake timers and no `process.env.TZ`; wait with `waitFor`.
+- Activity-grid logic: test pure functions directly (intensity buckets 0 / 1 / 2–3 / 4+, `buildWeeks`, month labels, `formatShortDate`; spec 15 adds the flag vs 🌍 rule). Pure date helpers take `today` as an argument and work on date-only strings, so no `process.env.TZ` is needed. Streaks and local-date grouping are computed by the server (pgTAP covers them); jest fakes the RPC with the real JSON shape.
 
 ## Database tests (pgTAP) — when the spec has Database changes
 - Location: `supabase/tests/<spec-name>.test.sql`

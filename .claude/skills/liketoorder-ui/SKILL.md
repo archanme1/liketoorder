@@ -46,13 +46,15 @@ Use `StatusChip` (`src/components/ui`), fed by `STATUS_INFO` in `src/features/re
 Always icon + text, never color alone. A pending request is never described as confirmed, booked or on its way: no "confirmed" wording anywhere, including screen-reader labels (spec 09).
 
 ## Activity grid visuals
-- Square 12–14pt with 3pt gap, radius 3. Week columns, Sun→Sat rows; month labels above.
-- Intensity: 0 `grid0`, 1 `grid1`, 2–3 `grid2`, 4+ `grid3`. Legend "Less ▢▢▢▢ More" under the grid.
-- Cuisine view: same cell size; flag image fills the cell (rounded); mixed day shows 🌍; faint intensity color behind the flag.
-- Today outlined; selected day has a 2pt `text` border.
-- Phone: last ~17 weeks visible, horizontal scroll to the past, "View full year" opens a modal.
-- Each cell: `accessibilityLabel="Oct 12, 3 uploads"` (cuisine view: "Oct 12, Italian" / "Oct 12, 3 cuisines"), role `button`.
-- Day panel row: 48pt thumbnail, flag, one-line description (`numberOfLines={1}`), time.
+- Square 14pt with 3pt gap, radius 3. Week columns, Sun→Sat rows whatever the locale; month labels above.
+- **The 14 pt cell is the one exception to the 44 pt touch-target rule (spec 14 Decision 11), for grid cells only.** 17 weeks of 44 pt squares don't fit a phone. Every action a cell offers must also be reachable through 44 pt controls: the list view rows ("Show as list": one row per day with uploads), the day panel's Previous day / Next day buttons, and the day panel rows. A jest test proves this without pressing any cell and checks the minimum sizes. Nothing else gets this exception.
+- Intensity: 0 `grid0`, 1 `grid1`, 2–3 `grid2`, 4+ `grid3`. Empty squares (level 0) get a thin `gridOutline` border so the grid's shape shows (`grid1` on `grid0` is only about 1.2:1). Legend "Less ▢▢▢▢ More" under the grid; its squares are hidden from screen readers and the legend speaks "Fewer to more uploads".
+- Cuisine view (spec 15): same cell size; flag image fills the cell (rounded); mixed day shows 🌍; faint intensity color behind the flag.
+- Today outlined; selected day has a 2pt `text` border. Both are also said in the label (", today", selected state), never shown by the border alone.
+- Phone: last 17 weeks on Profile, horizontal scroll to the past, opened at the current week with no animation. "View full year" pushes the stack screen `/food-log/year` ("Your year", the last 53 weeks).
+- Each cell: role `button`, `accessibilityState.selected`, and a label of the form **"Nov 12, 3 uploads"** ("Nov 12, 1 upload", "Nov 12, no uploads"; ", today" added on today). A comma, not a dash. Cuisine view: "Nov 12, Italian" / "Nov 12, 3 cuisines". The grid also has a summary label ("Activity, last 17 weeks, 23 uploads").
+- Day panel row: 48pt thumbnail, `CuisineLabel` (name visible, flag hidden from screen readers), one-line description (`numberOfLines={1}`), "Private" as a word on private uploads. **No time:** a time from `created_at` in the phone's zone can contradict the stored local date after travel (spec 14 Decision 12).
+- Tests: every date in the grid comes from the server's `today` and `local_date` strings. Pure date helpers (`src/lib/localDate.ts`, `activity-grid/grid.ts`) take `today` as an argument and never build a `Date` in the phone's zone, so tests pass dates in. **No fake timers and no `process.env.TZ`**; screen tests use `waitFor`.
 
 ## Screen states
 Every data screen: `Skeleton` while loading → `EmptyState` (friendly line + action) → `ErrorState` with Retry → content. Pull-to-refresh on lists.

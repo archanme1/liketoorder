@@ -13,7 +13,7 @@
 
 **Plan mode:** required. New security-definer functions with a migration and pgTAP, a change to the Profile screen, a new route and a new feature folder, and well over 5 files.
 
-**Status:** Spec written
+**Status:** In progress. PR 1: gates A (migration, types) and B (pgTAP, approved 05 edit, breaks 1 to 8) done; gate C docs done, review next. PR 2 not started.
 
 ## Overview
 After this ships, any signed-in person with a finished profile, customer or seller, sees their own **activity grid** at the top of Profile:
@@ -348,45 +348,45 @@ Feature-specific rules:
 
 ## Definition of done
 **PR 1 (pgTAP unless noted):**
-- [ ] Signatures and grants:
+- [x] Signatures and grants:
   - both functions exist with these signatures, `security definer` and `search_path = ''`;
   - anon cannot execute either one;
   - the 05 allowlist holds them (approved edit).
-- [ ] Input checks:
+- [x] Input checks:
   - `p_weeks` null, 0 and 54 give `invalid_input`; 1 and 53 work;
   - a null, empty or `Mars/Olympus` zone gives `invalid_time_zone`;
   - `p_weeks` is checked before the zone.
-- [ ] Range: `from` is a Sunday, `from <= today`, and the range holds `7 * p_weeks - (6 - dow(today))` days.
-- [ ] `days`:
+- [x] Range: `from` is a Sunday, `from <= today`, and the range holds `7 * p_weeks - (6 - dow(today))` days.
+- [x] `days`:
   - counts by `local_date`, not `created_at` (the late-night fixture);
   - counts `ready` rows only (a pending row is not counted);
   - counts private and public alike;
   - leaves out days with no uploads;
   - is in ascending order;
   - holds nothing before `from` or after today.
-- [ ] `today` follows the zone: `Pacific/Kiritimati` and `Pacific/Pago_Pago` give different values at one instant.
-- [ ] Stats:
+- [x] `today` follows the zone: `Pacific/Kiritimati` and `Pacific/Pago_Pago` give different values at one instant.
+- [x] Stats:
   - `total_this_year` counts only this calendar year and nothing after today;
   - current streak: today logged gives a run that includes today; today not logged but yesterday logged gives the run ending yesterday; neither gives 0; one missed day resets it;
   - the longest streak is right across a gap and across a year boundary;
   - a run made only of private uploads counts;
   - `cuisines_tried` counts repeats once and counts neutral codes;
   - a log dated after today counts in no stat.
-- [ ] `list_my_food_logs_on`:
+- [x] `list_my_food_logs_on`:
   - returns the date's `ready` rows oldest first, each with exactly the 8 keys;
   - rows of other dates and pending rows are absent;
   - a null date gives `invalid_input`;
   - an empty date gives `{ items: [] }`;
   - **60 ready rows on one date are all returned** (the pinned limit, Decision 13);
   - the migration carries the limit comment.
-- [ ] Exact key sets for the activity object, a `days` item, `stats` and the day object.
-- [ ] **An outsider cannot** see another person's uploads, public or private, through either function:
+- [x] Exact key sets for the activity object, a `days` item, `stats` and the day object.
+- [x] **An outsider cannot** see another person's uploads, public or private, through either function:
   - user B's activity, stats and day list hold none of user A's rows;
   - A's public log on a date gives B an empty list for that date;
   - anon executes neither function;
   - a call with no user id gets empty data, never someone else's.
-- [ ] Every older pgTAP file passes unedited except the approved 05 edit.
-- [ ] `npx supabase db reset`, `npx supabase test db` and `npm run typecheck` pass. `src/types/database.ts` is regenerated, not hand-edited.
+- [x] Every older pgTAP file passes unedited except the approved 05 edit.
+- [x] `npx supabase db reset`, `npx supabase test db` and `npm run typecheck` pass. `src/types/database.ts` is regenerated, not hand-edited.
 
 **PR 2 (jest unless noted):**
 - [ ] `grid.ts` and `localDate.ts`:

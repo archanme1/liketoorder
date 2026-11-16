@@ -39,18 +39,31 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((toUtcMs(b) - toUtcMs(a)) / DAY_MS);
 }
 
+// Building an Intl.DateTimeFormat is slow (notably on Hermes) and the grid formats up to 371 days
+// per render, so one formatter is kept per kind and locale.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatter(kind: 'day' | 'month', locale: string | undefined): Intl.DateTimeFormat {
+  const key = `${kind}|${locale ?? ''}`;
+  let cached = formatters.get(key);
+  if (!cached) {
+    cached = new Intl.DateTimeFormat(
+      locale,
+      kind === 'day'
+        ? { timeZone: 'UTC', month: 'short', day: 'numeric' }
+        : { timeZone: 'UTC', month: 'short' },
+    );
+    formatters.set(key, cached);
+  }
+  return cached;
+}
+
 /** "Nov 12" for "2026-11-12". */
 export function formatShortDate(date: string, locale?: string): string {
-  return new Intl.DateTimeFormat(locale, {
-    timeZone: 'UTC',
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(toUtcMs(date)));
+  return formatter('day', locale).format(new Date(toUtcMs(date)));
 }
 
 /** "Nov" for "2026-11-12". */
 export function formatShortMonth(date: string, locale?: string): string {
-  return new Intl.DateTimeFormat(locale, { timeZone: 'UTC', month: 'short' }).format(
-    new Date(toUtcMs(date)),
-  );
+  return formatter('month', locale).format(new Date(toUtcMs(date)));
 }

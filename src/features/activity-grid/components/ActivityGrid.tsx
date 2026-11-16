@@ -1,4 +1,4 @@
-import { memo, useRef } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 
 import { Text } from '@/components/ui';
@@ -49,7 +49,8 @@ export function ActivityGrid({
   const { space, size } = useTheme();
   const scroll = useRef<ScrollViewInstance>(null);
   const column = size.gridCell + size.gridGap;
-  const months = monthLabels(weeks, locale);
+  // Only when the weeks change: choosing a day re-renders the grid but never moves a month.
+  const months = useMemo(() => monthLabels(weeks, locale), [weeks, locale]);
 
   return (
     <View style={{ gap: space.sm }}>

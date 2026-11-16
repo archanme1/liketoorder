@@ -13,7 +13,7 @@
 
 **Plan mode:** required. New security-definer functions with a migration and pgTAP, a change to the Profile screen, a new route and a new feature folder, and well over 5 files.
 
-**Status:** In progress. PR 1: gates A (migration, types) and B (pgTAP, approved 05 edit, breaks 1 to 8) done; gate C docs done, review next. PR 2 not started.
+**Status:** In progress. PR 1: gates A (migration, types), B (pgTAP, approved 05 edit, SQL breaks 1 to 7 plus the make_date break) and C (docs) done; review fixes done (the range-edge break added); shipping. PR 2 not started.
 
 ## Overview
 After this ships, any signed-in person with a finished profile, customer or seller, sees their own **activity grid** at the top of Profile:
@@ -162,7 +162,7 @@ Steps:
 
 A caller with no user id gets the same shape, with `days: []` and every stat 0. Every key set is fixed and pinned by pgTAP.
 
-The streaks scan the caller's distinct dates through `food_logs_author_date_idx`. That is at most one row per day of the account's life, so the scan stays bounded.
+The streaks read every ready row of the caller (at most 20 starts a day) through `food_logs_author_date_idx` and group them to at most one row per day of the account's life before the window step, so the work grows with the account's age, not with anyone else's data. `cuisines_tried` is a second pass that reads `cuisine_code` from the table; if it ever matters, a later migration can add an index that also holds `cuisine_code`.
 
 #### `list_my_food_logs_on(p_date date) returns jsonb`
 - `p_date` null: raise `invalid_input`.
@@ -326,15 +326,17 @@ Feature-specific rules:
   - PR 2: **D** feature code, route, Profile, token, seed script, plus the list of every older test that renders `ProfileScreen` (Decision 14); **E** jest tests, the approved `ProfileScreen.test.tsx` edit and the app breaks; **F** the Simulator run (Archan); then review, ship.
 
 ## Known pitfalls (checklist)
-- [ ] **Late-night upload:** a log made at 23:30 local time (already the next UTC day) appears on its local day. pgTAP has a fixture whose `local_date` differs from the UTC date of its `created_at`.
+- [x] **Late-night upload:** a log made at 23:30 local time (already the next UTC day) appears on its local day. pgTAP has a fixture whose `local_date` differs from the UTC date of its `created_at`.
 - [ ] **Daylight saving:** `local_date` is a date, so 23- and 25-hour days need nothing special. `buildWeeks` and the streak are tested across a change (`America/Toronto` dates).
-- [ ] **Travel:** going east or across the date line can skip a calendar day and break the streak; going west repeats a day, and both uploads land on one date. Accepted and documented; the grid shows what was stored.
-- [ ] **A date after "today":** a `local_date` later than the server's today in the current zone (logged in a zone ahead, then the phone's zone moved back) is left out of the grid and the stats until that day comes. pgTAP covers it.
-- [ ] **Year boundary:** on Jan 1 `total_this_year` restarts while the streak continues across the years.
+- [x] **Travel:** going east or across the date line can skip a calendar day and break the streak; going west repeats a day, and both uploads land on one date. Accepted and documented; the grid shows what was stored.
+- [x] **A date after "today":** a `local_date` later than the server's today in the current zone (logged in a zone ahead, then the phone's zone moved back) is left out of the grid and the stats until that day comes. pgTAP covers it.
+- [x] **Year boundary:** on Jan 1 `total_this_year` restarts while the streak continues across the years.
 - [ ] **Week start:** weeks start on Sunday whatever the phone's locale.
 - [ ] **Wrong phone clock:** the grid still ends at the server's today. Jest: the server says Nov 12 while the phone clock says Nov 20.
 - [ ] **Not counted:** pending uploads and deleted logs never count, and deleting can shorten a streak.
-- [ ] **Seed data:** leftover seed rows must not change pgTAP counts. pgTAP uses its own fixtures and ids (`00000000-0000-0000-0014-...`) and rolls back.
+- [x] **Seed data:** leftover seed rows must not change pgTAP counts. pgTAP uses its own fixtures and ids (`00000000-0000-0000-0014-...`) and rolls back.
+
+PR 1 review: the ticked items are proven by pgTAP (travel by the stored-date fixtures and a test comment). Daylight saving: the streak half is pgTAP (runs across the 2025 America/Toronto changes); `buildWeeks` closes it at PR 2. Not counted: pending rows are pgTAP; "deleting can shorten a streak" closes with the PR 2 stale-grid test. Week start and wrong phone clock close at PR 2 (jest).
 
 ## Out of scope
 - The cuisine view, flags and the globe icon on the grid (spec 15). The functions return counts only.
@@ -451,6 +453,8 @@ Feature-specific rules:
   5. SQL: drop `local_date <= today`. The future-date test fails.
   6. SQL: drop the `author_id` filter in `list_my_food_logs_on`. The outsider day test fails.
   7. SQL: change the day limit to 59. The 60-row test fails.
+  7a. SQL (added at gate B): change `make_date(extract(year from v_today)::int, 1, 1)` to `date_trunc('year', v_today)::date`. Only the source check fails. The New Year checks under two session zones stay green, because `date_trunc` on a date goes to `timestamptz` and back in the same session zone and still gives Jan 1; a test comment says so.
+  7b. SQL (added in the review): change `>= v_from` to `> v_from` in the range filter. The range-edge test (a log on `from`, the range's first Sunday) fails.
   8. App: build the grid's end from `new Date()` instead of the server's today. The wrong-clock test fails.
   9. App: skip the activity invalidation after delete. The stale-grid test fails.
   10. App: render the flag in a day-panel row without hiding it from screen readers. The display-rule test fails.
@@ -528,7 +532,7 @@ All approved by Archan on 2026-11-15.
 1. **44 pt targets:** `liketoorder-ui` gives grid squares of 12 to 14 pt with role `button`, while CLAUDE.md requires touch targets of at least 44 pt. 17 weeks of 44 pt squares do not fit a phone. Settled by Decision 11.
 2. **A time in the panel row:** the skill's day-panel row shows a time, while v1 section 11 does not. Settled by Decision 12.
 3. **The skill's grid query:** `supabase-patterns` "Activity grid query" sketches `activity_grid(p_from date)`, with a date sent by the client, and returns `single_cuisine`. That breaks "the phone clock never decides", and the single cuisine belongs to spec 15.
-4. **Label punctuation:** v1 gives the cell label with an en dash (U+2013), "Oct 12 - 3 uploads"; the skill gives "Oct 12, 3 uploads". This spec uses the comma.
+4. **Label punctuation:** v1 gives the cell label with an en dash (U+2013), "Oct 12 - 3 uploads"; the skill gives "Oct 12, 3 uploads". This spec uses the comma. **Settled in the PR 1 review (approved by Archan on 2026-11-15):** v1 section 11 now reads "Oct 12, 3 uploads" too.
 5. **"Visitors don't see them":** v1 section 11 says visitors don't see private uploads, but there is no visitor route. Nobody else can open a person's profile in the app (spec 13, mismatch 3). In v1 nobody else sees a grid at all.
 6. **"Total this year" against "View full year":** the stat is the calendar year, while the full-year view is the last 53 weeks.
 7. **The grid index in spec 13's text:** the text shows `food_logs_author_date_idx` without `where status = 'ready'`; the migration has it. The migration is right, and both functions filter on `ready`, so they use the index.

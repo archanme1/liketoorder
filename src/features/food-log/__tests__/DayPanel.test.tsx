@@ -139,20 +139,20 @@ describe('DayPanel rows', () => {
     ).toBeTruthy();
   });
 
+  // The rows can render before the cuisine catalog (its own query) resolves, showing "Loading
+  // cuisine" for a moment; the tests that read the cuisine wait for the names themselves.
   it('show CuisineLabel, the description on one line and "Private" as a word', async () => {
     await renderPanel();
-    await screen.findAllByTestId(/^day-panel-row-/);
     const visible = { includeHiddenElements: true };
-    expect(screen.getByText('Italy', visible)).toBeTruthy();
-    expect(screen.getByText('Japan', visible)).toBeTruthy();
+    expect(await screen.findByText('Italy', visible)).toBeTruthy();
+    expect(await screen.findByText('Japan', visible)).toBeTruthy();
     expect(screen.getByText(PASTA.description ?? '', visible).props.numberOfLines).toBe(1);
     expect(screen.getAllByText('Private', visible)).toHaveLength(1);
   });
 
   it('hide the flag from screen readers (spec 04 display rule)', async () => {
     await renderPanel();
-    await screen.findAllByTestId(/^day-panel-row-/);
-    const flags = screen.getAllByText(ITALY_FLAG, { includeHiddenElements: true });
+    const flags = await screen.findAllByText(ITALY_FLAG, { includeHiddenElements: true });
     expect(flags.length).toBeGreaterThan(0);
     for (const flag of flags) expect(isHidden(flag)).toBe(true);
     expect(screen.queryByText(ITALY_FLAG)).toBeNull();
@@ -160,7 +160,8 @@ describe('DayPanel rows', () => {
 
   it('show no time (Decision 12)', async () => {
     await renderPanel();
-    await screen.findAllByTestId(/^day-panel-row-/);
+    // Fully loaded rows (cuisine names in), so the absence check is not vacuous.
+    await screen.findByRole('button', { name: /^Food photo, Japan\./ });
     expect(screen.queryByText(/\d{1,2}:\d{2}/, { includeHiddenElements: true })).toBeNull();
     for (const row of screen.getAllByTestId(/^day-panel-row-/)) {
       expect(row.props.accessibilityLabel).not.toMatch(/\d{1,2}:\d{2}/);

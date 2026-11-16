@@ -78,13 +78,30 @@ describe('ActivityGrid', () => {
       borderWidth: stroke.selected,
       borderColor: colors.text,
     });
-    expect(styleOf('activity-cell-2026-11-12')).toMatchObject({ borderColor: colors.primary });
+    expect(styleOf('activity-cell-2026-11-12')).toMatchObject({
+      borderWidth: stroke.today,
+      borderColor: colors.text,
+    });
   });
 
   it('speaks the legend and the summary', async () => {
     await renderGrid();
     expect(screen.getByLabelText('Legend from few to lots')).toBeTruthy();
     expect(screen.getByRole('summary')).toHaveTextContent('Summary words');
+  });
+
+  it('hides the legend words and sample squares from screen readers (review Q6)', async () => {
+    await renderGrid();
+    expect(screen.queryByText('Fewer')).toBeNull();
+    expect(screen.queryByText('Lots')).toBeNull();
+    expect(screen.getByText('Fewer', { includeHiddenElements: true })).toBeTruthy();
+    const samples = screen.getByTestId('activity-legend-samples', { includeHiddenElements: true });
+    expect(samples.props).toMatchObject({
+      accessibilityElementsHidden: true,
+      importantForAccessibility: 'no-hide-descendants',
+    });
+    // The words and the four squares all sit inside the hidden container.
+    expect(samples.children).toHaveLength(6);
   });
 
   it('shades by level and outlines empty squares in gridOutline', async () => {
@@ -96,6 +113,47 @@ describe('ActivityGrid', () => {
     expect(styleOf('activity-cell-2026-11-10')).toMatchObject({ backgroundColor: colors.grid1 });
     expect(styleOf('activity-cell-2026-11-11')).toMatchObject({ backgroundColor: colors.grid3 });
     expect(styleOf('activity-cell-2026-11-11').borderColor).toBeUndefined();
+  });
+
+  // Review Q3: today's outline is dark (text), so it shows on the darkest shade, and it stays
+  // visible, as an inner ring, when today is also the selected day.
+  it('outlines a busy today in the text colour, not a colour close to the darkest shade', async () => {
+    await render(
+      <ActivityGrid
+        weeks={WEEKS}
+        cells={cellsFor({ [TODAY]: 3 })}
+        today={TODAY}
+        selectedDate={null}
+        onSelectDate={jest.fn()}
+        summaryLabel="Summary words"
+        legendLabels={LEGEND}
+        locale="en-US"
+      />,
+    );
+    const today = styleOf(`activity-cell-${TODAY}`);
+    expect(today).toMatchObject({
+      backgroundColor: colors.grid3,
+      borderWidth: stroke.today,
+      borderColor: colors.text,
+    });
+    expect(today.borderColor).not.toBe(colors.grid3);
+    expect(screen.queryByTestId(`activity-today-ring-${TODAY}`)).toBeNull();
+  });
+
+  it('keeps today visible and different from a plain selected day when today is selected', async () => {
+    await renderGrid(TODAY);
+    expect(styleOf(`activity-cell-${TODAY}`)).toMatchObject({
+      borderWidth: stroke.selected,
+      borderColor: colors.text,
+    });
+    expect(
+      StyleSheet.flatten(screen.getByTestId(`activity-today-ring-${TODAY}`).props.style),
+    ).toMatchObject({ borderWidth: stroke.today, borderColor: colors.bg });
+    await cleanup();
+    // Another selected day has the same border but no today ring.
+    await renderGrid('2026-11-10');
+    expect(screen.queryByTestId('activity-today-ring-2026-11-10')).toBeNull();
+    expect(screen.queryByTestId(`activity-today-ring-${TODAY}`)).toBeNull();
   });
 
   it('draws 14 pt squares (the documented exception to the 44 pt rule)', async () => {

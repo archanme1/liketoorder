@@ -38,6 +38,7 @@ export function FoodLogFrame({ top, children, scroll = true, refreshControl }: F
         ) : null}
         {scroll ? (
           <ScrollView
+            testID="food-log-scroll"
             keyboardShouldPersistTaps="handled"
             refreshControl={refreshControl}
             contentContainerStyle={{ gap: space.lg, padding: space.lg, paddingBottom: space.xxl }}

@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { activityJson, resetModuleMocks, testClientOptions } from '../__fixtures__/foodLog';
 import { getMyFoodLogActivity } from '../api';
 import { foodLogActivityKey } from '../hooks/keys';
+import { useActivityRefresh } from '../hooks/useActivityRefresh';
 import { useFoodLogActivity } from '../hooks/useFoodLogActivity';
 
 jest.mock('../api', () => ({
@@ -51,6 +52,12 @@ describe('useFoodLogActivity', () => {
   });
 
   it('is fresh for 60 s with no polling', async () => {
+    // Review Q4: this client keeps unused data, so the remount below finds it whatever the timing
+    // of garbage collection (gcTime 0 could drop it between unmount and remount).
+    client.clear();
+    client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { gcTime: 0 } },
+    });
     const first = await renderHook(() => useFoodLogActivity(17), { wrapper });
     await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
     const query = client.getQueryCache().find({ queryKey: foodLogActivityKey(17) });
@@ -84,5 +91,29 @@ describe('useFoodLogActivity', () => {
       focusManager.setFocused(true);
     });
     await waitFor(() => expect(mockedActivity).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('useActivityRefresh (review Q9)', () => {
+  it("refetches only that screen's week count, even with Profile mounted underneath", async () => {
+    // Profile (17 weeks) stays mounted under Your year (53 weeks).
+    const { result } = await renderHook(
+      () => ({
+        profile: useFoodLogActivity(17),
+        year: useFoodLogActivity(53),
+        refresh: useActivityRefresh(53),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.year.isSuccess).toBe(true));
+    await waitFor(() => expect(result.current.profile.isSuccess).toBe(true));
+    expect(mockedActivity).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await result.current.refresh.onRefresh();
+    });
+    expect(mockedActivity).toHaveBeenCalledTimes(3);
+    expect(mockedActivity).toHaveBeenLastCalledWith('UTC', 53);
+    expect(result.current.refresh.refreshing).toBe(false);
   });
 });

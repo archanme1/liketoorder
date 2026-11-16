@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { waitFor } from '@testing-library/react-native';
 import { renderRouter, screen } from 'expo-router/testing-library';
 
+// The app's shared client, not an own QueryClient: the real router renders app/_layout.tsx, which
+// provides this one (review Q5; as in sellerRouting.test.tsx). It is cleared before and after.
 import { queryClient } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
 

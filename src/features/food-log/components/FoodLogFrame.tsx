@@ -1,5 +1,12 @@
-import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import type { ReactElement, ReactNode } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+  type RefreshControlProps,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/theme/useTheme';
@@ -10,11 +17,13 @@ type FoodLogFrameProps = {
   children: ReactNode;
   /** False when the content scrolls itself (the list's FlatList). */
   scroll?: boolean;
+  /** Pull to refresh on the scrolling content (Your year, spec 14). */
+  refreshControl?: ReactElement<RefreshControlProps>;
 };
 
 // The /food-log/* screens. The food log Stack's header covers the top inset and the title, so
 // only the bottom inset is applied here.
-export function FoodLogFrame({ top, children, scroll = true }: FoodLogFrameProps) {
+export function FoodLogFrame({ top, children, scroll = true, refreshControl }: FoodLogFrameProps) {
   const { colors, space } = useTheme();
   return (
     <SafeAreaView edges={['bottom']} style={[styles.flex, { backgroundColor: colors.bg }]}>
@@ -30,6 +39,7 @@ export function FoodLogFrame({ top, children, scroll = true }: FoodLogFrameProps
         {scroll ? (
           <ScrollView
             keyboardShouldPersistTaps="handled"
+            refreshControl={refreshControl}
             contentContainerStyle={{ gap: space.lg, padding: space.lg, paddingBottom: space.xxl }}
           >
             {children}

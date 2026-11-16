@@ -16,6 +16,7 @@ export default function FoodLogLayout() {
     >
       <Stack.Screen name="index" options={{ title: 'Food log' }} />
       <Stack.Screen name="new" options={{ title: 'Add photo' }} />
+      <Stack.Screen name="year" options={{ title: 'Your year' }} />
       <Stack.Screen name="[id]/index" options={{ title: 'Photo' }} />
       <Stack.Screen name="[id]/edit" options={{ title: 'Edit photo' }} />
     </Stack>

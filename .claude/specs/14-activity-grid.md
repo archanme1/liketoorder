@@ -13,7 +13,7 @@
 
 **Plan mode:** required. New security-definer functions with a migration and pgTAP, a change to the Profile screen, a new route and a new feature folder, and well over 5 files.
 
-**Status:** In progress. PR 1: gates A (migration, types), B (pgTAP, approved 05 edit, SQL breaks 1 to 7 plus the make_date break) and C (docs) done; review fixes done (the range-edge break added); shipping. PR 2 not started.
+**Status:** In progress. PR 1 (backend, gates A to C) merged as #31 (25f898c). PR 2 (the app) in progress on `feature/activity-grid-app`: gate D.
 
 ## Overview
 After this ships, any signed-in person with a finished profile, customer or seller, sees their own **activity grid** at the top of Profile:

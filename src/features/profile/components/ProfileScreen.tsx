@@ -37,6 +37,7 @@ export function ProfileScreen() {
   return (
     <Screen>
       <ScrollView
+        testID="profile-scroll"
         contentContainerStyle={{ gap: space.lg, paddingVertical: space.xl }}
         refreshControl={
           <RefreshControl

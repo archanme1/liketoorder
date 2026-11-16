@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { AuthProvider } from '@/features/auth/components/AuthProvider';
 import * as authApi from '@/features/auth/api';
 import { authErrorMessage, PASSWORD_UPDATED } from '@/features/auth/messages';
+import { activityJson, dayJson } from '@/features/food-log/__fixtures__/foodLog';
+import * as foodLogApi from '@/features/food-log/api';
 import * as sellersApi from '@/features/sellers/api';
 import { supabase } from '@/lib/supabase';
 
@@ -38,11 +40,20 @@ jest.mock('@/features/sellers/api', () => ({
   getMyBusiness: jest.fn(),
 }));
 
+// The activity section (spec 14) loads the grid with the profile. Mocked with the real JSON shape so
+// it shows its grid, never a second role="alert" or error text of its own.
+jest.mock('@/features/food-log/api', () => ({
+  ...jest.requireActual('@/features/food-log/api'),
+  getMyFoodLogActivity: jest.fn(),
+  listMyFoodLogsOn: jest.fn(),
+}));
+
 const realProfileApi = jest.requireActual<typeof import('../api')>('../api');
 const realAuthApi = jest.requireActual<typeof import('@/features/auth/api')>('@/features/auth/api');
 const mockedApi = jest.mocked(api);
 const mockedAuthApi = jest.mocked(authApi);
 const mockedSellersApi = jest.mocked(sellersApi);
+const mockedFoodLogApi = jest.mocked(foodLogApi);
 const auth = supabase.auth as unknown as Record<string, jest.Mock>;
 
 const profile: api.Profile = {
@@ -82,6 +93,8 @@ describe('ProfileScreen', () => {
     mockedApi.getMyProfile.mockResolvedValue(profile);
     mockedAuthApi.signOut.mockResolvedValue(undefined);
     mockedSellersApi.getMyBusiness.mockResolvedValue(null);
+    mockedFoodLogApi.getMyFoodLogActivity.mockResolvedValue(activityJson());
+    mockedFoodLogApi.listMyFoodLogsOn.mockResolvedValue(dayJson());
     auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: jest.fn() } } });
     auth.getSession.mockResolvedValue({ data: { session } });
   });
@@ -153,5 +166,25 @@ describe('ProfileScreen', () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: 'Food log' }));
     expect(mockRouter.push).toHaveBeenCalledWith('/food-log');
+  });
+
+  it('shows the activity section (spec 14)', async () => {
+    await renderScreen();
+    expect(await screen.findByRole('header', { name: 'Your activity' })).toBeTruthy();
+    expect(await screen.findByRole('summary')).toHaveTextContent(
+      'Activity, last 17 weeks, 10 uploads',
+    );
+    expect(screen.getByLabelText('Current streak, 3 days')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'View full year' })).toBeTruthy();
+    expect(mockedFoodLogApi.getMyFoodLogActivity).toHaveBeenCalledWith('UTC', 17);
+  });
+
+  it('pull to refresh refetches the activity (spec 14)', async () => {
+    await renderScreen();
+    await screen.findByRole('summary');
+    await act(async () => {
+      await screen.getByTestId('profile-scroll').props.refreshControl.props.onRefresh();
+    });
+    await waitFor(() => expect(mockedFoodLogApi.getMyFoodLogActivity).toHaveBeenCalledTimes(2));
   });
 });

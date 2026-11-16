@@ -86,6 +86,9 @@ export function ActivitySection({ weeks, showFullYear = false }: ActivitySection
   }
 
   const empty = isEmptyActivity(activity);
+  // An empty section hides the list toggle, so it goes back to the grid: the next photo after
+  // deleting the last one shows the grid, never a list the person can't switch off.
+  if (empty && showList) setShowList(false);
 
   return (
     <View style={{ gap: space.md }}>

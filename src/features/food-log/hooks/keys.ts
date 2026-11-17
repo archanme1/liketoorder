@@ -8,3 +8,9 @@ export const foodLogActivityPrefix = ['food-log', 'activity'] as const;
 export const foodLogDayPrefix = ['food-log', 'day'] as const;
 export const foodLogActivityKey = (weeks: number) => ['food-log', 'activity', weeks] as const;
 export const foodLogDayKey = (date: string) => ['food-log', 'day', date] as const;
+
+// Spec 15: the Cuisine view's days. Invalidated with the activity, since a cuisine edit changes a
+// day's glyph.
+export const foodLogCuisineDaysPrefix = ['food-log', 'cuisine-days'] as const;
+export const foodLogCuisineDaysKey = (weeks: number) =>
+  ['food-log', 'cuisine-days', weeks] as const;

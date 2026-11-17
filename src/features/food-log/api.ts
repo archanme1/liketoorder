@@ -5,12 +5,14 @@ import { supabase } from '@/lib/supabase';
 
 import {
   foodLogActivitySchema,
+  foodLogCuisineDaysSchema,
   foodLogDaySchema,
   foodLogPageSchema,
   foodLogReservationSchema,
   foodLogSchema,
   type FoodLog,
   type FoodLogActivity,
+  type FoodLogCuisineDays,
   type FoodLogDay,
   type FoodLogPage,
   type FoodLogReservation,
@@ -167,6 +169,22 @@ export async function getMyFoodLogActivity(
   });
   if (error) throw mapFoodLogError(error);
   return parse(foodLogActivitySchema, data);
+}
+
+/**
+ * Each day's cuisines for the last `weeks` weeks (spec 15). Only the zone name is sent: the server
+ * works out today, the range and every day from the stored cuisine and local date.
+ */
+export async function getMyFoodLogCuisineDays(
+  timeZone: string,
+  weeks: number,
+): Promise<FoodLogCuisineDays> {
+  const { data, error } = await supabase.rpc('get_my_food_log_cuisine_days', {
+    p_time_zone: timeZone,
+    p_weeks: weeks,
+  });
+  if (error) throw mapFoodLogError(error);
+  return parse(foodLogCuisineDaysSchema, data);
 }
 
 /** My ready logs on one local date, oldest first (at most 60). */

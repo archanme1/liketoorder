@@ -5,15 +5,23 @@ import type { FoodLog } from '../schema';
 import { FOOD_LOG_BUCKET } from '../shared';
 import { runFoodLogCleanup, uploadFoodLog, type UploadFoodLogInput } from '../uploadFoodLog';
 
-import { foodLogActivityPrefix, foodLogDayPrefix, foodLogKey, foodLogListKey } from './keys';
+import {
+  foodLogActivityPrefix,
+  foodLogCuisineDaysPrefix,
+  foodLogDayPrefix,
+  foodLogKey,
+  foodLogListKey,
+} from './keys';
 
 /**
- * The activity grid and the day panels (spec 14) count and list ready logs, so every change to a
- * log marks them stale too. Not awaited: a mutation never waits for these refetches. The open day
- * panel sits under the detail page, so after a delete it refetches like the list does.
+ * The activity grid, its Cuisine view and the day panels (specs 14 and 15) count and list ready
+ * logs, so every change to a log marks them stale too; a cuisine edit changes a day's glyph. Not
+ * awaited: a mutation never waits for these refetches. The open day panel sits under the detail
+ * page, so after a delete it refetches like the list does.
  */
 function invalidateActivity(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: foodLogActivityPrefix });
+  void queryClient.invalidateQueries({ queryKey: foodLogCuisineDaysPrefix });
   void queryClient.invalidateQueries({ queryKey: foodLogDayPrefix });
 }
 

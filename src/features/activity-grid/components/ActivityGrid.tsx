@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef } from 'react';
+import { memo, useMemo, useRef, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 
 import { Text } from '@/components/ui';
@@ -7,7 +7,15 @@ import { useTheme } from '@/theme/useTheme';
 
 import { isAfterToday, monthLabels, type IntensityLevel } from '../grid';
 
-export type ActivityCell = { level: IntensityLevel; label: string };
+export type ActivityCell = {
+  level: IntensityLevel;
+  label: string;
+  /**
+   * Drawn centred in the square and hidden from screen readers; the label carries the meaning. A
+   * square with a glyph has no intensity colour behind it (spec 15 Decision 4).
+   */
+  glyph?: ReactNode;
+};
 
 export type LegendLabels = {
   less: string;
@@ -16,7 +24,11 @@ export type LegendLabels = {
   spoken: string;
 };
 
-type ActivityGridProps = {
+// The intensity legend from labels, or a caller's own legend in its place (spec 15).
+type LegendProps =
+  { legendLabels: LegendLabels; legend?: never } | { legend: ReactNode; legendLabels?: never };
+
+type ActivityGridProps = LegendProps & {
   /** Columns of 7 dates, Sunday to Saturday (buildWeeks). */
   weeks: readonly (readonly string[])[];
   /** Every date up to today; a missing date shows as empty and speaks the date itself. */
@@ -25,7 +37,6 @@ type ActivityGridProps = {
   selectedDate: string | null;
   onSelectDate: (date: string) => void;
   summaryLabel: string;
-  legendLabels: LegendLabels;
   locale?: string;
 };
 
@@ -44,6 +55,7 @@ export function ActivityGrid({
   onSelectDate,
   summaryLabel,
   legendLabels,
+  legend,
   locale,
 }: ActivityGridProps) {
   const { space, size } = useTheme();
@@ -101,6 +113,7 @@ export function ActivityGrid({
                       date={date}
                       level={cells[date]?.level ?? 0}
                       label={cells[date]?.label ?? date}
+                      glyph={cells[date]?.glyph}
                       isToday={date === today}
                       selected={date === selectedDate}
                       onSelectDate={onSelectDate}
@@ -112,7 +125,7 @@ export function ActivityGrid({
           </View>
         </View>
       </ScrollView>
-      <Legend labels={legendLabels} />
+      {legendLabels ? <Legend labels={legendLabels} /> : legend}
     </View>
   );
 }
@@ -121,6 +134,7 @@ type GridCellProps = {
   date: string;
   level: IntensityLevel;
   label: string;
+  glyph?: ReactNode;
   isToday: boolean;
   selected: boolean;
   onSelectDate: (date: string) => void;
@@ -128,13 +142,16 @@ type GridCellProps = {
 
 const GridCell = memo(function GridCell({
   date,
-  level,
+  level: intensity,
   label,
+  glyph,
   isToday,
   selected,
   onSelectDate,
 }: GridCellProps) {
   const { colors, size, radius, stroke } = useTheme();
+  // A glyph square is drawn as an empty one (grid0 with its outline) under the glyph.
+  const level = glyph ? 0 : intensity;
   // The selected day has a 2 pt text border; today a 1 pt text border, dark enough to show on the
   // darkest shade; today when selected keeps the 2 pt border and adds an inner light ring, so it
   // still reads as today. An empty day gets a thin outline so its shape shows (Decision 2). Today
@@ -164,6 +181,17 @@ const GridCell = memo(function GridCell({
         border,
       ]}
     >
+      {glyph ? (
+        <View
+          testID={`activity-glyph-${date}`}
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, styles.center]}
+          importantForAccessibility="no-hide-descendants"
+          accessibilityElementsHidden
+        >
+          {glyph}
+        </View>
+      ) : null}
       {selected && isToday ? (
         <View
           testID={`activity-today-ring-${date}`}
@@ -216,4 +244,5 @@ const styles = StyleSheet.create({
   months: { position: 'relative' },
   month: { position: 'absolute', top: 0 },
   fill: { flex: 1 },
+  center: { alignItems: 'center', justifyContent: 'center' },
 });

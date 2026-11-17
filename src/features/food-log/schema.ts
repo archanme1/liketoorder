@@ -40,6 +40,24 @@ export const foodLogActivitySchema = z.strictObject({
 });
 export type FoodLogActivity = z.infer<typeof foodLogActivitySchema>;
 
+// get_my_food_log_cuisine_days (spec 15): the same today and from as the activity, and per day the
+// number of distinct cuisines; cuisine is the code exactly when there is one, otherwise null.
+export const foodLogCuisineDaysSchema = z.strictObject({
+  today: localDateSchema,
+  from: localDateSchema,
+  days: z.array(
+    z
+      .strictObject({
+        date: localDateSchema,
+        count: z.number().int().positive(),
+        cuisines: z.number().int().positive(),
+        cuisine: z.string().min(1).nullable(),
+      })
+      .refine((day) => (day.cuisines === 1) === (day.cuisine !== null)),
+  ),
+});
+export type FoodLogCuisineDays = z.infer<typeof foodLogCuisineDaysSchema>;
+
 // list_my_food_logs_on: one date's ready logs, oldest first, at most 60 (no cursor).
 export const foodLogDaySchema = z.strictObject({ items: z.array(foodLogSchema) });
 export type FoodLogDay = z.infer<typeof foodLogDaySchema>;

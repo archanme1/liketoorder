@@ -177,13 +177,13 @@ select is(
         'claim_photo_cleanup', 'count_my_request_updates', 'count_waiting_requests', 'create_menu_item', 'create_my_business',
         'delete_business_photo', 'delete_food_log', 'delete_menu_item', 'finish_food_log_upload', 'finish_photo_upload',
         'get_business_request', 'get_food_log', 'get_homemade_details', 'get_my_business', 'get_my_food_log_activity',
-        'get_my_pickup_address', 'get_my_pickup_request', 'get_my_table_request', 'get_notification_settings', 'get_restaurant_details',
+        'get_my_food_log_cuisine_days', 'get_my_pickup_address', 'get_my_pickup_request', 'get_my_table_request', 'get_notification_settings', 'get_restaurant_details',
         'list_business_requests', 'list_my_food_logs', 'list_my_food_logs_on', 'list_my_requests', 'map_homemade_in_bounds',
         'map_restaurants_in_bounds',
         'mark_arrived', 'mark_my_requests_seen', 'mark_request_outcome', 'move_menu_item', 'register_push_token',
         'respond_to_request', 'set_menu_currency', 'set_notification_settings', 'set_seller_mode', 'submit_pickup_request',
         'submit_table_request', 'unregister_push_token', 'update_food_log', 'update_menu_item'],
-  'only the allowlisted public functions (specs 05 to 14) are executable by authenticated'
+  'only the allowlisted public functions (specs 05 to 15) are executable by authenticated'
 );
 select is(
   (select coalesce(array_agg(distinct p.proname::text order by p.proname::text), array[]::text[])

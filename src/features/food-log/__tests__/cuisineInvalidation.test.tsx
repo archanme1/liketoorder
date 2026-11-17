@@ -20,7 +20,7 @@ import {
 } from '../api';
 import { ActivitySection } from '../components/ActivitySection';
 import { useCreateFoodLog, useDeleteFoodLog, useUpdateFoodLog } from '../hooks/useFoodLogMutations';
-import { uploadFoodLog } from '../uploadFoodLog';
+import { uploadFoodLog, type UploadFoodLogInput } from '../uploadFoodLog';
 
 // Spec 15: creating, editing or deleting a log marks the cuisine days stale too, so a cuisine edit
 // changes that day's glyph and label.
@@ -47,6 +47,12 @@ jest.mock('@/features/cuisines/api', () => ({
 
 const LOG = foodLog(1, { local_date: '2026-11-12', cuisine_code: 'IT' });
 const CUISINE_DAYS = JSON.stringify(['food-log', 'cuisine-days']);
+const CREATE_INPUT: UploadFoodLogInput = {
+  sourceUri: 'file:///photo.jpg',
+  cuisineCode: 'IT',
+  description: null,
+  isPublic: true,
+};
 
 let client: QueryClient;
 
@@ -89,7 +95,7 @@ describe('mutations mark the cuisine days stale', () => {
     const spy = jest.spyOn(client, 'invalidateQueries');
     const { result } = await renderHook(() => useCreateFoodLog(), { wrapper });
     await act(async () => {
-      await result.current.mutateAsync({} as Parameters<typeof uploadFoodLog>[0]);
+      await result.current.mutateAsync(CREATE_INPUT);
     });
     expect(invalidatedKeys(spy)).toContain(CUISINE_DAYS);
   });

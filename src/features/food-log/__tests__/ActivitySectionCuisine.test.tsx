@@ -90,6 +90,25 @@ async function renderSection() {
   );
 }
 
+/** Your year opened in Cuisine (the route's view=cuisine). */
+async function renderYearInCuisine() {
+  client = new QueryClient(testClientOptions());
+  await render(
+    <QueryClientProvider client={client}>
+      <ActivitySection weeks={53} initialView="cuisine" />
+    </QueryClientProvider>,
+  );
+}
+
+/** A promise the test resolves when it chooses. */
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 async function switchTo(view: 'Activity' | 'Cuisine') {
   await fireEvent.press(await screen.findByRole('radio', { name: view }));
 }
@@ -199,6 +218,48 @@ describe('ActivitySection in Cuisine: requests', () => {
     expect(screen.getByRole('radio', { name: 'Activity, selected' })).toBeTruthy();
     expect(mockedCuisineDays).not.toHaveBeenCalled();
     expect(mockedCatalog).not.toHaveBeenCalled();
+  });
+
+  it('initialView cuisine on an empty account: no cuisine-days or catalog request, no switch', async () => {
+    mockedActivity.mockResolvedValue(activityJson({ days: [], stats: ZERO_STATS }, 53));
+    await renderYearInCuisine();
+    expect(await screen.findByText(ACTIVITY_EMPTY)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add photo' })).toBeTruthy();
+    expect(screen.queryByLabelText('Grid view')).toBeNull();
+    expect(screen.queryByLabelText('Loading cuisines')).toBeNull();
+    await waitFor(() => expect(mockedActivity).toHaveBeenCalled());
+    expect(mockedCuisineDays).not.toHaveBeenCalled();
+    expect(mockedCatalog).not.toHaveBeenCalled();
+  });
+
+  it('the last photo deleted while Your year shows Cuisine: back to Activity, no cuisine request after', async () => {
+    mockedActivity.mockResolvedValue(activityJson({}, 53));
+    mockedCuisineDays.mockResolvedValue(cuisineDaysJson({}, 53));
+    await renderYearInCuisine();
+    expect(await screen.findByText('Cuisines, last 53 weeks, 10 uploads')).toBeTruthy();
+
+    // The delete's invalidation: the server now has nothing.
+    mockedActivity.mockResolvedValue(activityJson({ days: [], stats: ZERO_STATS }, 53));
+    mockedCuisineDays.mockResolvedValue(cuisineDaysJson({ days: [] }, 53));
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['food-log', 'activity'] });
+      await client.invalidateQueries({ queryKey: ['food-log', 'cuisine-days'] });
+    });
+    expect(await screen.findByText(ACTIVITY_EMPTY)).toBeTruthy();
+    expect(screen.queryByLabelText('Grid view')).toBeNull();
+    expect(screen.getByText('Activity, last 53 weeks, no uploads')).toBeTruthy();
+    const cuisineCalls = mockedCuisineDays.mock.calls.length;
+    const catalogCalls = mockedCatalog.mock.calls.length;
+
+    // Later changes and refreshes send nothing for the cuisine days or the catalog.
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['food-log', 'cuisine-days'] });
+      await client.refetchQueries({ queryKey: ['food-log', 'cuisine-days'], type: 'active' });
+      await client.invalidateQueries({ queryKey: ['food-log', 'activity'] });
+    });
+    await waitFor(() => expect(mockedActivity.mock.calls.length).toBeGreaterThanOrEqual(3));
+    expect(mockedCuisineDays).toHaveBeenCalledTimes(cuisineCalls);
+    expect(mockedCatalog).toHaveBeenCalledTimes(catalogCalls);
   });
 
   it("sends only the phone's zone (the getCalendars fake) and the week count, never a date", async () => {
@@ -362,6 +423,50 @@ describe('the chosen-day rule (spec 14 refresh, spec 15 switch)', () => {
       await screen.findByRole('button', { name: 'Nov 11, 4 uploads', selected: true }),
     ).toBeTruthy();
     expect(screen.getByRole('header', { name: 'Wed, Nov 11, 2026' })).toBeTruthy();
+  });
+
+  it('switch to Cuisine while the cuisine days load, with a day chosen: in range, it comes back', async () => {
+    const pending = deferred<ReturnType<typeof cuisineDaysJson>>();
+    mockedCuisineDays.mockReturnValue(pending.promise);
+    await renderSection();
+    await fireEvent.press(await screen.findByTestId('activity-cell-2026-11-11'));
+    expect(await screen.findByRole('header', { name: 'Wed, Nov 11, 2026' })).toBeTruthy();
+
+    // No range yet: the panel waits.
+    await switchTo('Cuisine');
+    expect(await screen.findByLabelText('Loading cuisines')).toBeTruthy();
+    expect(screen.queryByRole('header', { name: 'Wed, Nov 11, 2026' })).toBeNull();
+
+    await act(async () => pending.resolve(cuisineDaysJson()));
+    expect(
+      await screen.findByRole('button', { name: 'Nov 11, 3 cuisines, 4 uploads', selected: true }),
+    ).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Wed, Nov 11, 2026' })).toBeTruthy();
+  });
+
+  it('switch to Cuisine while the cuisine days load, with a day chosen: out of range, it is cleared', async () => {
+    // The cuisine range starts a week after the activity range.
+    const pending = deferred<ReturnType<typeof cuisineDaysJson>>();
+    mockedCuisineDays.mockReturnValue(pending.promise);
+    await renderSection();
+    await fireEvent.press(
+      await screen.findByTestId(`activity-cell-${activityFrom('2026-11-12', 17)}`),
+    );
+    expect(await screen.findByRole('header', { name: 'Sun, Jul 19, 2026' })).toBeTruthy();
+
+    await switchTo('Cuisine');
+    expect(await screen.findByLabelText('Loading cuisines')).toBeTruthy();
+    expect(screen.queryByRole('header', { name: 'Sun, Jul 19, 2026' })).toBeNull();
+
+    await act(async () => pending.resolve(cuisineDaysJson({ today: '2026-11-19' })));
+    expect(await screen.findByRole('button', { name: 'Nov 19, no uploads, today' })).toBeTruthy();
+    expect(screen.queryByRole('header', { name: 'Sun, Jul 19, 2026' })).toBeNull();
+    expect(screen.queryAllByRole('button', { selected: true })).toHaveLength(0);
+
+    // Cleared for good: Activity, where the day is in range, does not bring it back.
+    await switchTo('Activity');
+    expect(await screen.findByText('Activity, last 17 weeks, 10 uploads')).toBeTruthy();
+    expect(screen.queryByRole('header', { name: 'Sun, Jul 19, 2026' })).toBeNull();
   });
 });
 

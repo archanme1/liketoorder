@@ -267,10 +267,10 @@ Feature-specific rules:
 - [ ] `npx supabase db reset`, `npx supabase test db` and `npm run typecheck` pass. `src/types/database.ts` is regenerated, not hand-edited.
 
 **PR 2 (jest unless noted):**
-- [ ] `buildCuisineView` and `cuisineCellLabel`: flag, neutral icon, globe and unknown code; "1 upload" and "N uploads"; ", today".
-- [ ] `ActivityGrid`: a passed glyph renders and is hidden from screen readers; the legend override renders; without them, spec 14's tests pass unedited; the isolation test passes unedited.
-- [ ] `ActivityViewSwitch`: `radiogroup` / `radio` roles, the selected state as a word, each option at least `size.touch`, Activity by default.
-- [ ] `ActivitySection` in Cuisine:
+- [x] `buildCuisineView` and `cuisineCellLabel`: flag, neutral icon, globe and unknown code; "1 upload" and "N uploads"; ", today".
+- [x] `ActivityGrid`: a passed glyph renders and is hidden from screen readers; the legend override renders; without them, spec 14's tests pass unedited; the isolation test passes unedited.
+- [x] `ActivityViewSwitch`: `radiogroup` / `radio` roles, the selected state as a word, each option at least `size.touch`, Activity by default.
+- [x] `ActivitySection` in Cuisine:
   - loading, error with Retry, and success;
   - the cuisine-days query is not sent while Activity is shown;
   - the zone sent is the phone's (the `getCalendars` fake) and no date is sent;
@@ -279,16 +279,17 @@ Feature-specific rules:
   - the selected day and the panel survive a switch;
   - a failed refresh keeps the grid and shows the banner;
   - the empty state shows no switch.
-- [ ] **Per-view range:** with the activity query and the cuisine-days query giving different `today` values, each view's today outline, Previous / Next limits and selected day follow its own query; a selection outside the shown range is cleared.
-- [ ] **Catalog failure:** when the cuisine catalog fails, the grid area shows `ErrorState`; Retry reloads both the catalog and the cuisine days, and the grid then renders.
-- [ ] The 44 pt alternatives work in Cuisine without pressing a cell.
-- [ ] "View full year" in Cuisine opens Your year in Cuisine; a bad or missing `view` param opens Activity.
-- [ ] Create, update (cuisine change) and delete invalidate the cuisine days (stale-glyph test).
-- [ ] The api parses strictly: an extra or missing key, `cuisine` set with `cuisines` above 1, and `cuisine` null with `cuisines` 1 each give `unknown`.
-- [ ] `useFoodLogCuisineDays`: fresh for 60 s, no `refetchInterval`, refetches on foreground once stale, respects `enabled`.
-- [ ] Pull to refresh in Cuisine refetches the cuisine days.
-- [ ] `npm run lint`, `npm run typecheck` and `npm test` pass; older tests pass unedited except the approved list; the byte checks pass.
-- [ ] The Simulator run (Archan): the switch on Profile and Your year; flags, neutral icons and the globe readable at `gridGlyph` (if not, stop and ask); a cuisine edit updating the glyph; the largest text size; VoiceOver where the Simulator allows.
+- [x] **Per-view range:** with the activity query and the cuisine-days query giving different `today` values, each view's today outline, Previous / Next limits and selected day follow its own query; a selection outside the shown range is cleared.
+- [x] **Catalog failure:** when the cuisine catalog fails, the grid area shows `ErrorState`; Retry reloads both the catalog and the cuisine days, and the grid then renders.
+- [x] The 44 pt alternatives work in Cuisine without pressing a cell.
+- [x] "View full year" in Cuisine opens Your year in Cuisine; a bad or missing `view` param opens Activity.
+- [x] Create, update (cuisine change) and delete invalidate the cuisine days (stale-glyph test).
+- [x] The api parses strictly: an extra or missing key, `cuisine` set with `cuisines` above 1, and `cuisine` null with `cuisines` 1 each give `unknown`.
+- [x] `useFoodLogCuisineDays`: fresh for 60 s, no `refetchInterval`, refetches on foreground once stale, respects `enabled`.
+- [x] Pull to refresh in Cuisine refetches the cuisine days.
+- [x] `npm run lint`, `npm run typecheck` and `npm test` pass; older tests pass unedited except the approved list; the byte checks pass.
+- [x] The Simulator run (Archan, rounds 1 to 5, 2026-11-17): the switch on Profile and Your year; flags, neutral icons and the globe readable at `gridGlyph`; a cuisine edit updating the glyph; the largest text size. Also seen: the legend, the day panel with Previous and Next, the view and the chosen day surviving a switch, the list view, "View full year" in the same view, pull to refresh, and the empty account with no switch.
+- [ ] Before launch (v1 section 16, not in this PR): VoiceOver and TalkBack on the switch and the cuisine cells, and the glyphs on a real iPhone and Android phone.
 
 ## Test plan
 - **Database tests (pgTAP)** in `supabase/tests/15-activity-grid-cuisine-view.test.sql`:

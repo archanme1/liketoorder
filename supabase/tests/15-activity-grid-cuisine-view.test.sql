@@ -8,7 +8,7 @@
 -- Seeded rows of other accounts cannot change any result here, because the function reads only
 -- auth.uid()'s rows.
 begin;
-select plan(57);
+select plan(58);
 
 -- -- Helpers (pg_temp) -------------------------------------------------------
 -- Ids: users 00000000-0000-0000-0015-<n>; logs ...-0515-<n>.
@@ -62,11 +62,11 @@ begin
 end $$;
 
 -- -- Fixtures (as postgres) ---------------------------------------------------
--- 1 owner   2 second user   3 outsider (no rows)   4 range edge   5 future date
+-- 1 owner   2 second user   3 outsider (no rows)   4 range edge   5 future date   6 order
 insert into auth.users (id, email)
-select pg_temp.u(n), 'grid15_' || n || '@example.test' from generate_series(1, 5) n;
+select pg_temp.u(n), 'grid15_' || n || '@example.test' from generate_series(1, 6) n;
 update public.profiles set username = 'grid15_' || right(id::text, 2)
- where id in (select pg_temp.u(n) from generate_series(1, 5) n);
+ where id in (select pg_temp.u(n) from generate_series(1, 6) n);
 
 -- 1: T one country (plus a pending JP that must not make it mixed); T-1 the same country twice, one
 -- public and one private; T-2 two countries; T-3 a neutral cuisine plus a country; T-4 one neutral
@@ -91,6 +91,10 @@ select pg_temp.log(401, 4, pg_temp.t() - extract(dow from pg_temp.t())::int);
 select pg_temp.log(402, 4, pg_temp.t() - extract(dow from pg_temp.t())::int - 1);
 -- 5: one log dated T+1, made now (inside the check), which is after today in Pacific/Pago_Pago.
 select pg_temp.log(501, 5, pg_temp.t() + 1, now());
+-- 6: logs inserted out of date order (T first, then a scrambled order, two rows on some dates), so
+-- the days come out ascending only if the function orders them.
+select pg_temp.log(600 + k::int, 6, pg_temp.t() - d, p_cuisine => case when k % 3 = 0 then 'JP' else 'IT' end)
+  from unnest(array[0, 2, 4, 9, 1, 7, 3, 12, 5, 10, 4, 9, 0]) with ordinality as x(d, k);
 
 -- -- 1. Signature and grants (6) ------------------------------------------------
 select ok(to_regprocedure('public.get_my_food_log_cuisine_days(text, integer)') is not null,
@@ -179,7 +183,7 @@ select pg_temp.as_user(4);
 select is(pg_temp.dc(pg_temp.cd()), public.get_my_food_log_activity('UTC', 17)->'days',
   'the range-edge user''s dates and counts equal the activity function''s');
 
--- -- 7. Rows and range (8) ---------------------------------------------------------------------------
+-- -- 7. Rows, range and order (9) ---------------------------------------------------------------------------
 select pg_temp.as_user(1);
 select ok(pg_temp.t() - 6 = any(pg_temp.dates(pg_temp.cd()))
       and not (pg_temp.t() - 5 = any(pg_temp.dates(pg_temp.cd()))),
@@ -204,6 +208,10 @@ select ok((pg_temp.cd(17, 'Pacific/Pago_Pago')->>'today')::date < pg_temp.t() + 
   'fixture: the T+1 log is after today in Pacific/Pago_Pago');
 select is(pg_temp.cd(17, 'Pacific/Pago_Pago')->'days', '[]'::jsonb,
   'a log dated after today is not in days');
+select pg_temp.as_user(6);
+select is(pg_temp.dates(pg_temp.cd()),
+  (select array_agg(distinct d order by d) from unnest(pg_temp.dates(pg_temp.cd())) d),
+  'days come strictly ascending by date, though their rows were inserted newest date first');
 
 -- -- 8. Exact key sets (5) -------------------------------------------------------------------------
 select pg_temp.as_user(1);

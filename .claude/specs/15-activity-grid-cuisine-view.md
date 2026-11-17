@@ -13,7 +13,7 @@
 
 **Plan mode:** required. A new security-definer function with a migration and pgTAP, a change to the generic grid component, and well over 5 files.
 
-**Status:** PR 1 merged as #33 (cc38f85); PR 2 in progress.
+**Status:** ✅ Shipped (2026-11-17). PR 1 (backend, gates A to C) merged as #33 (cc38f85). PR 2 (the app, gates D to F and review fixes Q1 to Q4 and Q6b) on `feature/activity-grid-cuisine-view-app`.
 
 ## Overview
 After this ships, the activity grid on Profile and on Your year has a two-way switch, **Activity | Cuisine**:
@@ -226,18 +226,18 @@ Feature-specific rules:
   - PR 2: **D** feature code, token, the pure-helper tests and the seed check; **E** screen, hook and api tests and the app breaks; **F** the Simulator run (Archan); then review, ship.
 
 ## Known pitfalls (checklist)
-- [ ] **Same cuisine twice in one day:** the flag, not the globe (`count(distinct)`, break 2).
-- [ ] **Neutral plus country in one day:** the globe, 2 cuisines.
-- [ ] **One neutral cuisine:** its icon, not the globe (break 10).
-- [ ] **Late-night upload:** it lands on its `local_date`, not its UTC date.
-- [ ] **A date after today** (logged in a zone ahead, then the zone moved back): absent until that day comes.
-- [ ] **A cuisine edit:** changing an upload's cuisine changes that day's glyph (invalidation, break 9).
-- [ ] **The two queries disagree on today** (midnight passes between them): each view uses its own query's `today` and `from` for the grid, the today outline, the Previous / Next limits and the selected day; a selection outside the shown range is cleared.
-- [ ] **Catalog not loaded:** `Skeleton` while it loads; `ErrorState` with Retry if it fails, and Retry reloads the catalog and the cuisine days.
-- [ ] **Code missing from the catalog:** "Unknown cuisine" and the fallback icon.
-- [ ] **Largest text size:** the glyph stays at `gridGlyph` (`allowFontScaling={false}`) inside its 14 pt square; the switch wraps.
-- [ ] **Leaving Profile:** the view may reset to Activity when Profile remounts; accepted.
-- [ ] **Android flag emoji:** some vendor fonts draw flags as two letters; a real-device item in section 16. The label carries the meaning.
+- [x] **Same cuisine twice in one day:** the flag, not the globe (`count(distinct)`, break 2).
+- [x] **Neutral plus country in one day:** the globe, 2 cuisines.
+- [x] **One neutral cuisine:** its icon, not the globe (break 10).
+- [x] **Late-night upload:** it lands on its `local_date`, not its UTC date.
+- [x] **A date after today** (logged in a zone ahead, then the zone moved back): absent until that day comes.
+- [x] **A cuisine edit:** changing an upload's cuisine changes that day's glyph (invalidation, break 9).
+- [x] **The two queries disagree on today** (midnight passes between them): each view uses its own query's `today` and `from` for the grid, the today outline, the Previous / Next limits and the selected day; a selection outside the shown range is cleared.
+- [x] **Catalog not loaded:** `Skeleton` while it loads; `ErrorState` with Retry if it fails, and Retry reloads the catalog and the cuisine days.
+- [x] **Code missing from the catalog:** "Unknown cuisine" and the fallback icon.
+- [x] **Largest text size:** the glyph stays at `gridGlyph` (`allowFontScaling={false}`) inside its 14 pt square; the switch wraps.
+- [x] **Leaving Profile:** the view may reset to Activity when Profile remounts; accepted.
+- [x] **Android flag emoji:** some vendor fonts draw flags as two letters; a real-device item in section 16. The label carries the meaning.
 
 ## Out of scope
 - Any change to the Activity view, the stats, the day panel, spec 14's functions or spec 14's tests.
@@ -250,21 +250,21 @@ Feature-specific rules:
 
 ## Definition of done
 **PR 1 (pgTAP unless noted):**
-- [ ] The function exists with this signature, `security definer`, `search_path = ''`; anon cannot execute it; the 05 allowlist holds it (approved edit).
-- [ ] `p_weeks` null, 0 and 54 give `invalid_input`; 1 and 53 work. A null, empty or `Mars/Olympus` zone gives `invalid_time_zone`. The weeks are checked before the zone.
-- [ ] `from` and `today` equal `get_my_food_log_activity`'s for the same zone and weeks.
-- [ ] Per day:
+- [x] The function exists with this signature, `security definer`, `search_path = ''`; anon cannot execute it; the 05 allowlist holds it (approved edit).
+- [x] `p_weeks` null, 0 and 54 give `invalid_input`; 1 and 53 work. A null, empty or `Mars/Olympus` zone gives `invalid_time_zone`. The weeks are checked before the zone.
+- [x] `from` and `today` equal `get_my_food_log_activity`'s for the same zone and weeks.
+- [x] Per day:
   - one country code gives that code and `cuisines` 1;
   - the same code twice gives that code, `cuisines` 1 and `count` 2;
   - two country codes give `null` and 2;
   - a neutral code plus a country code give `null` and 2;
   - one neutral code gives that code and 1;
   - `count` equals the activity function's count on every date.
-- [ ] Counts by `local_date` (the late-night fixture); `ready` rows only; private and public alike; ascending; nothing before `from` or after today; a row on `from` is included.
-- [ ] Exact key sets: the object `days, from, today`; a day `count, cuisine, cuisines, date`; the same top-level set for a caller with no user id.
-- [ ] **An outsider cannot** see another person's cuisine days: user B's call holds none of user A's rows, public or private; anon cannot execute the function; a call with no user id gets `days: []`, never someone else's.
-- [ ] `14-activity-grid.test.sql` and every other older pgTAP file pass unedited, except the approved 05 edit.
-- [ ] `npx supabase db reset`, `npx supabase test db` and `npm run typecheck` pass. `src/types/database.ts` is regenerated, not hand-edited.
+- [x] Counts by `local_date` (the late-night fixture); `ready` rows only; private and public alike; ascending; nothing before `from` or after today; a row on `from` is included.
+- [x] Exact key sets: the object `days, from, today`; a day `count, cuisine, cuisines, date`; the same top-level set for a caller with no user id.
+- [x] **An outsider cannot** see another person's cuisine days: user B's call holds none of user A's rows, public or private; anon cannot execute the function; a call with no user id gets `days: []`, never someone else's.
+- [x] `14-activity-grid.test.sql` and every other older pgTAP file pass unedited, except the approved 05 edit.
+- [x] `npx supabase db reset`, `npx supabase test db` and `npm run typecheck` pass. `src/types/database.ts` is regenerated, not hand-edited.
 
 **PR 2 (jest unless noted):**
 - [x] `buildCuisineView` and `cuisineCellLabel`: flag, neutral icon, globe and unknown code; "1 upload" and "N uploads"; ", today".
@@ -278,7 +278,9 @@ Feature-specific rules:
   - list rows use the cuisine labels;
   - the selected day and the panel survive a switch;
   - a failed refresh keeps the grid and shows the banner;
-  - the empty state shows no switch.
+  - the empty state shows no switch;
+  - opened in Cuisine on an empty account, no cuisine-days or catalog request is sent; after the last photo is deleted in Cuisine, the view goes back to Activity and sends no cuisine request (review Q2);
+  - a switch to Cuisine while the cuisine days load hides the chosen day's panel, then brings it back if the day is in range or clears it if not (review Q3).
 - [x] **Per-view range:** with the activity query and the cuisine-days query giving different `today` values, each view's today outline, Previous / Next limits and selected day follow its own query; a selection outside the shown range is cleared.
 - [x] **Catalog failure:** when the cuisine catalog fails, the grid area shows `ErrorState`; Retry reloads both the catalog and the cuisine days, and the grid then renders.
 - [x] The 44 pt alternatives work in Cuisine without pressing a cell.

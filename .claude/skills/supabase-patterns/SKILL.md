@@ -178,7 +178,10 @@ Built in spec 14 (`supabase/migrations/20261115200520_activity_grid.sql`). Aggre
   - The year starts at `make_date(extract(year from v_today)::int, 1, 1)`, **not** `date_trunc('year', ...)`: on a `date`, `date_trunc` goes through `timestamptz` in the session time zone. pgTAP pins it with a source check.
   - Streaks are gaps and islands over the distinct dates (`local_date - row_number()`); the current streak is the run ending today, or yesterday when today has none yet.
 - `list_my_food_logs_on(p_date date)` returns `{ items }` with spec 13's 8-key log object, oldest first, `limit 60` with no cursor. The comment beside the limit ties it to the 20-starts-per-24-hours cap and the UTC +/-1 `local_date` check: change the limit if either changes. The date only picks which day to show.
-- The per-day single cuisine (flag or globe) is **spec 15's**, not in these functions; it adds its own field or function.
+- `get_my_food_log_cuisine_days(p_time_zone text, p_weeks integer)` (spec 15, `supabase/migrations/20261117020652_activity_grid_cuisine_view.sql`) returns `{ today, from, days: [{ date, count, cuisines, cuisine }] }` for the Cuisine view.
+  - Same checks in the same order, the same `today` and the same `from` as `get_my_food_log_activity`; the same `ready` rows by `local_date`, from `from` to `today`, so each day's `count` equals the activity function's. No stats.
+  - `cuisines` is `count(distinct cuisine_code)`; `cuisine` is the code when `cuisines = 1`, otherwise JSON `null` (the key is always present). A neutral code counts like any other: Street food plus Italy is 2 cuisines.
+  - A separate function, not a new field on the activity function (spec 15 Decision 1): spec 14's key sets, its pgTAP and its strict app schema stay as they are, and the app calls it only while the Cuisine view is on screen.
 
 A grid for another person does not exist in v1. A spec that adds one gets its own function and counts `is_public` rows only.
 

@@ -463,6 +463,9 @@ isOneToOne: false
 "get_my_food_log_activity":
 { Args: { "p_time_zone": string,"p_weeks": number }; Returns: Json
                            },
+"get_my_food_log_cuisine_days":
+{ Args: { "p_time_zone": string,"p_weeks": number }; Returns: Json
+                           },
 "get_my_pickup_address":
 { Args: { "p_request_id": string }; Returns: Json
                            },

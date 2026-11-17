@@ -13,7 +13,7 @@
 
 **Plan mode:** required. A new security-definer function with a migration and pgTAP, a change to the generic grid component, and well over 5 files.
 
-**Status:** Spec written
+**Status:** In progress. PR 1 (backend): gates A (migration, types), B (pgTAP 58, approved 05 edit, SQL breaks 1 to 6) and C (skills, v1) done; review follow-ups done (an ordering test; its break 7, dropping the order by, did not turn it red, so it pins the result only); shipping. PR 2 not started.
 
 ## Overview
 After this ships, the activity grid on Profile and on Your year has a two-way switch, **Activity | Cuisine**:

@@ -192,7 +192,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 12 | notifications | ✅ Shipped | .claude/specs/12-notifications.md |
 | 13 | food-log-uploads | ✅ Shipped | .claude/specs/13-food-log-uploads.md |
 | 14 | activity-grid | ✅ Shipped | .claude/specs/14-activity-grid.md |
-| 15 | activity-grid-cuisine-view | ⬜ Not started | — |
+| 15 | activity-grid-cuisine-view | 📝 Spec written | .claude/specs/15-activity-grid-cuisine-view.md |
 | 16 | promotions | ⬜ Not started | — |
 | 17 | reports | ⬜ Not started | — |
 | 18 | legal-pages | ⬜ Not started | — |

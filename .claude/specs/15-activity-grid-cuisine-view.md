@@ -346,6 +346,8 @@ All approved by Archan on 2026-11-16.
 7. `ui/` has no segmented control; `RequestsSwitch` is requests-only. Settled by Decision 7.
 8. `type.caption` (12) is the smallest type token and there is no glyph token, so `size.gridGlyph` is added.
 9. v1 section 16's time-zone list item names only the activity function. It gains the new one at gate C.
+10. (Found while planning PR 2, approved by Archan on 2026-11-17.) "`ActivityYearScreen` reads an optional `view` param": `ActivityYearScreen.test.tsx` fakes `expo-router` with `useRouter` only, so a `useLocalSearchParams` call in the screen would crash it. The route `app/food-log/year.tsx` reads the param, as other routes in `app/` do, and passes it to `ActivityYearScreen` as a prop; the screen checks it with `parseActivityView`. The behaviour is the one this spec describes.
+11. (Found while planning PR 2, approved by Archan on 2026-11-17.) The Files to change list does not name `src/features/cuisines/hooks/useCuisines.ts`. It gains an optional `enabled` (default true; existing callers and `useCuisines.test.tsx` unchanged), so `ActivitySection` loads the catalog only while Cuisine is on screen. Loading it in Activity would send an unmocked request in `ProfileScreen.test.tsx`.
 
 ### Before-launch additions (v1 section 16, gate C)
 - **Cuisine view on real devices:** flag emoji, neutral icons and the globe readable in 14 pt squares on a real iPhone and Android phone, including Android fonts that draw flags as two letters; VoiceOver and TalkBack on the switch and the cuisine cells. Touch accuracy is already spec 14's item.

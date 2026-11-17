@@ -59,15 +59,17 @@ export function ActivitySection({
   const [view, setView] = useState<ActivityViewName>(initialView);
   const cuisineShown = view === 'cuisine';
   const query = useFoodLogActivity(weeks);
-  // Only while Cuisine is on screen: no cuisine request is sent in Activity.
-  const cuisineQuery = useFoodLogCuisineDays(weeks, cuisineShown);
-  const catalog = useCuisines({ enabled: cuisineShown });
+  const activity = query.data;
+  // Only while Cuisine is on screen over a loaded, non-empty activity: no cuisine request is sent
+  // in Activity, before the activity loads, or for an empty account.
+  const cuisineEnabled = cuisineShown && activity !== undefined && !isEmptyActivity(activity);
+  const cuisineQuery = useFoodLogCuisineDays(weeks, cuisineEnabled);
+  const catalog = useCuisines({ enabled: cuisineEnabled });
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showList, setShowList] = useState(false);
   // Set by a switch: once the new view's grid has its range, a chosen day outside it is cleared.
   // A refresh never clears it (spec 14 review Q7: the chosen day stays, Previous / Next follow).
   const [checkRange, setCheckRange] = useState(false);
-  const activity = query.data;
   const cuisineDays = cuisineQuery.data;
   const cuisineList = catalog.data;
 
@@ -103,9 +105,12 @@ export function ActivitySection({
     setView(next);
     setCheckRange(true);
   }, []);
+  // React Query keeps each refetch function stable, so this callback is too.
+  const refetchCatalog = catalog.refetch;
+  const refetchCuisineDays = cuisineQuery.refetch;
   const retryCuisine = useCallback(
-    () => void Promise.all([catalog.refetch(), cuisineQuery.refetch()]),
-    [catalog, cuisineQuery],
+    () => void Promise.all([refetchCatalog(), refetchCuisineDays()]),
+    [refetchCatalog, refetchCuisineDays],
   );
 
   const heading = showFullYear ? (
@@ -148,17 +153,19 @@ export function ActivitySection({
   // An empty section hides the list toggle, so it goes back to the grid: the next photo after
   // deleting the last one shows the grid, never a list the person can't switch off. It hides the
   // view switch too, so it goes back to Activity.
-  if (empty && showList) setShowList(false);
-  if (empty && cuisineShown) setView('activity');
+  if (empty && showList) setShowList(false); // guarded, converges in one pass
+  if (empty && cuisineShown) setView('activity'); // guarded, converges in one pass
   // After a switch, a day outside the new view's range (midnight passed between the two queries)
-  // is cleared and the panel closes. Waits while the Cuisine grid loads (no range yet).
+  // is cleared and the panel closes. Waits while the Cuisine grid loads or has failed: there is
+  // no range yet to check the day against, so the day is kept and its panel hidden until the grid
+  // is drawn, then it comes back if it is still in range.
   if (checkRange && rangeFrom && rangeToday) {
-    setCheckRange(false);
+    setCheckRange(false); // guarded, converges in one pass
     if (
       selectedDate &&
       (compareDates(selectedDate, rangeFrom) < 0 || compareDates(selectedDate, rangeToday) > 0)
     ) {
-      setSelectedDate(null);
+      setSelectedDate(null); // guarded, converges in one pass
     }
   }
 

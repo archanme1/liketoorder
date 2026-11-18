@@ -55,6 +55,9 @@ export const size = {
   // through 44 pt controls (the list view, Previous / Next day, the day panel rows).
   gridCell: 14,
   gridGap: 3,
+  // The Cuisine view's flag, icon or globe inside a grid square (spec 15 Decision 3), drawn
+  // without font scaling so it always fits the 14 pt square.
+  gridGlyph: 10,
 };
 
 // Pressable feedback and inactive (disabled / loading) controls.

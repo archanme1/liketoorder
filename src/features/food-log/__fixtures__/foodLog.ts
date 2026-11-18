@@ -75,6 +75,47 @@ export function activityJson(overrides: Partial<ActivityJson> = {}, weeks = 17):
   };
 }
 
+/** A neutral catalog row (the migration's Street food), next to CUISINES, which stays as it is. */
+export const STREET_FOOD: Cuisine = {
+  code: 'street-food',
+  kind: 'neutral',
+  name: 'Street food',
+  flag: null,
+  icon: 'fast-food-outline',
+  sort_order: 900,
+};
+
+export const CUISINES_WITH_NEUTRAL: Cuisine[] = [...CUISINES, STREET_FOOD];
+
+type CuisineDaysJson = {
+  today: string;
+  from: string;
+  days: { date: string; count: number; cuisines: number; cuisine: string | null }[];
+};
+
+/**
+ * get_my_food_log_cuisine_days's JSON, with exactly the migration's keys (spec 15). Today is Thu
+ * 2026-11-12 by default; `from` follows today and `weeks` unless given. The default days match
+ * activityJson's counts: one country, one neutral, a globe day of 3 cuisines, and today.
+ */
+export function cuisineDaysJson(
+  overrides: Partial<CuisineDaysJson> = {},
+  weeks = 17,
+): CuisineDaysJson {
+  const today = overrides.today ?? '2026-11-12';
+  return {
+    today,
+    from: activityFrom(today, weeks),
+    days: [
+      { date: '2026-11-03', count: 1, cuisines: 1, cuisine: 'IT' },
+      { date: '2026-11-10', count: 2, cuisines: 1, cuisine: 'street-food' },
+      { date: '2026-11-11', count: 4, cuisines: 3, cuisine: null },
+      { date: '2026-11-12', count: 3, cuisines: 1, cuisine: 'JP' },
+    ],
+    ...overrides,
+  };
+}
+
 export const ZERO_STATS = {
   total_this_year: 0,
   current_streak: 0,

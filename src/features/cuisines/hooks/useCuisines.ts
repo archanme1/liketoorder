@@ -13,9 +13,12 @@ const cuisinesQueryOptions = {
   staleTime: Infinity,
 } as const;
 
-/** The list only changes with a migration, so it loads once per app launch. */
-export function useCuisines() {
-  return useQuery<Cuisine[], CuisineAppError>(cuisinesQueryOptions);
+/**
+ * The list only changes with a migration, so it loads once per app launch. `enabled: false` waits
+ * until a screen needs it (spec 15: only while the Cuisine view is on screen).
+ */
+export function useCuisines({ enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery<Cuisine[], CuisineAppError>({ ...cuisinesQueryOptions, enabled });
 }
 
 /** One cuisine from the cached list; no extra request. `undefined` for an unknown or missing code. */

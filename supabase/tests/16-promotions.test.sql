@@ -2,7 +2,7 @@
 -- the offers quota and the promoted / sponsored flags on the map reads.
 -- now() is fixed for the whole transaction, so every window below is exact.
 begin;
-select plan(208);
+select plan(228);
 
 -- -- Ids ----------------------------------------------------------------------
 -- Users 00000000-0000-0000-0016-<n>, businesses ...-0116-<n>, promotions ...-0216-<n> (n = 12 digits).
@@ -43,7 +43,7 @@ end $$;
 
 -- One campaign row written directly (fixtures only). Windows are offsets from now().
 create function pg_temp.mkp(n int, biz int, st text, s interval default null, e interval default null,
-                            cat text default 'new_dish')
+                            cat text default 'new_dish', created interval default '-30 days')
 returns void language sql as $$
   insert into public.promotions (id, business_id, category, headline, status, price_cents, currency_code,
                                  length_days, starts_at, ends_at, reject_reason, cancelled_by, cancelled_at,
@@ -53,7 +53,7 @@ returns void language sql as $$
           case when st = 'rejected' then 'other' end,
           case when st = 'cancelled' then 'admin' end,
           case when st = 'cancelled' then now() - interval '1 day' end,
-          now() - interval '30 days');
+          now() + created);
 $$;
 
 create function pg_temp.as_user(n int) returns void language plpgsql as $$
@@ -135,6 +135,24 @@ select pg_temp.mkp(52, 52, 'approved', '-1 day', '6 days');
 select pg_temp.mkp(53, 53, 'approved', '-10 days', '-3 days');
 select pg_temp.mkp(54, 54, 'rejected');
 select pg_temp.mkp(55, 55, 'cancelled');
+
+-- Review fixes (sections 15 to 19). 56: four cancelled requests in the last 24 hours and one older (the cap).
+-- 57: five requests, all older than 24 hours. 58, 59: headline rules.
+select pg_temp.mkb(n, 'restaurant', 10 + n * 0.01, 11) from generate_series(56, 59) n;
+select pg_temp.mkp(5600 + i, 56, 'cancelled', created => -(i * interval '1 hour')) from generate_series(1, 4) i;
+select pg_temp.mkp(5605, 56, 'cancelled', created => '-25 hours');
+select pg_temp.mkp(5700 + i, 57, 'cancelled', created => -(interval '24 hours' + i * interval '1 minute'))
+  from generate_series(1, 5) i;
+-- Boundaries, around the grid point (-50.00, -130.00): 60 ended exactly now, 61 started exactly now.
+select pg_temp.mkb(60, 'restaurant', -50 + pg_temp.km(1), -130);
+select pg_temp.mkb(61, 'restaurant', -50 + pg_temp.km(1), -130.001);
+select pg_temp.mkp(60, 60, 'approved', '-7 days', '0');
+select pg_temp.mkp(61, 61, 'approved', '0', '7 days');
+-- Margin precision, around the grid point (-35.00, -115.00): 62 at 8.9 km, 63 at 9.1 km.
+select pg_temp.mkb(62, 'restaurant', -35 + pg_temp.km(8.9), -115);
+select pg_temp.mkb(63, 'restaurant', -35 + pg_temp.km(9.1), -115);
+select pg_temp.mkp(62, 62, 'approved', '-1 day', '6 days');
+select pg_temp.mkp(63, 63, 'approved', '-1 day', '6 days');
 
 -- Paging: 45 active restaurants near the grid point (-30.00, -110.00), in all three bands.
 insert into auth.users (id, email)
@@ -716,6 +734,63 @@ select results_eq(
   '502 home cooks: 500 pins and capped');
 select is(pg_temp.pin_promoted((select j from capH), pg_temp.b(3502)), true,
   'the promoted home cook (highest id) is inside the 500');
+
+-- -- 15. At most 5 requests per business in 24 hours (3) --------------------------
+select pg_temp.as_user(56);
+select lives_ok($$ select public.request_promotion('featured', 'Fifth try', null) $$,
+  'the 5th request in 24 hours is accepted (the row from 25 hours ago does not count)');
+do $$ begin perform public.cancel_my_promotion((select id from public.promotions
+                                                 where business_id = pg_temp.b(56) and status = 'requested')); end $$;
+select throws_ok($$ select public.request_promotion('featured', 'Sixth try', null) $$, 'P0001', 'too_many_requests',
+  'the 6th request in 24 hours is refused');
+select pg_temp.as_user(57);
+select lives_ok($$ select public.request_promotion('featured', 'After a quiet day', null) $$,
+  'five requests older than 24 hours do not count');
+
+-- -- 16. Headlines: no contact details, one line (6) -----------------------------
+select pg_temp.as_user(58);
+select throws_ok($$ select public.request_promotion('featured', 'Order at rosa@example.com', null) $$,
+  'P0001', 'invalid_headline', 'a headline with an email is refused');
+select throws_ok($$ select public.request_promotion('featured', 'Call (416) 555-0199 today', null) $$,
+  'P0001', 'invalid_headline', 'a headline with a phone number (with separators) is refused');
+select throws_ok($$ select public.request_promotion('featured', E'Two lines\nof text', null) $$,
+  'P0001', 'invalid_headline', 'a headline with a line feed is refused');
+select throws_ok($$ select public.request_promotion('featured', E'Two lines\rof text', null) $$,
+  'P0001', 'invalid_headline', 'a headline with a carriage return is refused');
+select throws_ok($$ insert into public.promotions (business_id, category, headline, price_cents, currency_code, length_days)
+                    values (pg_temp.b(59), 'featured', E'Two lines\nof text', 2500, 'CAD', 7) $$,
+  '23514', null, 'the table itself refuses a line break in a headline');
+select lives_ok($$ select public.request_promotion('special_offer', '2 for 1 tacos', null) $$,
+  'a normal headline with a number ("2 for 1 tacos") is accepted');
+
+-- -- 17. Window boundaries: [starts_at, ends_at) (8) -----------------------------
+delete from public.map_rate_limits;
+select pg_temp.as_user(60);
+select is(public.get_my_promotion() -> 'promotion' ->> 'state', 'ended', 'a campaign ending exactly now is ended');
+select pg_temp.as_user(61);
+select is(public.get_my_promotion() -> 'promotion' ->> 'state', 'active', 'a campaign starting exactly now is active');
+select pg_temp.as_user(99);
+create temp table pinsB as select public.map_restaurants_in_bounds(-50.5, -49.5, -130.5, -129.5) as j;
+select is(pg_temp.pin_promoted((select j from pinsB), pg_temp.b(60)), false, 'a campaign ending exactly now is not promoted');
+select is(pg_temp.pin_promoted((select j from pinsB), pg_temp.b(61)), true, 'a campaign starting exactly now is promoted');
+select is((public.get_restaurant_details(pg_temp.b(60)) ->> 'sponsored')::boolean, false,
+  'a campaign ending exactly now is not sponsored');
+select is((public.get_restaurant_details(pg_temp.b(61)) ->> 'sponsored')::boolean, true,
+  'a campaign starting exactly now is sponsored');
+create temp table offersB as select pg_temp.offers(-50, -130, 5) as j;
+select ok(not pg_temp.ids((select j from offersB)) @> array[pg_temp.b(60)], 'a campaign ending exactly now is not in Offers');
+select ok(pg_temp.ids((select j from offersB)) @> array[pg_temp.b(61)], 'a campaign starting exactly now is in Offers');
+
+-- -- 18. Index for a business's campaigns (1) -------------------------------------
+select ok((select indexdef like '%(business_id, created_at DESC)%' from pg_indexes
+            where schemaname = 'public' and indexname = 'promotions_business_created_idx'),
+  'promotions_business_created_idx covers (business_id, created_at desc)');
+
+-- -- 19. The 4 km margin, closer to its edge (2) ---------------------------------
+select ok(pg_temp.ids(pg_temp.offers(-35, -115, 5)) @> array[pg_temp.b(62)],
+  'a place 8.9 km from the grid point is included at About 5 km');
+select ok(not pg_temp.ids(pg_temp.offers(-35, -115, 5)) @> array[pg_temp.b(63)],
+  'a place 9.1 km from the grid point is excluded at About 5 km');
 
 select * from finish();
 rollback;

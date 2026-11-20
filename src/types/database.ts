@@ -317,6 +317,52 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"promotion_settings": {
+                  Row: {
+                    "currency_code": string,"id": boolean,"length_days": number,"price_cents": number
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "currency_code": string,"id"?: boolean,"length_days": number,"price_cents": number
+                  }
+                  Update: {
+                    "currency_code"?: string,"id"?: boolean,"length_days"?: number,"price_cents"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "promotion_settings_currency_code_fkey"
+      columns: ["currency_code"]
+isOneToOne: false
+      referencedRelation: "currencies"
+      referencedColumns: ["code"]
+    }
+                  ]
+                },"promotions": {
+                  Row: {
+                    "business_id": string,"cancelled_at": string | null,"cancelled_by": string | null,"category": string,"created_at": string,"currency_code": string,"ends_at": string | null,"headline": string,"id": string,"length_days": number,"preferred_start": string | null,"price_cents": number,"reject_reason": string | null,"reviewed_at": string | null,"starts_at": string | null,"status": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "business_id": string,"cancelled_at"?: string | null,"cancelled_by"?: string | null,"category": string,"created_at"?: string,"currency_code": string,"ends_at"?: string | null,"headline": string,"id"?: string,"length_days": number,"preferred_start"?: string | null,"price_cents": number,"reject_reason"?: string | null,"reviewed_at"?: string | null,"starts_at"?: string | null,"status"?: string
+                  }
+                  Update: {
+                    "business_id"?: string,"cancelled_at"?: string | null,"cancelled_by"?: string | null,"category"?: string,"created_at"?: string,"currency_code"?: string,"ends_at"?: string | null,"headline"?: string,"id"?: string,"length_days"?: number,"preferred_start"?: string | null,"price_cents"?: number,"reject_reason"?: string | null,"reviewed_at"?: string | null,"starts_at"?: string | null,"status"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "promotions_business_id_fkey"
+      columns: ["business_id"]
+isOneToOne: false
+      referencedRelation: "businesses"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "promotions_currency_code_fkey"
+      columns: ["currency_code"]
+isOneToOne: false
+      referencedRelation: "currencies"
+      referencedColumns: ["code"]
+    }
+                  ]
                 },"push_tokens": {
                   Row: {
                     "created_at": string,"id": string,"last_registered_at": string,"platform": string,"token": string,"user_id": string
@@ -395,6 +441,9 @@ isOneToOne: false
 "business_owner_view":
 { Args: { "p_owner_id": string }; Returns: Json
                            },
+"cancel_my_promotion":
+{ Args: { "p_promotion_id": string }; Returns: Json
+                           },
 "cancel_pickup_request":
 { Args: { "p_request_id": string }; Returns: Json
                            },
@@ -472,6 +521,9 @@ isOneToOne: false
 "get_my_pickup_request":
 { Args: { "p_request_id": string }; Returns: Json
                            },
+"get_my_promotion":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "get_my_table_request":
 { Args: { "p_request_id": string }; Returns: Json
                            },
@@ -492,6 +544,9 @@ isOneToOne: false
                            },
 "list_my_requests":
 { Args: { "p_before"?: string,"p_status"?: string }; Returns: Json
+                           },
+"list_offers_near":
+{ Args: { "p_category": string,"p_cursor": string,"p_distance_km": number,"p_lat": number,"p_lng": number,"p_tables": boolean,"p_type": string }; Returns: Json
                            },
 "map_homemade_in_bounds":
 { Args: { "p_max_lat": number,"p_max_lng": number,"p_min_lat": number,"p_min_lng": number }; Returns: Json
@@ -519,6 +574,9 @@ isOneToOne: false
                            },
 "register_push_token":
 { Args: { "p_platform": string,"p_token": string }; Returns: undefined
+                           },
+"request_promotion":
+{ Args: { "p_category": string,"p_headline": string,"p_preferred_start": string }; Returns: Json
                            },
 "respond_to_request":
 { Args: { "p_decision": string,"p_decline_reason"?: string,"p_kind"?: string,"p_note"?: string,"p_request_id": string }; Returns: Json

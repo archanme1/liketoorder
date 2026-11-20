@@ -97,6 +97,7 @@ const restaurant = (over: object = {}) => ({
   public_address: '1 King St',
   place_id: 'FAKE_PLACE',
   currency_code: 'CAD' as string | null,
+  sponsored: false,
   photos: [],
   items,
   ...over,
@@ -192,6 +193,7 @@ describe('states', () => {
       name: 'Nonna Rosa',
       cuisine_code: 'IT',
       currency_code: 'CAD',
+      sponsored: false,
       photos: [],
       items,
     });

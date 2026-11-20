@@ -8,7 +8,7 @@ jest.mock('@/lib/supabase', () => ({
 
 const db = supabase as unknown as { rpc: jest.Mock; from: jest.Mock };
 const box = { minLat: 43.1, maxLat: 43.9, minLng: -79.9, maxLng: -79.1 };
-const pin = { id: 'p1', name: "Joe's", cuisine_code: 'IT', lat: 43.5, lng: -79.4 };
+const pin = { id: 'p1', name: "Joe's", cuisine_code: 'IT', lat: 43.5, lng: -79.4, promoted: false };
 
 beforeEach(() => {
   db.rpc.mockReset();
@@ -94,6 +94,7 @@ const detailsRow = {
   public_address: '1 King St',
   place_id: 'FAKE_PLACE_1',
   currency_code: 'CAD',
+  sponsored: false,
   photos: [],
   items: [],
 };

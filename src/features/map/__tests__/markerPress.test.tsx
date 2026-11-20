@@ -54,7 +54,7 @@ const italy: Cuisine = {
   icon: null,
   sort_order: 1,
 };
-const joes: Pin = { id: 'b1', name: "Joe's Pizza", cuisine_code: 'IT', lat: 46.0, lng: 2.0 };
+const joes: Pin = { id: 'b1', name: "Joe's Pizza", cuisine_code: 'IT', lat: 46.0, lng: 2.0, promoted: false };
 // Three pins on one spot: they cluster at the opening zoom.
 const stack: Pin[] = ['a', 'b', 'c'].map((id, i) => ({
   id,
@@ -62,6 +62,7 @@ const stack: Pin[] = ['a', 'b', 'c'].map((id, i) => ({
   cuisine_code: 'IT',
   lat: 47 + i * 0.0001,
   lng: 3 + i * 0.0001,
+  promoted: false,
 }));
 
 async function renderScreen() {

@@ -60,7 +60,7 @@ const italy: Cuisine = {
   icon: null,
   sort_order: 1,
 };
-const rosa: Pin = { id: 'h1', name: "Nonna Rosa's Table", cuisine_code: 'IT', lat: 46.6, lng: 2.5 };
+const rosa: Pin = { id: 'h1', name: "Nonna Rosa's Table", cuisine_code: 'IT', lat: 46.6, lng: 2.5, promoted: false };
 
 function details(overrides: Partial<HomemadeDetails> = {}): HomemadeDetails {
   return {
@@ -68,6 +68,7 @@ function details(overrides: Partial<HomemadeDetails> = {}): HomemadeDetails {
     name: "Nonna Rosa's Table",
     cuisine_code: 'IT',
     currency_code: 'CAD',
+    sponsored: false,
     photos: [
       { id: 'p1', kind: 'cover', path: 'h1/cover.jpg', position: null, menu_item_id: null },
       { id: 'p2', kind: 'gallery', path: 'h1/g1.jpg', position: 1, menu_item_id: null },

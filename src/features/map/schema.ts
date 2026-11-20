@@ -11,6 +11,7 @@ export const pinSchema = z.strictObject({
   cuisine_code: z.string().min(1),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
+  promoted: z.boolean(), // spec 16: an active campaign right now; read by the promoted marker (PR 3)
 });
 
 export const pinsResponseSchema = z.strictObject({
@@ -50,6 +51,7 @@ export const restaurantDetailsSchema = z.strictObject({
   public_address: z.string().nullable(),
   place_id: z.string().min(1),
   currency_code: z.string().nullable(),
+  sponsored: z.boolean(), // spec 16: shows "Sponsored" on the sheet (PR 3)
   photos: z.array(detailsPhotoSchema),
   items: z.array(detailsItemSchema),
 });
@@ -65,6 +67,7 @@ export const homemadeDetailsSchema = z.strictObject({
   name: z.string(),
   cuisine_code: z.string().min(1),
   currency_code: z.string().nullable(),
+  sponsored: z.boolean(), // spec 16: shows "Sponsored" on the sheet (PR 3)
   photos: z.array(detailsPhotoSchema),
   items: z.array(detailsItemSchema),
 });

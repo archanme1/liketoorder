@@ -1,6 +1,12 @@
-import { MAX_PINS, pinsResponseSchema, pinSchema, restaurantDetailsSchema } from '../schema';
+import {
+  homemadeDetailsSchema,
+  MAX_PINS,
+  pinsResponseSchema,
+  pinSchema,
+  restaurantDetailsSchema,
+} from '../schema';
 
-const pin = { id: 'p1', name: "Joe's", cuisine_code: 'IT', lat: 43.5, lng: -79.4 };
+const pin = { id: 'p1', name: "Joe's", cuisine_code: 'IT', lat: 43.5, lng: -79.4, promoted: false };
 const response = { pins: [pin], capped: false, too_large: false };
 
 describe('map schema', () => {
@@ -39,10 +45,17 @@ describe('map schema', () => {
     ['latitude past 90', { ...pin, lat: 91 }],
     ['longitude past 180', { ...pin, lng: 181 }],
     ['lat as a string', { ...pin, lat: '43' }],
-    ['no name', { id: 'p1', cuisine_code: 'IT', lat: 1, lng: 1 }],
+    ['no name', { id: 'p1', cuisine_code: 'IT', lat: 1, lng: 1, promoted: false }],
     ['empty id', { ...pin, id: '' }],
   ])('rejects a bad pin: %s', (_label, value) => {
     expect(pinSchema.safeParse(value).success).toBe(false);
+  });
+
+  it('a pin without promoted is refused (spec 16)', () => {
+    const { promoted: _promoted, ...withoutPromoted } = pin;
+    expect(pinSchema.safeParse(withoutPromoted).success).toBe(false);
+    expect(pinSchema.safeParse({ ...pin, promoted: 'yes' }).success).toBe(false);
+    expect(pinSchema.safeParse({ ...pin, promoted: true }).success).toBe(true);
   });
 
   it('never accepts more than the server cap', () => {
@@ -62,6 +75,7 @@ const details = {
   public_address: '1 King St, Oshawa',
   place_id: 'FAKE_PLACE_1',
   currency_code: 'CAD',
+  sponsored: false,
   photos: [{ id: 'ph1', kind: 'cover', path: 'b1/cover.jpg', position: null, menu_item_id: null }],
   items: [
     {
@@ -74,6 +88,13 @@ const details = {
     },
   ],
 };
+
+const {
+  accepts_table_requests: _t,
+  public_address: _a,
+  place_id: _p,
+  ...homemadeDetails
+} = details;
 
 describe('restaurant details schema', () => {
   it('accepts the details answer, including no address, currency or items', () => {
@@ -95,6 +116,20 @@ describe('restaurant details schema', () => {
       expect(restaurantDetailsSchema.safeParse({ ...details, [field]: 1 }).success).toBe(false);
     },
   );
+
+  it('sponsored must be boolean (spec 16)', () => {
+    const { sponsored: _sponsored, ...withoutSponsored } = details;
+    expect(restaurantDetailsSchema.safeParse(withoutSponsored).success).toBe(false);
+    expect(restaurantDetailsSchema.safeParse({ ...details, sponsored: 'true' }).success).toBe(
+      false,
+    );
+    expect(restaurantDetailsSchema.safeParse({ ...details, sponsored: null }).success).toBe(false);
+    expect(restaurantDetailsSchema.safeParse({ ...details, sponsored: true }).success).toBe(true);
+    expect(homemadeDetailsSchema.safeParse({ ...homemadeDetails, sponsored: 1 }).success).toBe(
+      false,
+    );
+    expect(homemadeDetailsSchema.safeParse(homemadeDetails).success).toBe(true);
+  });
 
   it('rejects extra fields on photos and items', () => {
     expect(

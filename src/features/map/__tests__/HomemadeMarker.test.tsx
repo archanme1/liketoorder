@@ -24,6 +24,7 @@ const cook: Pin = {
   cuisine_code: 'IT',
   lat: 43.89713,
   lng: -78.86583,
+  promoted: false,
 };
 
 async function renderMarker(zoomedIn: boolean, onSelect = jest.fn()) {

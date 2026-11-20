@@ -2,7 +2,7 @@ import { createClusterIndex, zoomFromRegion } from '../clustering';
 import type { Pin } from '../schema';
 
 function pin(id: string, lat: number, lng: number): Pin {
-  return { id, name: `Place ${id}`, cuisine_code: 'IT', lat, lng };
+  return { id, name: `Place ${id}`, cuisine_code: 'IT', lat, lng, promoted: false };
 }
 
 // A tight group in downtown Toronto and one far away in Ottawa.

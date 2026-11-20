@@ -64,7 +64,7 @@ const italy: Cuisine = {
   sort_order: 1,
 };
 // Inside the France opening view (46.6, 2.5).
-const rosa: Pin = { id: 'h1', name: "Nonna Rosa's Table", cuisine_code: 'IT', lat: 46.6, lng: 2.5 };
+const rosa: Pin = { id: 'h1', name: "Nonna Rosa's Table", cuisine_code: 'IT', lat: 46.6, lng: 2.5, promoted: false };
 const answer = (pins: Pin[], extra: Partial<PinsResponse> = {}): PinsResponse => ({
   pins,
   capped: false,
@@ -262,6 +262,7 @@ describe('HomemadeMapScreen: circles', () => {
       cuisine_code: 'IT',
       lat: 47 + i * 0.0001,
       lng: 3 + i * 0.0001,
+      promoted: false,
     }));
     fetchCooks.mockResolvedValue(answer(stack));
     await renderScreen();
@@ -337,6 +338,7 @@ describe('HomemadeMapScreen: taps', () => {
       cuisine_code: 'IT',
       lat: 47 + i * 0.0001,
       lng: 3 + i * 0.0001,
+      promoted: false,
     }));
     fetchCooks.mockResolvedValue(answer(stack));
     await renderScreen();

@@ -60,8 +60,8 @@ const catalog: Cuisine[] = [
   { kind: 'country', code: 'FR', name: 'France', flag: '🇫🇷', icon: null, sort_order: 2 },
 ];
 
-const joes: Pin = { id: 'b1', name: "Joe's Pizza", cuisine_code: 'IT', lat: 46.0, lng: 2.0 };
-const chez: Pin = { id: 'b2', name: 'Chez Anne', cuisine_code: 'FR', lat: 48.0, lng: 4.0 };
+const joes: Pin = { id: 'b1', name: "Joe's Pizza", cuisine_code: 'IT', lat: 46.0, lng: 2.0, promoted: false };
+const chez: Pin = { id: 'b2', name: 'Chez Anne', cuisine_code: 'FR', lat: 48.0, lng: 4.0, promoted: false };
 const pinsAnswer = (pins: Pin[]): PinsResponse => ({ pins, capped: false, too_large: false });
 
 const FAKE_PLACE = 'FAKE_PLACE_oshawa_001';
@@ -75,6 +75,7 @@ function details(overrides: Partial<RestaurantDetails> = {}): RestaurantDetails 
     public_address: '100 King St, Oshawa, ON, Canada',
     place_id: FAKE_PLACE,
     currency_code: 'CAD',
+    sponsored: false,
     photos: [
       { id: 'ph1', kind: 'cover', path: 'b1/cover.jpg', position: null, menu_item_id: null },
       { id: 'ph2', kind: 'gallery', path: 'b1/g1.jpg', position: 1, menu_item_id: null },

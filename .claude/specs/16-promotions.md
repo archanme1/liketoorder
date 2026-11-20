@@ -273,7 +273,7 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
     - home cooks add ", approximate area".
   - The chips read "About 5 km", "About 15 km", "About 30 km".
   - Rotation key: `md5(business_id || current UTC date)`, the same for everyone all day and different the next day.
-- **D13 Settings are function-only.** `promotion_settings` has no client grant. The seller sees the price and length through `get_my_promotion`. Locally the seed puts in a placeholder (CAD, 25 cents, 7 days). On the live project there is no row until Archan sets the real price before launch (§16 item), and until then `request_promotion` answers `not_configured` ("Promotions aren't available yet.").
+- **D13 Settings are function-only.** `promotion_settings` has no client grant. The seller sees the price and length through `get_my_promotion`. Locally the seed puts in a placeholder (CAD 25.00, stored as 2500 cents, 7 days). On the live project there is no row until Archan sets the real price before launch (§16 item), and until then `request_promotion` answers `not_configured` ("Promotions aren't available yet.").
 - **D14 PR 3 starts with a spike gate (change 3).**
   - Before building the rest of PR 3, a throwaway branch proves on the iOS Simulator (Archan runs the build) that a larger marker can pop in and float inside a react-native-maps custom marker.
   - It also checks that `tracksViewChanges` can stay off for all other markers, with React re-render counts and a frame check while panning, using 8 animated markers and the seeded pins.
@@ -419,7 +419,7 @@ All resolved by Archan on 2026-11-20.
 - **M6** Offers is visible to guests.
 - **M7** No "open now" (no opening-hours data).
 - **M8** No payment in spec 16. Manual invoice and admin activation.
-- **Q1** The price is read from `promotion_settings`. The local seed has a placeholder (CAD, 25 cents). Archan sets the real price before launch.
+- **Q1** The price is read from `promotion_settings`. The local seed has a placeholder (CAD 25.00, 2500 cents). Archan sets the real price before launch.
 - **Q2** Pop in once, then the gentle float. Still with Reduce Motion.
 - **Q3** 7 days, stored in settings.
 - **Q4** At most 8 large animated markers, a minimum spacing, extras drawn normal size with the ring.

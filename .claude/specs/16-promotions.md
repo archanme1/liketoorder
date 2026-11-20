@@ -3,7 +3,7 @@
 **Branch:** `feature/promotions-backend` (PR 1), then `feature/promotions-seller` (PR 2), `feature/promotions-map` (PR 3), `feature/promotions-offers` (PR 4). Each is cut from `main` after the previous PR is merged.
 **Product spec:** `docs/product/v1.md` §7 (Ads), §4 (Navigation), §13 (Legal: disclose "Sponsored"), §14 row 16, §3 (out of scope), §15 Q1, Q3 and Q5, §16 (before launch)
 **Plan mode:** required: it changes the schema and RLS, touches more than 5 files and changes navigation (a new tab).
-**Status:** 📝 Spec written
+**Status:** PR 1 merged as #35 (ad3e19d); PR 2 in progress
 
 ## Overview
 A seller asks for a fixed-price, fixed-length promotion from Manage Business. Archan is paid outside the app (invoice) and approves it with one SQL call. While the campaign runs, the place gets three things:
@@ -314,25 +314,25 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
 
 ## Definition of done
 **PR 1 (backend)**
-- [ ] RLS is on for `promotions` and `promotion_settings`. `anon` and `authenticated` hold no privileges on them. **An outsider cannot** read, insert, update or delete any promotion or the settings, directly or through another owner's id.
-- [ ] **An outsider cannot** call `private.admin_review_promotion` or `private.promotion_is_active` (anon and authenticated both refused). The 05 allowlists list exactly the new public functions: the three seller ones for authenticated, `list_offers_near` for anon and authenticated.
-- [ ] `request_promotion`:
+- [x] RLS is on for `promotions` and `promotion_settings`. `anon` and `authenticated` hold no privileges on them. **An outsider cannot** read, insert, update or delete any promotion or the settings, directly or through another owner's id.
+- [x] **An outsider cannot** call `private.admin_review_promotion` or `private.promotion_is_active` (anon and authenticated both refused). The 05 allowlists list exactly the new public functions: the three seller ones for authenticated, `list_offers_near` for anon and authenticated.
+- [x] `request_promotion`:
   - eligible owner gets a requested row with the price snapshot;
   - non-owner, unlisted, no map point or hidden business gets `not_eligible`;
   - no settings row gets `not_configured`;
   - a bad headline, category or start gets its error.
-- [ ] Change 1 checks:
+- [x] Change 1 checks:
   - (a) a request after an approved campaign has **ended** succeeds;
   - (b) a request while a **scheduled** or an **active** campaign exists gets `already_open`;
   - (c) a second request while one is **requested** gets `already_open`;
   - (d) approving two **overlapping** windows for one business is refused (`overlap`), while back-to-back windows are allowed;
   - (e) the race: a direct second `requested` insert for the same business violates `promotions_one_request` (proving the backstop, since pgTAP runs in one session; the row lock is checked by reading the code at review).
-- [ ] Every allowed and refused transition of `admin_review_promotion` and `cancel_my_promotion`, including:
+- [x] Every allowed and refused transition of `admin_review_promotion` and `cancel_my_promotion`, including:
   - cancelling an ended campaign (refused);
   - approving without a start or more than 1 hour in the past (refused);
   - another owner's id gives `not_found`.
-- [ ] `get_my_promotion` returns the derived state correctly for all six states, using fixed times relative to `now()`.
-- [ ] `list_offers_near`:
+- [x] `get_my_promotion` returns the derived state correctly for all six states, using fixed times relative to `now()`.
+- [x] `list_offers_near`:
   - returns only active campaigns of listed, fresh businesses with a map point; requested, scheduled, ended, rejected, cancelled, unlisted and stale ones never appear;
   - each offer has exactly the documented keys, and a homemade offer has the shifted point, not the exact one;
   - a non-grid, out-of-range or bad-filter call is refused;
@@ -340,10 +340,10 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
   - the order is the same on two calls within the same UTC day;
   - the 4 km margin includes a place 8 km from the grid point at "About 5 km" and excludes one at 10 km;
   - the `offers` rate limit triggers like `pins`.
-- [ ] The map functions mark `promoted` correctly, and with 501+ pins a promoted pin is always inside the 500. The details functions return `sponsored`.
-- [ ] Seed: one campaign of each of active, scheduled, ended and requested (dates relative to reset time), plus the placeholder settings row. `npx supabase db reset` locally gives all four.
-- [ ] `src/types/database.ts` regenerated. The map zod schemas accept the new keys. The full jest suite, lint and typecheck pass with no behaviour change. Only the D11 tests were edited.
-- [ ] `docs/runbooks/promotions-admin.md` exists with the exact SQL and no secrets. v1 §4, §7 and §16 are updated.
+- [x] The map functions mark `promoted` correctly, and with 501+ pins a promoted pin is always inside the 500. The details functions return `sponsored`.
+- [ ] Seed: one campaign of each of active, scheduled, ended and requested (dates relative to reset time), plus the placeholder settings row. `npx supabase db reset` locally gives all four. Status: script written and unit-tested; first real run by Archan at the PR 2 Simulator step.
+- [x] `src/types/database.ts` regenerated. The map zod schemas accept the new keys. The full jest suite, lint and typecheck pass with no behaviour change. Only the D11 tests were edited.
+- [x] `docs/runbooks/promotions-admin.md` exists with the exact SQL and no secrets. v1 §4, §7 and §16 are updated.
 
 **PR 2 (seller)**
 - [ ] The Promote row is on Manage Business. The screen shows invite, requested, scheduled, active, ended, rejected and cancelled, each with its action. `not_configured` and `not_eligible` show plain messages. Loading, error and Retry work.

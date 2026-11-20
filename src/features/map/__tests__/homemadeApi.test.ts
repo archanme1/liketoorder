@@ -9,12 +9,13 @@ jest.mock('@/lib/supabase', () => ({
 
 const db = supabase as unknown as { rpc: jest.Mock; from: jest.Mock };
 const box = { minLat: 43.1, maxLat: 43.9, minLng: -79.9, maxLng: -79.1 };
-const pin = { id: 'h1', name: "Nonna Rosa's Table", cuisine_code: 'IT', lat: 43.5, lng: -79.4 };
+const pin = { id: 'h1', name: "Nonna Rosa's Table", cuisine_code: 'IT', lat: 43.5, lng: -79.4, promoted: false };
 const details = {
   id: 'h1',
   name: "Nonna Rosa's Table",
   cuisine_code: 'IT',
   currency_code: 'CAD',
+  sponsored: false,
   photos: [],
   items: [],
 };

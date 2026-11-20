@@ -279,7 +279,8 @@ select is(
 select is(
   (select array_agg(k order by k collate "C")
      from jsonb_object_keys((public.map_restaurants_in_bounds(70, 71, 100, 101) -> 'pins') -> 0) k),
-  array['cuisine_code', 'id', 'lat', 'lng', 'name'], 'a pin has exactly id, name, cuisine_code, lat and lng');
+  array['cuisine_code', 'id', 'lat', 'lng', 'name', 'promoted'],
+  'a pin has exactly id, name, cuisine_code, lat, lng and promoted (spec 16)');
 select ok(
   position('place_id' in public.map_restaurants_in_bounds(70, 71, 100, 101)::text) = 0
   and position('Tromso' in public.map_restaurants_in_bounds(70, 71, 100, 101)::text) = 0
@@ -369,8 +370,8 @@ select is(
   (select array_agg(k order by k collate "C")
      from jsonb_object_keys(public.get_restaurant_details('00000000-0000-0000-0017-000000000001')) k),
   array['accepts_table_requests', 'cuisine_code', 'currency_code', 'id', 'items', 'name', 'photos', 'place_id',
-        'public_address'],
-  'details has exactly the documented keys');
+        'public_address', 'sponsored'],
+  'details has exactly the documented keys (sponsored since spec 16)');
 select results_eq(
   $$ select d ->> 'name', d ->> 'cuisine_code', d ->> 'public_address', d ->> 'place_id', d ->> 'currency_code',
             (d ->> 'accepts_table_requests')::boolean

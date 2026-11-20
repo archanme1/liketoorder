@@ -9,7 +9,7 @@ import { FlagMarker, markerLabel } from '../components/FlagMarker';
 import { TRACK_VIEW_MS } from '../hooks/useTracksViewChanges';
 import type { Pin } from '../schema';
 
-const pin: Pin = { id: 'p1', name: "Joe's Pizza", cuisine_code: 'IT', lat: 43.5, lng: -79.4 };
+const pin: Pin = { id: 'p1', name: "Joe's Pizza", cuisine_code: 'IT', lat: 43.5, lng: -79.4, promoted: false };
 const italy: Cuisine = {
   kind: 'country',
   code: 'IT',

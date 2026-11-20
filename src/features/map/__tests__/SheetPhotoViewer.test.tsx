@@ -45,7 +45,7 @@ jest.mock('../mapConfig', () => ({
   useMapConfigured: jest.fn(() => true),
 }));
 
-const pin = { id: 'b1', name: 'Rosa', cuisine_code: 'IT', lat: 46.6, lng: 2.5 };
+const pin = { id: 'b1', name: 'Rosa', cuisine_code: 'IT', lat: 46.6, lng: 2.5, promoted: false };
 const photos: DetailsPhoto[] = [
   { id: 'p1', kind: 'cover', path: 'b1/cover.jpg', position: null, menu_item_id: null },
   { id: 'p2', kind: 'gallery', path: 'b1/g1.jpg', position: 1, menu_item_id: null },
@@ -104,6 +104,7 @@ beforeEach(async () => {
     public_address: '1 King St',
     place_id: 'FAKE',
     currency_code: 'CAD',
+    sponsored: false,
     photos,
     items,
   });
@@ -112,6 +113,7 @@ beforeEach(async () => {
     name: 'Rosa',
     cuisine_code: 'IT',
     currency_code: 'CAD',
+    sponsored: false,
     photos,
     items,
   });

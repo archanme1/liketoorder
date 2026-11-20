@@ -233,7 +233,8 @@ select is(
 select is(
   (select array_agg(k order by k collate "C")
      from jsonb_object_keys((public.map_homemade_in_bounds(71, 71.3, 101.5, 101.8) -> 'pins') -> 0) k),
-  array['cuisine_code', 'id', 'lat', 'lng', 'name'], 'a pin has exactly id, name, cuisine_code, lat and lng');
+  array['cuisine_code', 'id', 'lat', 'lng', 'name', 'promoted'],
+  'a pin has exactly id, name, cuisine_code, lat, lng and promoted (spec 16)');
 select ok(
   (select position('place_id' in t) = 0 and position('Secret' in t) = 0 and position('resolved_at' in t) = 0
       and position('place_status' in t) = 0 and position('71.123456' in t) = 0 and position('101.654321' in t) = 0
@@ -292,8 +293,8 @@ set local request.headers = '{"x-forwarded-for":"198.51.100.2"}';
 select is(
   (select array_agg(k order by k collate "C")
      from jsonb_object_keys(public.get_homemade_details('00000000-0000-0000-0018-000000000001')) k),
-  array['cuisine_code', 'currency_code', 'id', 'items', 'name', 'photos'],
-  'homemade details has exactly id, name, cuisine_code, currency_code, photos and items');
+  array['cuisine_code', 'currency_code', 'id', 'items', 'name', 'photos', 'sponsored'],
+  'homemade details has exactly id, name, cuisine_code, currency_code, photos, items and sponsored (spec 16)');
 select results_eq(
   $$ select d ->> 'name', d ->> 'cuisine_code', d ->> 'currency_code'
        from (select public.get_homemade_details('00000000-0000-0000-0018-000000000001') d) s $$,

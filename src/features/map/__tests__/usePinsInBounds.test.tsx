@@ -18,7 +18,7 @@ const boxA: MapBox = { minLat: 43.1, maxLat: 43.9, minLng: -79.9, maxLng: -79.1 
 const boxB: MapBox = { minLat: 45.1, maxLat: 45.9, minLng: -75.9, maxLng: -75.1 };
 
 function pin(id: string): Pin {
-  return { id, name: id, cuisine_code: 'IT', lat: 43.5, lng: -79.4 };
+  return { id, name: id, cuisine_code: 'IT', lat: 43.5, lng: -79.4, promoted: false };
 }
 function answer(...ids: string[]): PinsResponse {
   return { pins: ids.map(pin), capped: false, too_large: false };

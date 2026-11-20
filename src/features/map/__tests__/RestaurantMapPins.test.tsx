@@ -43,7 +43,7 @@ const catalog: Cuisine[] = [
 
 // All inside the France opening view (46.6, 2.5 ± 5 / 6.5).
 function pin(id: string, name: string, cuisine = 'IT', lat = 46.6, lng = 2.5): Pin {
-  return { id, name, cuisine_code: cuisine, lat, lng };
+  return { id, name, cuisine_code: cuisine, lat, lng, promoted: false };
 }
 const joes = pin('p1', "Joe's Pizza", 'IT', 46.0, 2.0);
 const chez = pin('p2', 'Chez Anne', 'FR', 48.0, 4.0);

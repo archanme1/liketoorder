@@ -72,7 +72,7 @@ jest.mock('../mapConfig', () => ({
 
 // A real uuid: the sign-in return only accepts a request form for a uuid.
 const ID = '11111111-1111-4111-8111-111111111111';
-const pin = { id: ID, name: 'Rosa', cuisine_code: 'IT', lat: 46.6, lng: 2.5 };
+const pin = { id: ID, name: 'Rosa', cuisine_code: 'IT', lat: 46.6, lng: 2.5, promoted: false };
 const items: DetailsItem[] = [
   {
     id: 'i1',
@@ -91,6 +91,7 @@ const restaurantDetails = {
   public_address: '1 King St',
   place_id: 'FAKE',
   currency_code: 'CAD',
+  sponsored: false,
   photos: [],
   items,
 };
@@ -99,6 +100,7 @@ const homemadeDetails = {
   name: 'Rosa',
   cuisine_code: 'IT',
   currency_code: 'CAD',
+  sponsored: false,
   photos: [],
   items,
 };

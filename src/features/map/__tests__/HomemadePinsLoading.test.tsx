@@ -64,7 +64,7 @@ const italy: Cuisine = {
   sort_order: 1,
 };
 // Inside the France opening view (46.6, 2.5).
-const rosa: Pin = { id: 'h1', name: "Nonna Rosa's Table", cuisine_code: 'IT', lat: 46.6, lng: 2.5 };
+const rosa: Pin = { id: 'h1', name: "Nonna Rosa's Table", cuisine_code: 'IT', lat: 46.6, lng: 2.5, promoted: false };
 const answer = (pins: Pin[], extra: Partial<PinsResponse> = {}): PinsResponse => ({
   pins,
   capped: false,
@@ -139,8 +139,8 @@ beforeEach(async () => {
 // The spec 07 pins behaviour, proven against the HOMEMADE call (map_homemade_in_bounds): the
 // request waits for the person to stop moving (400 ms), a late answer for an area the person has
 // left is dropped, and the old flags stay on screen while the next area loads.
-const chez: Pin = { id: 'h2', name: 'Chez Anne', cuisine_code: 'IT', lat: 48, lng: 4 };
-const ghost: Pin = { id: 'h9', name: 'Ghost Kitchen', cuisine_code: 'IT', lat: 48, lng: 4 };
+const chez: Pin = { id: 'h2', name: 'Chez Anne', cuisine_code: 'IT', lat: 48, lng: 4, promoted: false };
+const ghost: Pin = { id: 'h9', name: 'Ghost Kitchen', cuisine_code: 'IT', lat: 48, lng: 4, promoted: false };
 const AREA_ONE = { latitude: 46, longitude: 2, latitudeDelta: 1, longitudeDelta: 1 };
 const AREA_TWO = { latitude: 48, longitude: 4, latitudeDelta: 1, longitudeDelta: 1 };
 

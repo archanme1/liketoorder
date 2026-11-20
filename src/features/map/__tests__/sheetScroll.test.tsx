@@ -112,7 +112,7 @@ const { __scrollableCreator: scrollableCreator, __flatListRenders: flatListRende
   };
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-const joes: Pin = { id: 'b1', name: "Joe's Pizza", cuisine_code: 'IT', lat: 46.0, lng: 2.0 };
+const joes: Pin = { id: 'b1', name: "Joe's Pizza", cuisine_code: 'IT', lat: 46.0, lng: 2.0, promoted: false };
 
 async function renderScreen() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });

@@ -21,6 +21,7 @@ const details: RestaurantDetails = {
   public_address: '1 King St',
   place_id: 'FAKE_PLACE_1',
   currency_code: 'CAD',
+  sponsored: false,
   photos: [],
   items: [],
 };

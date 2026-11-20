@@ -53,6 +53,11 @@ select p.id, b.name, p.status,
 
 ## Approve (after payment)
 
+Before approving, read the headline. **Reject with reason `headline` if it holds a phone number, an
+email, a link or a street address** (home cooks especially: their exact address is shown only after an
+accepted request). The server already refuses emails, numbers with 10 or more digits and line breaks,
+but it cannot catch everything (a link, a street address, a number written in words).
+
 ```sql
 select private.admin_review_promotion('<promotion id>', 'approve', '2026-12-02 09:00 America/Toronto'::timestamptz);
 ```
@@ -118,6 +123,8 @@ on conflict (id) do update
 
 ## Things to know
 
+- A business can send at most 5 requests in 24 hours (whatever happened to them); the sixth is refused
+  in the app with `too_many_requests`. Nothing for you to do.
 - Approval does not check the business again. A campaign shows only while the place is listed and
   visible on its map; if the place is hidden, nothing shows, and the campaign's time keeps running.
 - Payment is never handled in the app, and no card or payment data is stored anywhere.

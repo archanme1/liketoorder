@@ -27,7 +27,8 @@ create table public.promotions (
   headline        text not null check (char_length(headline) between 1 and 60
                                       and headline = btrim(headline)
                                       and headline !~ '[\x00-\x09\x0B-\x1F\u007F-\u009F\u200B-\u200D\u202A-\u202E\u2066-\u2069\uFEFF]'
-                                      and headline !~ '^[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+|[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+$'),
+                                      and headline !~ '^[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+|[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+$'
+                                      and headline !~ '[\n\r]'),   -- one line on a card
   preferred_start date,
   status          text not null default 'requested'
                     check (status in ('requested', 'approved', 'rejected', 'cancelled')),
@@ -55,6 +56,8 @@ create table public.promotions (
 -- At most one waiting request per business (also the backstop for two simultaneous requests).
 create unique index promotions_one_request on public.promotions (business_id) where status = 'requested';
 create index promotions_approved_ends on public.promotions (ends_at) where status = 'approved';
+-- A business's campaigns, newest first: get_my_promotion, the request cap, the cascade and the runbook.
+create index promotions_business_created_idx on public.promotions (business_id, created_at desc);
 
 alter table public.promotion_settings enable row level security;
 alter table public.promotions enable row level security;
@@ -196,12 +199,19 @@ grant execute on function public.get_my_promotion() to authenticated;
 -- The business row is locked first, so two requests from one owner run one after the other; the
 -- unique index promotions_one_request is the backstop. A preferred start is a calendar day the
 -- seller picks; the UTC date runs ahead of Ontario in the evening, so one day before it is allowed.
+-- A headline is one line and carries no contact details: c_mail and c_sep are the spec 13 food-log
+-- contact rule (20261115040811_food_log_uploads.sql, Decision 11), copied because it has no shared
+-- helper: an email, or 10+ digits once separators are ignored. "2 for 1" stays allowed.
+-- At most 5 requests per business in 24 hours (any outcome), so request-then-cancel cannot pile up rows.
 create function public.request_promotion(p_category text, p_headline text, p_preferred_start date)
 returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
   c_ctrl   constant text := '[\x00-\x09\x0B-\x1F\u007F-\u009F\u200B-\u200D\u202A-\u202E\u2066-\u2069\uFEFF]';
   c_edge   constant text := '^[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+|[ \n\u00A0\u115F\u1160\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u3164\uFFA0]+$';
+  c_mail   constant text := '[a-z0-9._%+-]+[ \u00A0\u2000-\u200A\u202F\u3000]*[@\uFF20][ \u00A0\u2000-\u200A\u202F\u3000]*[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}';
+  c_sep    constant text := '[][ \n\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000.()/_,+-]';
+  c_daily  constant integer := 5;
   v_uid      uuid := auth.uid();
   v_today    date := (now() at time zone 'UTC')::date;
   v_business uuid;
@@ -225,7 +235,8 @@ begin
     raise exception 'invalid_category';
   end if;
   if p_headline is null or char_length(p_headline) not between 1 and 60
-     or p_headline ~ c_ctrl or p_headline ~ c_edge then
+     or p_headline ~ c_ctrl or p_headline ~ c_edge or p_headline ~ '[\n\r]'
+     or p_headline ~* c_mail or regexp_replace(p_headline, c_sep, '', 'g') ~ '[0-9]{10,}' then
     raise exception 'invalid_headline';
   end if;
   if p_preferred_start is not null
@@ -237,6 +248,11 @@ begin
               where p.business_id = v_business
                 and (p.status = 'requested' or (p.status = 'approved' and p.ends_at > now()))) then
     raise exception 'already_open';
+  end if;
+
+  if (select count(*) from public.promotions p
+       where p.business_id = v_business and p.created_at > now() - interval '24 hours') >= c_daily then
+    raise exception 'too_many_requests';
   end if;
 
   begin
@@ -395,10 +411,8 @@ begin
       raise exception 'invalid_cursor';
     end if;
     begin
+      -- to_date raises on an impossible day such as 2026-02-30; that error becomes invalid_cursor.
       v_day := to_date(split_part(p_cursor, '|', 1), 'YYYY-MM-DD');
-      if to_char(v_day, 'YYYY-MM-DD') <> split_part(p_cursor, '|', 1) then
-        raise exception 'invalid_cursor';     -- to_date accepts 2026-02-30; the round trip does not
-      end if;
     exception when others then
       raise exception 'invalid_cursor';
     end;
@@ -535,10 +549,19 @@ begin
   v_max_lng := p_max_lng - 360 * floor((p_max_lng + 180) / 360);
   v_cross   := v_min_lng > v_max_lng;
 
-  with hits as (
+  with active as (
+    -- Businesses with a campaign running now (same rule as private.promotion_is_active): one small
+    -- read through promotions_approved_ends instead of one call per row before the cap.
+    select distinct p.business_id
+      from public.promotions p
+     where p.status = 'approved'
+       and p.starts_at <= now()
+       and now() < p.ends_at
+  ), hits as (
     select b.id, b.name, b.cuisine_code, b.map_lat, b.map_lng,
-           private.promotion_is_active(b.id) as promoted
+           (a.business_id is not null) as promoted
       from public.businesses b
+      left join active a on a.business_id = b.id
      where b.is_listed
        and b.type = 'restaurant'
        and b.map_lat is not null
@@ -609,10 +632,19 @@ begin
   v_max_lng := p_max_lng - 360 * floor((p_max_lng + 180) / 360);
   v_cross   := v_min_lng > v_max_lng;
 
-  with hits as (
+  with active as (
+    -- Businesses with a campaign running now (same rule as private.promotion_is_active): one small
+    -- read through promotions_approved_ends instead of one call per row before the cap.
+    select distinct p.business_id
+      from public.promotions p
+     where p.status = 'approved'
+       and p.starts_at <= now()
+       and now() < p.ends_at
+  ), hits as (
     select b.id, b.name, b.cuisine_code, b.map_lat, b.map_lng,
-           private.promotion_is_active(b.id) as promoted
+           (a.business_id is not null) as promoted
       from public.businesses b
+      left join active a on a.business_id = b.id
      where b.is_listed
        and b.type = 'homemade'
        and b.map_lat is not null

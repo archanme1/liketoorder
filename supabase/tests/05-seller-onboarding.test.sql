@@ -173,17 +173,17 @@ select is(
     where n.nspname = 'public'
       and has_function_privilege('authenticated', p.oid, 'execute')
       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')),
-  array['begin_food_log_upload', 'begin_photo_upload', 'cancel_pickup_request', 'cancel_table_request', 'claim_food_log_cleanup',
+  array['begin_food_log_upload', 'begin_photo_upload', 'cancel_my_promotion', 'cancel_pickup_request', 'cancel_table_request', 'claim_food_log_cleanup',
         'claim_photo_cleanup', 'count_my_request_updates', 'count_waiting_requests', 'create_menu_item', 'create_my_business',
         'delete_business_photo', 'delete_food_log', 'delete_menu_item', 'finish_food_log_upload', 'finish_photo_upload',
         'get_business_request', 'get_food_log', 'get_homemade_details', 'get_my_business', 'get_my_food_log_activity',
-        'get_my_food_log_cuisine_days', 'get_my_pickup_address', 'get_my_pickup_request', 'get_my_table_request', 'get_notification_settings', 'get_restaurant_details',
-        'list_business_requests', 'list_my_food_logs', 'list_my_food_logs_on', 'list_my_requests', 'map_homemade_in_bounds',
+        'get_my_food_log_cuisine_days', 'get_my_pickup_address', 'get_my_pickup_request', 'get_my_promotion', 'get_my_table_request', 'get_notification_settings', 'get_restaurant_details',
+        'list_business_requests', 'list_my_food_logs', 'list_my_food_logs_on', 'list_my_requests', 'list_offers_near', 'map_homemade_in_bounds',
         'map_restaurants_in_bounds',
         'mark_arrived', 'mark_my_requests_seen', 'mark_request_outcome', 'move_menu_item', 'register_push_token',
-        'respond_to_request', 'set_menu_currency', 'set_notification_settings', 'set_seller_mode', 'submit_pickup_request',
+        'request_promotion', 'respond_to_request', 'set_menu_currency', 'set_notification_settings', 'set_seller_mode', 'submit_pickup_request',
         'submit_table_request', 'unregister_push_token', 'update_food_log', 'update_menu_item'],
-  'only the allowlisted public functions (specs 05 to 15) are executable by authenticated'
+  'only the allowlisted public functions (specs 05 to 16) are executable by authenticated'
 );
 select is(
   (select coalesce(array_agg(distinct p.proname::text order by p.proname::text), array[]::text[])
@@ -192,8 +192,8 @@ select is(
     where n.nspname = 'public'
       and has_function_privilege('anon', p.oid, 'execute')
       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')),
-  array['get_homemade_details', 'get_restaurant_details', 'map_homemade_in_bounds', 'map_restaurants_in_bounds'],
-  'anon can execute only the four public map reads (specs 07, 08)'
+  array['get_homemade_details', 'get_restaurant_details', 'list_offers_near', 'map_homemade_in_bounds', 'map_restaurants_in_bounds'],
+  'anon can execute only the four public map reads (specs 07, 08) and list_offers_near (spec 16)'
 );
 -- Spec 10b: the allowlist above lists names only, so a leftover overload would pass it.
 select is(
@@ -211,12 +211,14 @@ select is(
   (select coalesce(array_agg(p.proname::text order by p.proname::text), array[]::text[])
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'private'),
-  array['business_is_public', 'caller_ip', 'cleanup_map_rate_limits', 'cleanup_places_refresh_quota', 'cleanup_push_outbox',
+  array['admin_review_promotion', 'business_can_promote', 'business_is_public', 'caller_ip', 'cleanup_map_rate_limits',
+        'cleanup_places_refresh_quota', 'cleanup_push_outbox',
         'consume_map_quota', 'enqueue_request_event', 'expire_pickup_requests', 'flag_customer_unseen', 'food_log_is_live',
         'food_log_upload_allowed', 'homemade_is_fresh', 'invoke_places_refresh', 'invoke_push_sender',
         'owns_business', 'photo_is_live', 'photo_is_public', 'photo_upload_allowed', 'pickup_request_expiry',
-        'pickup_request_json', 'restaurant_is_fresh', 'table_request_expiry', 'table_request_json'],
-  'the private schema holds exactly the five RLS helpers, the six spec 07 map helpers, the spec 08 homemade_is_fresh, the two spec 09 pickup helpers, the spec 10 request-object builder, the two spec 11 table helpers, the four spec 12 notification functions and the two spec 13 food log storage helpers'
+        'pickup_request_json', 'promotion_is_active', 'promotion_json', 'restaurant_is_fresh', 'table_request_expiry',
+        'table_request_json'],
+  'the private schema holds exactly the five RLS helpers, the six spec 07 map helpers, the spec 08 homemade_is_fresh, the two spec 09 pickup helpers, the spec 10 request-object builder, the two spec 11 table helpers, the four spec 12 notification functions, the two spec 13 food log storage helpers and the four spec 16 promotion functions'
 );
 select is_empty(
   $$ select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace

@@ -43,6 +43,14 @@ describe('planPromotions (spec 16 seed campaigns)', () => {
     ).toEqual([3 * DAY, 3 * DAY, 3 * DAY]);
   });
 
+  it('the active campaign is running now even when campaigns last only 1 day', () => {
+    for (const length of [1, 2, 7, 60]) {
+      const active = planPromotions(NOW, length).find((p) => p.state === 'active');
+      expect(ms(active?.startsAt ?? null)).toBeLessThan(NOW.getTime());
+      expect(ms(active?.endsAt ?? null)).toBeGreaterThan(NOW.getTime());
+    }
+  });
+
   it('the request has no window and a preferred start the server accepts', () => {
     const requested = byState('requested');
     expect(requested.status).toBe('requested');

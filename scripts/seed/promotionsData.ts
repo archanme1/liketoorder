@@ -54,7 +54,8 @@ export function planPromotions(now: Date, lengthDays: number): PlannedPromotion[
       headline: 'Two bowls of pho for the price of one',
       status: 'approved',
       preferredStart: null,
-      ...window(-1),
+      // Started half its length ago, so it is running now for any length of 1 day or more.
+      ...window(-lengthDays / 2),
     },
     {
       state: 'scheduled',

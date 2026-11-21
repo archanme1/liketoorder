@@ -21,7 +21,6 @@ import { SponsoredLabel } from '@/features/promotions/components/SponsoredLabel'
 import { useTheme } from '@/theme/useTheme';
 
 import { useReduceMotion } from '@/lib/useReduceMotion';
-import { useRestaurantSponsored } from '../hooks/useRestaurantDetails';
 import type { Pin } from '../schema';
 
 import { sponsoredLabel } from './AdBadge';
@@ -60,8 +59,11 @@ type RestaurantSheetProps = {
   detailsLabel?: string;
   placesTitle?: string;
   emptyText?: string;
-  /** Spec 16: the open place's details say "sponsored" (the tab's details query). */
-  useSponsored?: (id: string | null) => boolean | undefined;
+  /**
+   * Spec 16: the open place's details say "sponsored". Required: it must read the same details
+   * query as this tab's DetailsBody, so there is no restaurant default to fall back on by mistake.
+   */
+  useSponsored: (id: string | null) => boolean | undefined;
 };
 
 /** What a sheet body (the details of one place) is given. */
@@ -136,7 +138,7 @@ export const RestaurantSheet = memo(function RestaurantSheet({
   detailsLabel = 'Restaurant details',
   placesTitle = PLACES_TITLE,
   emptyText,
-  useSponsored = useRestaurantSponsored,
+  useSponsored,
 }: RestaurantSheetProps) {
   const { colors, space, radius, size } = useTheme();
   const { height: windowHeight, fontScale } = useWindowDimensions();

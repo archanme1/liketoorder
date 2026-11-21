@@ -42,6 +42,7 @@ const keyOf = (target: OfferTarget) => `${target.business}|${target.lat}|${targe
  *    (the sheet then shows its own error and Retry).
  *
  * `cameraTaken` turns true at step 1, so a late "my position" fix does not pull the camera away.
+ * Every target is a new run; answers from an older run are ignored.
  */
 export function useOfferTarget({
   target,
@@ -58,6 +59,9 @@ export function useOfferTarget({
   const [ended, setEnded] = useState(false);
   const cameraTaken = useRef(false);
   const handled = useRef<string | null>(null);
+  // Each target gets a new run id. An answer from an older run (a slow details read for a card
+  // tapped before the current one) is ignored: it must not open its sheet or show the message.
+  const runs = useRef(0);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -92,6 +96,9 @@ export function useOfferTarget({
     if (!ready || handled.current === keyOf(target)) return;
     handled.current = keyOf(target);
     waiting.current = null;
+    runs.current += 1;
+    const runId = runs.current;
+    const current = () => mounted.current && runs.current === runId;
     const run = latest.current;
     const { business: id, lat, lng } = target;
     const findPin = () => latest.current.pins.find((pin) => pin.id === id);
@@ -106,29 +113,33 @@ export function useOfferTarget({
         staleTime: 0,
         retry: false,
       })
-      .then((details) => {
-        if (!mounted.current) return;
-        const gone = details === null || !details.sponsored;
-        setEnded(gone);
-        if (gone) void queryClient.invalidateQueries({ queryKey: offersKeyRoot });
-        if (details === null) return;
-        latest.current.open(
-          findPin() ?? {
-            id,
-            name: details.name,
-            cuisine_code: details.cuisine_code,
-            lat,
-            lng,
-            promoted: details.sponsored,
-          },
-        );
-      })
-      .catch(() => {
-        if (!mounted.current) return;
-        const pin = findPin();
-        if (pin) latest.current.open(pin);
-        else waiting.current = id;
-      });
+      .then(
+        (details) => {
+          if (!current()) return;
+          const gone = details === null || !details.sponsored;
+          setEnded(gone);
+          if (gone) void queryClient.invalidateQueries({ queryKey: offersKeyRoot });
+          if (details === null) return;
+          latest.current.open(
+            findPin() ?? {
+              id,
+              name: details.name,
+              cuisine_code: details.cuisine_code,
+              lat,
+              lng,
+              promoted: details.sponsored,
+            },
+          );
+        },
+        // Only a failed read lands here: an error thrown while opening the sheet above is not
+        // mistaken for one (separate handlers, not a trailing catch).
+        () => {
+          if (!current()) return;
+          const pin = findPin();
+          if (pin) latest.current.open(pin);
+          else waiting.current = id;
+        },
+      );
     run.onHandled();
   }, [target, ready, queryClient]);
 

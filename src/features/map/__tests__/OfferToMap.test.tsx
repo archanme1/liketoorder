@@ -286,6 +286,57 @@ describe.each(TABS)('card to map on the %s tab', (tab) => {
   });
 });
 
+describe('two cards in a row', () => {
+  it('ignores a slow answer for the first card once a second card was tapped', async () => {
+    const OTHER = '00000000-0000-4000-8000-000000001709';
+    const other: Pin = { ...PIN, id: OTHER, name: 'Golden Tandoor', lat: 43.91, lng: -78.87 };
+    setPins('restaurants', [PIN, other]);
+    let answerFirst: (value: RestaurantDetails | null) => void = () => {};
+    jest.mocked(fetchRestaurantDetails).mockImplementation((id) =>
+      id === ID
+        ? new Promise((resolve) => {
+            answerFirst = resolve;
+          })
+        : Promise.resolve({ ...restaurant(true), id: OTHER, name: other.name }),
+    );
+    const view = await renderTab('restaurants');
+    await waitFor(() => expect(fetchRestaurantDetails).toHaveBeenCalledWith(ID));
+    // The route clears the params, then the second card arrives while the first read is slow.
+    await view.rerender(tree('restaurants', null));
+    await view.rerender(tree('restaurants', { business: OTHER, lat: other.lat, lng: other.lng }));
+    const title = await screen.findByTestId('sheet-title');
+    expect(title).toHaveTextContent(other.name);
+
+    // The first card's place has ended meanwhile: its late answer must change nothing.
+    await act(async () => answerFirst(null));
+    await act(async () => {});
+    expect(screen.queryByText(OFFER_ENDED_TEXT)).toBeNull();
+    expect(screen.getByTestId('sheet-title')).toHaveTextContent(other.name);
+  });
+
+  it('ignores a slow answer for the first card even when it is still sponsored', async () => {
+    const OTHER = '00000000-0000-4000-8000-000000001709';
+    const other: Pin = { ...PIN, id: OTHER, name: 'Golden Tandoor', lat: 43.91, lng: -78.87 };
+    setPins('restaurants', [PIN, other]);
+    let answerFirst: (value: RestaurantDetails | null) => void = () => {};
+    jest.mocked(fetchRestaurantDetails).mockImplementation((id) =>
+      id === ID
+        ? new Promise((resolve) => {
+            answerFirst = resolve;
+          })
+        : Promise.resolve({ ...restaurant(true), id: OTHER, name: other.name }),
+    );
+    const view = await renderTab('restaurants');
+    await waitFor(() => expect(fetchRestaurantDetails).toHaveBeenCalledWith(ID));
+    await view.rerender(tree('restaurants', null));
+    await view.rerender(tree('restaurants', { business: OTHER, lat: other.lat, lng: other.lng }));
+    await waitFor(() => expect(screen.getByTestId('sheet-title')).toHaveTextContent(other.name));
+    await act(async () => answerFirst(restaurant(true)));
+    await act(async () => {});
+    expect(screen.getByTestId('sheet-title')).toHaveTextContent(other.name);
+  });
+});
+
 describe('a late position fix', () => {
   it("does not pull the camera away from the offer's place", async () => {
     let fix: (value: unknown) => void = () => {};

@@ -124,6 +124,11 @@ function BusinessSummary({ business }: { business: MyBusiness }) {
       <View style={{ gap: space.md }}>
         <RequestsRow />
         <MenuRows businessId={business.id} />
+        <NavRow
+          label="Promote your business"
+          accessibilityHint="Opens your promotion"
+          onPress={() => router.push('/seller/promote')}
+        />
       </View>
     </View>
   );

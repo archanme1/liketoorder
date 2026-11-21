@@ -10,7 +10,8 @@ export type SellerScreen =
   | 'menu-item'
   | 'photos'
   | 'requests'
-  | 'request';
+  | 'request'
+  | 'promote';
 
 export type SellerRedirect = '/manage' | '/profile' | '/seller/onboarding';
 

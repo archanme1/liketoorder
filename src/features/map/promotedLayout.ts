@@ -45,9 +45,14 @@ function mercatorY(lat: number): number {
   return Math.log(Math.tan(Math.PI / 4 + (clamped * Math.PI) / 360));
 }
 
-/** Longitude from the view's west edge, 0 to 360, so a view across the 180th meridian works. */
+/**
+ * Longitude from the view's west edge, 0 to 360, so a view across the 180th meridian works. A
+ * point a hair west of the edge (within EDGE_EPSILON) counts as on it, like the other three edges,
+ * instead of wrapping round to nearly 360.
+ */
 function eastOf(west: number, lng: number): number {
-  return (((lng - west) % 360) + 360) % 360;
+  const east = (((lng - west) % 360) + 360) % 360;
+  return east > 360 - EDGE_EPSILON ? 0 : east;
 }
 
 /**

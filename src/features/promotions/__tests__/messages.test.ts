@@ -44,4 +44,14 @@ describe('promotion messages', () => {
       ['headline', 'not_eligible', 'not_paid', 'other'].sort(),
     );
   });
+
+  it('reads naturally after "Not approved:" for all four reasons', () => {
+    const sentences = Object.values(REJECT_REASON_TEXT).map((text) => `Not approved: ${text}`);
+    expect(sentences).toEqual([
+      "Not approved: the headline can't be used. You can send a new request with another one.",
+      "Not approved: the invoice wasn't paid.",
+      "Not approved: this business can't be promoted right now.",
+      "Not approved: the request couldn't be accepted.",
+    ]);
+  });
 });

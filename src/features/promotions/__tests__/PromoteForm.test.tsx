@@ -200,24 +200,24 @@ describe('PromoteForm: when the server still refuses', () => {
     await send();
   }
 
-  it('puts invalid_headline on the headline field and keeps the text', async () => {
+  it('puts invalid_headline on the headline field only, and keeps the text', async () => {
     rpc.mockResolvedValueOnce({ data: null, error: pgError('invalid_headline') });
     await fillAndSend();
     expect(
       await screen.findByText(`${WARNING} ${promotionErrorMessage('invalid_headline')}`),
     ).toBeTruthy();
     expect(headline().props.value).toBe('Fresh tacos');
-    expect(onError).toHaveBeenCalledWith('invalid_headline');
+    expect(onError).not.toHaveBeenCalled(); // on the field only, never in the top banner too
     expect(onSent).not.toHaveBeenCalled();
   });
 
-  it('puts invalid_category on the category group', async () => {
+  it('puts invalid_category on the category group only', async () => {
     rpc.mockResolvedValueOnce({ data: null, error: pgError('invalid_category') });
     await fillAndSend();
     expect(
       await screen.findByText(`${WARNING} ${promotionErrorMessage('invalid_category')}`),
     ).toBeTruthy();
-    expect(onError).toHaveBeenCalledWith('invalid_category');
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it('moves the start back to As soon as possible on invalid_start', async () => {

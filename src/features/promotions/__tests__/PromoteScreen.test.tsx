@@ -10,11 +10,14 @@ import { supabase } from '@/lib/supabase';
 
 import {
   createFakeServer,
+  NOW,
+  pgError,
   PROMOTION_ID,
   storedRow,
   type FakeServer,
 } from '../__fixtures__/promotion';
 import { PromoteScreen } from '../components/PromoteScreen';
+import { myPromotionKey } from '../hooks/useMyPromotion';
 import { formatPromotionPrice, offerLine, phoneLocale, statusText } from '../format';
 import { PAYMENT_NOTE, promotionErrorMessage } from '../messages';
 import { promotionSchema } from '../schema';
@@ -362,5 +365,68 @@ describe('PromoteScreen: ended, rejected and cancelled campaigns', () => {
     await fireEvent.press(await screen.findByRole('button', { name: 'Promote again' }));
     expect(screen.getByText("Promotions aren't available yet.")).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Send request' })).toBeNull();
+  });
+});
+
+describe('PromoteScreen: where messages show', () => {
+  const WARNING = String.fromCodePoint(0x26a0);
+
+  it('shows a refused headline on the field only, not again in the top banner', async () => {
+    await renderScreen();
+    await screen.findByRole('button', { name: 'Send request' });
+    rpc.mockResolvedValueOnce({ data: null, error: pgError('invalid_headline') });
+    await fillAndSend();
+    const message = promotionErrorMessage('invalid_headline');
+    expect(await screen.findByText(`${WARNING} ${message}`)).toBeTruthy();
+    expect(screen.queryByText(message)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(announce).not.toHaveBeenCalledWith(message);
+  });
+
+  it('still shows a refusal that is not about one field in the top banner', async () => {
+    await renderScreen();
+    await screen.findByRole('button', { name: 'Send request' });
+    rpc.mockResolvedValueOnce({ data: null, error: pgError('too_many_requests') });
+    await fillAndSend();
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByText(promotionErrorMessage('too_many_requests'))).toBeTruthy();
+  });
+
+  it('keeps "Request sent" while the request is waiting, then hides it once the state changes', async () => {
+    await renderScreen();
+    await screen.findByRole('button', { name: 'Send request' });
+    await fillAndSend();
+    expect(await screen.findByText('Request sent')).toBeTruthy();
+    // The background re-read after the request shows the same state: the notice stays.
+    await waitFor(() => expect(calls('get_my_promotion').length).toBeGreaterThanOrEqual(2));
+    expect(screen.getByText('Request sent')).toBeTruthy();
+
+    // The admin approves it for later; the next read shows Scheduled.
+    server.approve(server.rows[0].id, new Date(NOW.getTime() + 2 * 86_400_000).toISOString());
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: myPromotionKey });
+    });
+    expect(await screen.findByText(/^Starts on .+, ends on .+\.$/)).toBeTruthy();
+    expect(screen.queryByText('Request sent')).toBeNull();
+  });
+
+  it('clears the notice on a pull to refresh', async () => {
+    server.rows.push(storedRow('requested'));
+    await renderScreen();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Cancel request' }));
+    await pressAlertButton('Cancel request');
+    expect(await screen.findByText('Request cancelled')).toBeTruthy();
+
+    // The jest ScrollView mock keeps the refreshControl element as a prop of the scroll view.
+    const [scroll] = screen.container.queryAll((node) => Boolean(node.props.refreshControl));
+    const control = scroll.props.refreshControl as {
+      props: { onRefresh: () => void; accessibilityLabel: string };
+    };
+    expect(control.props.accessibilityLabel).toBe('Refresh your promotion');
+    await act(async () => {
+      control.props.onRefresh();
+    });
+    await waitFor(() => expect(screen.queryByText('Request cancelled')).toBeNull());
+    expect(screen.getByText('Cancelled.')).toBeTruthy();
   });
 });

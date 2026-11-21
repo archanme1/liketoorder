@@ -137,3 +137,49 @@ describe('normalizeHeadline and headlineLength', () => {
     expect(headlineLength('   ')).toBe(0);
   });
 });
+
+// Copied by hand from request_promotion in 20261120214854_promotions.sql (char_length 1..60, c_ctrl,
+// c_edge, [\n\r], c_mail, 10+ digits after c_sep). The server never trims: it judges the text as
+// sent. The app sends exactly the trimmed text that checkHeadline returns, so the app sends a given
+// text unchanged exactly when the server accepts it. A drift between text.ts and the migration
+// shows up here, not only in the fake server (which uses checkHeadline itself).
+describe('parity with the server rule', () => {
+  const appSendsAsIs = (text: string) => {
+    const check = checkHeadline(text);
+    return check.ok && check.value === text;
+  };
+
+  it.each([
+    ['empty', ''],
+    ['61 code points', 'a'.repeat(61)],
+    ['a leading space', ' Tacos'],
+    ['a trailing space', 'Tacos '],
+    ['a trailing Hangul filler (U+3164)', 'Tacos' + cp(0x3164)],
+    ['a leading no-break space', cp(0xa0) + 'Tacos'],
+    ['a bell (U+0007)', 'Taco' + cp(0x07) + 'night'],
+    ['a zero-width space (U+200B)', 'Taco' + cp(0x200b) + 'night'],
+    ['a joiner (U+200D)', 'Taco' + cp(0x200d) + 'night'],
+    ['a right-to-left override (U+202E)', 'Taco' + cp(0x202e) + 'night'],
+    ['a BOM (U+FEFF)', 'Taco' + cp(0xfeff) + 'night'],
+    ['a line feed', 'Taco' + cp(0x0a) + 'night'],
+    ['a carriage return', 'Taco' + cp(0x0d) + 'night'],
+    ['an email', 'Mail tacos@example.com'],
+    ['an upper-case email', 'MAIL TACOS@EXAMPLE.CA'],
+    ['10 digits with separators', 'Call (416) 555-0199'],
+    ['10 digits with dots and spaces', 'Call 416. 555 .0199'],
+  ])('the server refuses %s, and the app never sends it as is', (_name, text) => {
+    expect(appSendsAsIs(text)).toBe(false);
+  });
+
+  it.each([
+    ['60 code points', 'a'.repeat(60)],
+    ['59 letters and an emoji', 'a'.repeat(59) + cp(0x1f32e)],
+    ['"2 for 1 tacos"', '2 for 1 tacos'],
+    ['a single emoji', cp(0x1f32e)],
+    ['an emoji with U+FE0F', 'Hot ' + cp(0x2615, 0xfe0f)],
+    ['9 digits with separators', 'Order 416 555 019'],
+    ['a no-break space inside', 'Taco' + cp(0xa0) + 'night'],
+  ])('the server accepts %s, and the app sends it unchanged', (_name, text) => {
+    expect(appSendsAsIs(text)).toBe(true);
+  });
+});

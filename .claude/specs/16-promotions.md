@@ -436,3 +436,9 @@ All resolved by Archan on 2026-11-20.
 - **Q15** The card opens the place on its map tab with the sheet open, or shows a friendly message (D15).
 - **Q16** No push notifications.
 - **Q17** No admin screen. One documented SQL call (the runbook).
+
+## Mismatches
+Differences between this spec and what was built, with their follow-ups.
+
+- **Headline hidden-character rule (PR 2):** the PR 1 migration refuses U+200D in a headline (the joiner inside combined emoji such as the woman-cook or family emoji), while the food-log description rule allows U+200D and U+FE0F. PR 2 mirrors the server: the app refuses a joiner before sending, with "This emoji can't be used in a headline. Try a simpler one." **Follow-up:** align the headline rule with food-log (allow U+200D and U+FE0F; U+FE0F is already allowed today) through a small new migration in a later PR, then drop the app's joiner check with it.
+- **"Cancelled on <date>" (PR 2):** `get_my_promotion` returns no `cancelled_at`, so the Promote screen shows "Cancelled." with no date (approved for PR 2). Showing the date needs a small replacing migration first.

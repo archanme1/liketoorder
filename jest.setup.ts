@@ -400,6 +400,11 @@ jest.mock('@react-native-community/datetimepicker', () => {
 // useReducedMotion (the system setting, read synchronously) is a jest.fn returning false; tests
 // override it with jest.mocked(useReducedMotion).mockReturnValue(true). __reset() restores every
 // fake after each test.
+// useAnimatedStyle runs the worklet once per render and nothing re-renders when a shared value
+// changes, so the style a test reads is the FIRST frame only (e.g. scale 0.8 before the pop-in);
+// assert what was started through the jest.fns, never an end state through the style.
+// Any name the fake does not define throws "not in the jest Reanimated fake: <name>" at once, so
+// a new import fails where it is used instead of as a mysterious undefined later.
 jest.mock('react-native-reanimated', () => {
   /* eslint-disable @typescript-eslint/no-require-imports */
   const React = require('react');
@@ -443,7 +448,15 @@ jest.mock('react-native-reanimated', () => {
     Image,
     createAnimatedComponent: (component: unknown) => component,
   };
-  return {
+  const fake: Record<string | symbol, unknown> = {
+    // react-native-gesture-handler feature-detects these (lib/.../reanimatedWrapper.js and its
+    // gesture hooks). Deliberately absent, as before this fake existed: they read as undefined.
+    setGestureState: undefined,
+    isSharedValue: undefined,
+    useEvent: undefined,
+    useHandler: undefined,
+    useComposedEventHandler: undefined,
+    NativeEventsManager: undefined,
     __esModule: true,
     default: Animated,
     ...Animated,
@@ -461,6 +474,15 @@ jest.mock('react-native-reanimated', () => {
       }
     },
   };
+  // Property probes made by Babel's import helpers and Jest's own formatting, not by app code.
+  const probes = new Set(['then', 'toJSON', '$$typeof', 'asymmetricMatch', 'nodeType', 'constructor']);
+  return new Proxy(fake, {
+    get(target, name) {
+      if (name in target) return target[name];
+      if (typeof name === 'symbol' || probes.has(name) || /^(__|@@)/.test(name)) return undefined;
+      throw new Error(`not in the jest Reanimated fake: ${name} (add it in jest.setup.ts)`);
+    },
+  });
 });
 
 afterEach(() => {

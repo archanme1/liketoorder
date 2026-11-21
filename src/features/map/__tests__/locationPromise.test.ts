@@ -13,10 +13,10 @@ describe('the location permission text', () => {
   it('says the exact location stays on the phone and only the map area is received', () => {
     const text = whenInUseText();
     expect(text).toContain('Your exact location stays on your phone');
-    expect(text).toContain("We only receive the map area you're looking at");
+    expect(text).toContain('We only receive a rough area');
   });
 
-  it('no longer claims the location "stays on your phone" without the map-area caveat', () => {
+  it('no longer claims the location "stays on your phone" without the rough-area caveat', () => {
     expect(whenInUseText()).not.toMatch(/Your location stays on your phone\.\s*$/);
   });
 });

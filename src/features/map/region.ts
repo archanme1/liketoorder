@@ -98,6 +98,36 @@ export function snapBox(box: MapBox): MapBox {
   };
 }
 
+declare const snappedBrand: unique symbol;
+
+/**
+ * A point on the 0.05 degree grid. Only snapPoint makes one, so a raw position can never be passed
+ * where a SnappedPoint is expected (spec 16 Decision D2).
+ */
+export type SnappedPoint = { readonly lat: number; readonly lng: number } & {
+  readonly [snappedBrand]: true;
+};
+
+/**
+ * Spec 16 Offers: the only form of a position that is ever sent. The position moves to the nearest
+ * point of the 1/20 degree grid (about 5 km cells), so the server learns a rough area, never the
+ * exact place. The longitude is wrapped into [-180, 180) first; a half step rounds up (towards +inf,
+ * Math.round); -0 becomes 0. Null for a non-finite input or a latitude outside [-90, 90]: the
+ * caller then uses its fallback area instead.
+ */
+export function snapPoint(lat: number, lng: number): SnappedPoint | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90) return null;
+  const wrapped = ((((lng + 180) % 360) + 360) % 360) - 180;
+  const round = (n: number) => {
+    const value = Math.round(n * GRID_STEPS_PER_DEGREE) / GRID_STEPS_PER_DEGREE;
+    return value === 0 ? 0 : value;
+  };
+  return {
+    lat: Math.min(90, Math.max(-90, round(lat))),
+    lng: round(wrapped),
+  } as SnappedPoint;
+}
+
 /** A pick from the list keeps the person's zoom if they are already this close (degrees). */
 export const PICK_MAX_DELTA = 0.05;
 

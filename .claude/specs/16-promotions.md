@@ -205,7 +205,11 @@ None. No payment provider, no secrets.
   - `supabase/seed.sql`
   - the older tests named in Decision D11
   - `docs/product/v1.md` §4, §7, §15 and §16 (Decision D17)
-- PR 2: `src/features/sellers/components/ManageBusinessScreen.tsx` (the Promote row).
+- PR 2:
+  - `src/features/sellers/components/ManageBusinessScreen.tsx` (the Promote row)
+  - `src/features/sellers/components/SellerScreenFrame.tsx` (an optional pull-to-refresh prop for the Promote screen; other screens unchanged)
+  - `src/features/sellers/sellerRoutes.ts` (the `promote` screen in the seller route rule)
+  - `app/seller/_layout.tsx` (the Promote screen title)
 - PR 3:
   - `src/features/map/clustering.ts` (the large promoted markers are kept out of clusters)
   - `BusinessMapScreen.tsx`

@@ -80,8 +80,14 @@ describe('promotionSeedOwners (what both modes clean first)', () => {
 describe('parseMany', () => {
   it('is true only when --many is given', () => {
     expect(parseMany([])).toBe(false);
-    expect(parseMany(['--extra'])).toBe(false);
     expect(parseMany(['--many'])).toBe(true);
-    expect(parseMany(['--other', '--many'])).toBe(true);
+  });
+
+  it('refuses any other argument, so a typo never seeds the default set by mistake', () => {
+    expect(() => parseMany(['--mnay'])).toThrow(
+      'Unknown argument --mnay. The only option is --many.',
+    );
+    expect(() => parseMany(['--extra'])).toThrow(/Unknown argument --extra/);
+    expect(() => parseMany(['--other', '--many'])).toThrow(/Unknown argument --other/);
   });
 });

@@ -32,9 +32,12 @@ export function useRestaurantDetails(id: string | null) {
 
 /**
  * Spec 16: whether the open place's details say it is sponsored, for the sheet header. The same
- * query as the sheet body (shared cache, no extra request). Undefined while loading or when the
- * place is not available.
+ * query as the sheet body (shared cache, no extra request). False once the details say the place
+ * is not available (null); undefined (unknown) while they load or when the request failed, so the
+ * sheet then falls back to the pin's own flag.
  */
 export function useRestaurantSponsored(id: string | null): boolean | undefined {
-  return useRestaurantDetails(id).data?.sponsored;
+  const { data } = useRestaurantDetails(id);
+  if (data === null) return false;
+  return data?.sponsored;
 }

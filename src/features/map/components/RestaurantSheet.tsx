@@ -188,8 +188,8 @@ export const RestaurantSheet = memo(function RestaurantSheet({
     gap: space.lg,
   };
   const title = detailsMode ? selected.name : placesTitle;
-  // "Sponsored" at the top (spec 16): at once from the pin, then from the details, so it goes away
-  // when the details say the campaign has ended.
+  // "Sponsored" at the top (spec 16): from the details once they have answered (false when the
+  // place is not available), from the pin only while they load or when the request failed.
   const detailsSponsored = useSponsored(selected?.id ?? null);
   const sponsored = detailsMode && (detailsSponsored ?? selected.promoted);
 

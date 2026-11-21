@@ -193,7 +193,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 13 | food-log-uploads | ✅ Shipped | .claude/specs/13-food-log-uploads.md |
 | 14 | activity-grid | ✅ Shipped | .claude/specs/14-activity-grid.md |
 | 15 | activity-grid-cuisine-view | ✅ Shipped | .claude/specs/15-activity-grid-cuisine-view.md |
-| 16 | promotions | 🚧 In progress | .claude/specs/16-promotions.md |
+| 16 | promotions | ✅ Shipped | .claude/specs/16-promotions.md |
 | 16b | promotion-payment | 📝 Planned (not started) | — |
 | 17 | reports | ⬜ Not started | — |
 | 18 | legal-pages | ⬜ Not started | — |
@@ -204,7 +204,7 @@ Roadmap notes (full detail in `docs/product/v1.md` §4 and §14):
 - **10b requests-tab-and-answers:** Requests tab (customers: sent requests; business owners: Received / Sent switches), badges, required decline reason and optional accept note, maps hidden in seller mode.
 - **11 table-requests:** its requests also appear in the Requests tab, in both Received and Sent.
 - **16 promotions:** adds a dedicated Offers tab for customers (seller mode off): active promotion campaigns near the user, filterable by promotion category (for example new food launch, offer), clear Sponsored label, paginated list (server limit plus cursor), in addition to the larger promoted flags on the map. Sellers create campaigns from Manage.
-- **Final tab bar plan:** seller mode off shows Restaurants, Homemade, Offers, Requests, Profile; seller mode on shows Requests, Manage, Profile. Requests shipped in 10b (the bar today is Restaurants, Homemade, Requests, Profile); Offers is added by spec 16.
+- **Final tab bar plan:** seller mode off shows Restaurants, Homemade, Offers, Requests, Profile; seller mode on shows Requests, Manage, Profile. Requests shipped in 10b and Offers in spec 16 PR 4, so this plan is the bar today.
 
 ---
 

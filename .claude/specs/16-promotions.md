@@ -3,7 +3,7 @@
 **Branch:** `feature/promotions-backend` (PR 1), then `feature/promotions-seller` (PR 2), `feature/promotions-map` (PR 3), `feature/promotions-offers` (PR 4). Each is cut from `main` after the previous PR is merged.
 **Product spec:** `docs/product/v1.md` §7 (Ads), §4 (Navigation), §13 (Legal: disclose "Sponsored"), §14 row 16, §3 (out of scope), §15 Q1, Q3 and Q5, §16 (before launch)
 **Plan mode:** required: it changes the schema and RLS, touches more than 5 files and changes navigation (a new tab).
-**Status:** PR 3 merged as #37 (cc01fa5); PR 4 in progress
+**Status:** ✅ Shipped. PR 4 merged as #38 (squash commit on main; its hash is recorded by the next branch's first commit, as for PR 3). PR 1 #35 (ad3e19d), PR 2 #36 (3dda392), PR 3 #37 (cc01fa5).
 
 ## Overview
 A seller asks for a fixed-price, fixed-length promotion from Manage Business. Archan is paid outside the app (invoice) and approves it with one SQL call. While the campaign runs, the place gets three things:

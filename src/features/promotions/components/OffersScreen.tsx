@@ -27,6 +27,7 @@ import {
   BROWSE_MAP_LABEL,
   CHANGE_AREA_LABEL,
   CLEAR_FILTERS_LABEL,
+  FINDING_OFFERS_TEXT,
   OFFERS_EMPTY_TEXT,
   OFFERS_END_TEXT,
   OFFERS_LOADING_MORE,
@@ -97,15 +98,19 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
     wasFocused.current = focused;
   }, [focused, data, isStale, isFetching, refetch]);
 
-  // After a filter or area change, say how many offers the new list has.
-  const announce = useRef(false);
+  // After a filter or area change, say how many offers the new list has. Each change is a new
+  // request number, so the effect runs even when the new list is already cached and settled with
+  // the same count, and a request is announced once: never later, on an unrelated update.
+  const [announceRequest, setAnnounceRequest] = useState(0);
+  const announced = useRef(0);
+  const requestAnnouncement = useCallback(() => setAnnounceRequest((n) => n + 1), []);
   const count = offers.offers.length;
   const settled = offers.isSuccess && !offers.isFetching;
   useEffect(() => {
-    if (!announce.current || !settled) return;
-    announce.current = false;
+    if (announceRequest === announced.current || !settled) return;
+    announced.current = announceRequest;
     AccessibilityInfo.announceForAccessibility(offersCountAnnouncement(count, offers.hasNextPage));
-  }, [settled, count, offers.hasNextPage]);
+  }, [announceRequest, settled, count, offers.hasNextPage]);
 
   // The Filters panel works on a draft; only "Show offers" (or Clear filters) changes these.
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -126,26 +131,26 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
       setFiltersOpen(false);
       // Nothing changed: just close, and ask the server nothing.
       if (sameFilters(next, filters)) return;
-      announce.current = true;
+      requestAnnouncement();
       setFilters(next);
     },
-    [filters],
+    [filters, requestAnnouncement],
   );
   const onClearFilters = useCallback(() => {
-    announce.current = true;
+    requestAnnouncement();
     setFilters(DEFAULT_OFFER_FILTERS);
-  }, []);
+  }, [requestAnnouncement]);
   const filterCount = activeFilterCount(filters);
   const filtersText = filtersButtonText(filterCount);
 
   const onChooseArea = useCallback(
     (option: AreaOption) => {
       setChanging(false);
-      announce.current = true;
+      requestAnnouncement();
       if (option === 'me') void where.chooseMyLocation();
       else where.chooseArea(option);
     },
-    [where],
+    [where, requestAnnouncement],
   );
 
   const { refresh } = offers;
@@ -189,7 +194,13 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
       </Text>
       <View style={[styles.areaRow, { gap: space.sm }]}>
         <View style={[styles.areaRow, styles.flex, { gap: space.sm }]}>
-          <Text variant="bodyLg">{origin.status === 'ready' ? areaHeading(origin.kind) : ' '}</Text>
+          {origin.status === 'ready' ? (
+            <Text variant="bodyLg">{areaHeading(origin.kind)}</Text>
+          ) : (
+            <Text variant="bodyLg" color="textMuted" accessibilityLabel={FINDING_OFFERS_TEXT}>
+              {FINDING_OFFERS_TEXT}
+            </Text>
+          )}
           <Button title={CHANGE_AREA_LABEL} variant="secondary" onPress={() => setChanging(true)} />
         </View>
         <Pressable
@@ -323,7 +334,7 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
         ListHeaderComponent={header}
         ListEmptyComponent={empty}
         ListFooterComponent={footer ?? undefined}
-        ItemSeparatorComponent={() => <View style={{ height: space.md }} />}
+        ItemSeparatorComponent={OfferSeparator}
         onEndReached={() => void offers.loadMore()}
         onEndReachedThreshold={0.5}
         initialNumToRender={OFFERS_PAGE_SIZE}
@@ -356,6 +367,12 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
       />
     </View>
   );
+}
+
+// Between two cards. Its own component, so the list keeps the same one across renders.
+function OfferSeparator() {
+  const { space } = useTheme();
+  return <View style={{ height: space.md }} />;
 }
 
 const styles = StyleSheet.create({

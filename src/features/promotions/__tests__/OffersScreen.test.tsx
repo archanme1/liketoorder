@@ -9,6 +9,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react-native';
+import * as Location from 'expo-location';
 import { AccessibilityInfo } from 'react-native';
 
 import { listCuisines } from '@/features/cuisines/api';
@@ -494,6 +495,45 @@ describe('filters', () => {
     expect(flat(summary.parent?.props.style)).toMatchObject({ flexWrap: 'wrap' });
     expect(flat(filtersButton().parent?.props.style)).toMatchObject({ flexWrap: 'wrap' });
     expect(flat(filtersButton().props.style).minHeight).toBeGreaterThanOrEqual(44);
+  });
+});
+
+describe('announcements and the area line', () => {
+  it('announces at once when the chosen area gives the same, already loaded list, and never later', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+    // The person's position and Oshawa (the launch area) snap to the same grid point, so the
+    // launch area's list is the one already on screen: same key, settled, same count.
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    await fireEvent.press(screen.getByRole('button', { name: 'Change area' }));
+    const sheet = within(await screen.findByTestId('change-area'));
+    await fireEvent.press(sheet.getByRole('radio', { name: 'Oshawa (launch area)' }));
+    await waitFor(() => expect(announce).toHaveBeenCalledWith('1 offer'));
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(server.calls).toHaveLength(1);
+    // A later, unrelated update (pull to refresh) does not announce again.
+    await act(async () => {
+      await list().props.refreshControl.props.onRefresh();
+    });
+    await waitFor(() => expect(server.calls).toHaveLength(2));
+    await act(async () => {});
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it('says "Finding offers near you" while it works out where to look, never a blank line', async () => {
+    let answer: (value: boolean) => void = () => {};
+    jest.mocked(Location.hasServicesEnabledAsync).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    await renderScreen();
+    const finding = await screen.findByText('Finding offers near you');
+    expect(finding.props.accessibilityLabel).toBe('Finding offers near you');
+    await act(async () => answer(true));
+    expect(await screen.findByText('Near you')).toBeOnTheScreen();
+    expect(screen.queryByText('Finding offers near you')).toBeNull();
   });
 });
 

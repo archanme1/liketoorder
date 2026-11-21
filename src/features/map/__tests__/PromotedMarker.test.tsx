@@ -23,6 +23,7 @@ import {
   POP_IN_MS,
   POP_FROM,
 } from '../hooks/usePromotedFloat';
+import { TRACK_VIEW_MS } from '../hooks/useTracksViewChanges';
 import type { Pin } from '../schema';
 
 const italy: Cuisine = {
@@ -182,6 +183,8 @@ describe('PromotedMarker: look and label', () => {
     }
     await render(<Parent />);
     const before = markerRenders.mock.calls.length;
+    // The spy really sees the marker's renders, so an unchanged count means something.
+    expect(before).toBeGreaterThan(0);
     await fireEvent.press(screen.getByRole('button', { name: 'rerender' }));
     await fireEvent.press(screen.getByRole('button', { name: 'rerender' }));
     expect(markerRenders.mock.calls.length).toBe(before);
@@ -225,7 +228,10 @@ describe('PromotedMarker: motion (usePromotedFloat)', () => {
     await renderPromoted();
     expect(marker().props.tracksViewChanges).toBe(true);
     await waitFor(() => expect(AccessibilityInfo.isReduceMotionEnabled).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    // Past the settle time a still marker would have stopped re-drawing by now.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, TRACK_VIEW_MS + 100));
+    });
     expect(marker().props.tracksViewChanges).toBe(true);
   });
 

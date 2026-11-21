@@ -23,6 +23,7 @@ export default function SellerLayout() {
       <Stack.Screen name="menu/new" options={{ title: 'Add item' }} />
       <Stack.Screen name="menu/[itemId]" options={{ title: 'Edit item' }} />
       <Stack.Screen name="photos" options={{ title: 'Photos' }} />
+      <Stack.Screen name="promote" options={{ title: 'Promote' }} />
       <Stack.Screen name="requests/index" options={{ title: 'Requests' }} />
       <Stack.Screen name="requests/[id]" options={{ title: 'Request' }} />
     </Stack>

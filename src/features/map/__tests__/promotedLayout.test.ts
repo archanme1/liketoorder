@@ -67,6 +67,24 @@ describe('screenPoint', () => {
     expect(se?.y).toBeCloseTo(800, 6);
   });
 
+  it('treats all four edges alike: a hair outside is on the edge, clearly outside is out', () => {
+    const north = REGION.latitude + REGION.latitudeDelta / 2;
+    const south = REGION.latitude - REGION.latitudeDelta / 2;
+    const west = REGION.longitude - REGION.longitudeDelta / 2;
+    const east = REGION.longitude + REGION.longitudeDelta / 2;
+    const hair = 1e-10;
+    expect(screenPoint(north + hair, REGION.longitude, REGION, SCREEN)).not.toBeNull();
+    expect(screenPoint(south - hair, REGION.longitude, REGION, SCREEN)).not.toBeNull();
+    expect(screenPoint(REGION.latitude, east + hair, REGION, SCREEN)).not.toBeNull();
+    // West: without the tolerance this wraps round to nearly 360 degrees east and is dropped.
+    expect(screenPoint(REGION.latitude, west - hair, REGION, SCREEN)?.x).toBeCloseTo(0, 6);
+    const clearly = 1e-6;
+    expect(screenPoint(north + clearly, REGION.longitude, REGION, SCREEN)).toBeNull();
+    expect(screenPoint(south - clearly, REGION.longitude, REGION, SCREEN)).toBeNull();
+    expect(screenPoint(REGION.latitude, east + clearly, REGION, SCREEN)).toBeNull();
+    expect(screenPoint(REGION.latitude, west - clearly, REGION, SCREEN)).toBeNull();
+  });
+
   it('is null outside the visible region', () => {
     expect(screenPoint(44.01, -78.86, REGION, SCREEN)).toBeNull();
     expect(screenPoint(43.9, -78.7, REGION, SCREEN)).toBeNull();

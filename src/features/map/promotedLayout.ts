@@ -55,6 +55,30 @@ function eastOf(west: number, lng: number): number {
   return east > 360 - EDGE_EPSILON ? 0 : east;
 }
 
+type Projector = (lat: number, lng: number) => Point | null;
+
+/**
+ * The projection of one view onto the screen, worked out once (the view's edges and Mercator span)
+ * and then applied to each point. Null for a point outside the visible region.
+ */
+function projectorFor(region: MapRegion, screen: ScreenSize): Projector {
+  const north = region.latitude + region.latitudeDelta / 2;
+  const south = region.latitude - region.latitudeDelta / 2;
+  const west = region.longitude - region.longitudeDelta / 2;
+  const top = mercatorY(north);
+  const span = top - mercatorY(south);
+  if (span <= 0 || region.longitudeDelta <= 0) return () => null;
+  return (lat, lng) => {
+    if (lat > north + EDGE_EPSILON || lat < south - EDGE_EPSILON) return null;
+    const east = eastOf(west, lng);
+    if (east > region.longitudeDelta + EDGE_EPSILON) return null;
+    return {
+      x: (east / region.longitudeDelta) * screen.width,
+      y: ((top - mercatorY(lat)) / span) * screen.height,
+    };
+  };
+}
+
 /**
  * Where a point sits on the map, in screen points from the top left, or null when it is outside
  * the visible region. x is linear in longitude; y follows the map's Mercator projection.
@@ -65,18 +89,7 @@ export function screenPoint(
   region: MapRegion,
   screen: ScreenSize,
 ): Point | null {
-  const north = region.latitude + region.latitudeDelta / 2;
-  const south = region.latitude - region.latitudeDelta / 2;
-  if (lat > north + EDGE_EPSILON || lat < south - EDGE_EPSILON) return null;
-  const east = eastOf(region.longitude - region.longitudeDelta / 2, lng);
-  if (east > region.longitudeDelta + EDGE_EPSILON) return null;
-  const top = mercatorY(north);
-  const span = top - mercatorY(south);
-  if (span <= 0 || region.longitudeDelta <= 0) return null;
-  return {
-    x: (east / region.longitudeDelta) * screen.width,
-    y: ((top - mercatorY(lat)) / span) * screen.height,
-  };
+  return projectorFor(region, screen)(lat, lng);
 }
 
 export type LargePromotedInput = {
@@ -105,10 +118,11 @@ export function pickLargePromoted({
   const chosen = new Set<string>();
   if (screen.width <= 0 || screen.height <= 0 || limit <= 0) return chosen;
 
+  const project = projectorFor(region, screen);
   const candidates: { id: string; kept: boolean; rank: number; point: Point }[] = [];
   for (const pin of pins) {
     if (!pin.promoted) continue;
-    const point = screenPoint(pin.lat, pin.lng, region, screen);
+    const point = project(pin.lat, pin.lng);
     if (!point) continue;
     candidates.push({
       id: pin.id,

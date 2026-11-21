@@ -1,5 +1,5 @@
 import {
-  parseMany,
+  parseSeedMode,
   planManyPromotions,
   planOffersPromotions,
   planPromotions,
@@ -82,17 +82,17 @@ describe('promotionSeedOwners (what both modes clean first)', () => {
   });
 });
 
-describe('parseMany', () => {
-  it('is true only when --many is given', () => {
-    expect(parseMany([])).toBe(false);
-    expect(parseMany(['--many'])).toBe(true);
+describe('parseSeedMode for --many (moved from the removed parseMany)', () => {
+  it('is many only when --many is given', () => {
+    expect(parseSeedMode([])).toBe('default');
+    expect(parseSeedMode(['--many'])).toBe('many');
   });
 
   it('refuses any other argument, so a typo never seeds the default set by mistake', () => {
-    expect(() => parseMany(['--mnay'])).toThrow(
-      'Unknown argument --mnay. The only option is --many.',
+    expect(() => parseSeedMode(['--mnay'])).toThrow(
+      'Unknown argument --mnay. The only options are --many and --offers.',
     );
-    expect(() => parseMany(['--extra'])).toThrow(/Unknown argument --extra/);
-    expect(() => parseMany(['--other', '--many'])).toThrow(/Unknown argument --other/);
+    expect(() => parseSeedMode(['--extra'])).toThrow(/Unknown argument --extra/);
+    expect(() => parseSeedMode(['--other', '--many'])).toThrow(/Unknown argument --other/);
   });
 });

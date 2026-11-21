@@ -469,8 +469,42 @@ Differences between this spec and what was built, with their follow-ups.
 
 - **Headline hidden-character rule (PR 2):** the PR 1 migration refuses U+200D in a headline (the joiner inside combined emoji such as the woman-cook or family emoji), while the food-log description rule allows U+200D and U+FE0F. PR 2 mirrors the server: the app refuses a joiner before sending, with "This emoji can't be used in a headline. Try a simpler one." **Follow-up:** align the headline rule with food-log (allow U+200D and U+FE0F; U+FE0F is already allowed today) through a small new migration in a later PR, then drop the app's joiner check with it.
 - **"Cancelled on <date>" (PR 2):** `get_my_promotion` returns no `cancelled_at`, so the Promote screen shows "Cancelled." with no date (approved for PR 2). Showing the date needs a small replacing migration first.
-- **Change area and Reduce Motion (PR 4):** the Filters panel appears without sliding when Reduce Motion is on, but the Change area panel still uses `animationType="slide"` in every case. **Not fixed in PR 4** (it is a one-line change to `ChangeArea.tsx` with a test); Archan to decide whether it goes into PR 4's review fixes or a later PR.
+- **Change area and Reduce Motion (PR 4):** at gate H the Change area panel still slid in with Reduce Motion on (only the Filters panel had the fix). **Fixed in the PR 4 review** (commit `8b8081e`): it now uses `useReduceMotion()` and appears without sliding, with a test in `ChangeArea.test.tsx`.
 - **LocationPrompt wording prop (PR 4):** the plan named a "received sentence" prop; what was built is an optional `message` prop that replaces the whole explanation. The maps keep their wording byte for byte; Offers passes its own text ("...We only receive a rough area...").
 - **Clear filters and the cache (PR 4):** returning to the default filters within a minute shows the default list already cached, with no new request (React Query `staleTime` of 60 s); an older list is fetched once. The tests prove the second case.
-- **Filters and account changes (PR 4):** the filters survive sign-in and sign-out because the tab group stays mounted. Not reset on an account change; a follow-up if Archan wants it.
-- **`--offers` seed (PR 4):** 25 campaigns near Oshawa were asked for, but only 23 demo businesses lie within About 30 km of Oshawa, so the seed has 22 (everything except `seed_rest_001`, kept for the Promote invitation; this mode also promotes `seed_rest_004`, `seed_rest_010` and `seed_cook_1`). About 30 km pages 20 then 2; About 15 km gives exactly 20. `parseMany` stays in `promotionsData.ts` for its old test but the script now uses `parseSeedMode`.
+- **Filters and account changes (PR 4): decided: keep** (Archan, 2026-11-21). The filters survive sign-in and sign-out because the tab group stays mounted, and reset on the next launch. Filters are a browsing preference, and Offers is the same list for guests and customers.
+- **Filters panel closing (PR 4): accepted.** The panel is mounted only while it is open, so every opening starts a fresh draft from the applied filters. As a result it has no slide-out animation when it closes.
+- **The map after an offer card (PR 4): intended.** Once an Offers card has moved a map tab's camera (`cameraTaken`), that map does not recentre on a later "my position" fix, so the camera stays on the offer's place.
+- **`--offers` seed (PR 4):** 25 campaigns near Oshawa were asked for, but only 23 demo businesses lie within About 30 km of Oshawa, so the seed has 22 (everything except `seed_rest_001`, kept for the Promote invitation; this mode also promotes `seed_rest_004`, `seed_rest_010` and `seed_cook_1`). About 30 km pages 20 then 2; About 15 km gives exactly 20. The unused `parseMany` was removed in the review; its assertions now check `parseSeedMode`.
+
+## PR 4 review fixes (2026-11-21)
+`/code-review-feature 16-promotions`: security found one Low and nothing higher. Quality gave "approved with suggestions". Archan approved the plan; every fix has its own commit and was proven by a deliberate break, red on its named test, then reverted and checked with `cmp`.
+
+1. **Card to map, two cards in a row** (`useOfferTarget.ts`): each target is a run. A slow details answer from an earlier card no longer opens its sheet or shows the ended message. Success and failure use separate handlers. Tests in `OfferToMap.test.tsx`.
+2. **Change area and Reduce Motion** (`ChangeArea.tsx`): no slide with Reduce Motion. Test in `ChangeArea.test.tsx`.
+3. **Offers paging and refetch rules** (`useOffers.ts`):
+   - The quiet restart on a refused cursor starts afresh for a new list and after a pull to refresh.
+   - A failed list is not sent again on app focus, reconnect or remount (`unlessFailed`, the security Low).
+   - Load more waits while any read runs.
+   - Tests in `useOffers.test.tsx`.
+4. **`promotedLayout.test.ts`** (a PR 3 test file, changed with Archan's approval): the wall-clock assertion (20 runs under 500 ms, which failed once at 573 ms under a full parallel run) is replaced by structural checks: 500 and 50 places give the same cap of 8, only real ids, and the same set on every call.
+5. **`resetModuleMocks` and `PromotedMap.test.tsx`** (the shared food-log fixture and a PR 3 test file, changed with Archan's approval):
+   - `'../api'` resolved from the fixture file to the food-log api, so `PromotedMap.test.tsx` never reset the map api mocks. It now passes `'@/features/map/api'`.
+   - The helper now throws when a path holds no mock functions, and resets the mocks one level down in an exported object.
+   - The throw found one more case: in 8 promotions test files (`OffersLocation`, `OffersPrivacy`, `OffersScreen`, `useOffers`, `PromoteForm`, `PromoteScreen`, `a11y`, `hooks`), `'@/lib/supabase'` (a mocked `{ supabase: { rpc, from } }` client) was never reset. The helper fix covers them with no change to those tests, and the full suite stays green with the real resets.
+   - A wrong path to a module that exports functions still resolves to jest's automatic mock and is not caught. A stricter check (refusing relative paths) would touch 17 food-log test files and is left as a follow-up.
+   - New test `resetModuleMocks.test.ts`.
+6. **`locationPromise.test.ts`** (an older test, approved): the top comment and the first test title now say "a rough area".
+7. **Seed** (`promotionsData.ts`): the unused `parseMany` and `KNOWN_ARGS` were removed. Their three assertions now check `parseSeedMode` in `promotionsMany.test.ts` (approved).
+8. **Offers screen polish** (`OffersScreen.tsx`):
+   - Announcements are numbered requests, announced even when the new list is already loaded with the same count, and never later on an unrelated update.
+   - The list separator is its own component.
+   - The area line says "Finding offers near you" while the screen works out where to look.
+   - Tests in `OffersScreen.test.tsx`.
+
+**Older test files changed in PR 4, all with Archan's approval:**
+- `TabsLayout.test.tsx` and `RequestsTab.test.tsx` (G2).
+- `scripts/seed/__tests__/promotionsMany.test.ts` (seed, review item 7).
+- `locationPromise.test.ts` (G3, review item 6).
+- `promotedLayout.test.ts` and `PromotedMap.test.tsx` (PR 3 files, review items 4 and 5).
+- The shared `src/features/food-log/__fixtures__/foodLog.ts` helper (review item 5).

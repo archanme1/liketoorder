@@ -342,13 +342,14 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
   - the 4 km margin includes a place 8 km from the grid point at "About 5 km" and excludes one at 10 km;
   - the `offers` rate limit triggers like `pins`.
 - [x] The map functions mark `promoted` correctly, and with 501+ pins a promoted pin is always inside the 500. The details functions return `sponsored`.
-- [ ] Seed: one campaign of each of active, scheduled, ended and requested (dates relative to reset time), plus the placeholder settings row. `npx supabase db reset` locally gives all four. Status: script written and unit-tested; first real run by Archan at the PR 2 Simulator step.
+- [x] Seed: one campaign of each of active, scheduled, ended and requested (dates relative to reset time), plus the placeholder settings row. `npx supabase db reset` locally gives all four. Script unit-tested, and run for real by Archan in the PR 2 Simulator run.
 - [x] `src/types/database.ts` regenerated. The map zod schemas accept the new keys. The full jest suite, lint and typecheck pass with no behaviour change. Only the D11 tests were edited.
 - [x] `docs/runbooks/promotions-admin.md` exists with the exact SQL and no secrets. v1 §4, §7 and §16 are updated.
 
 **PR 2 (seller)**
-- [ ] The Promote row is on Manage Business. The screen shows invite, requested, scheduled, active, ended, rejected and cancelled, each with its action. `not_configured` and `not_eligible` show plain messages. Loading, error and Retry work.
-- [ ] Request and cancel go through the api only. The form uses zod: headline 1 to 60 characters after trimming, the hidden-character rule, a category is required.
+- [x] The Promote row is on Manage Business. The screen shows invite, requested, scheduled, active, ended, rejected and cancelled, each with its action. `not_configured` and `not_eligible` show plain messages. Loading, error and Retry work. Proven by the PR 2 Simulator run (rounds 1 to 7: every state, the admin SQL, no price, not eligible, error and Try again, the account switch, the largest text size, Reduce Motion) and by `PromoteScreen.test.tsx`, `ManagePromoteRow.test.tsx`, `promoteRoute.test.ts` and `a11y.test.tsx`.
+- [x] Request and cancel go through the api only. The form uses zod: headline 1 to 60 characters after trimming, the hidden-character rule, a category is required. Proven by `api.test.ts`, `schema.test.ts`, `text.test.ts`, `hooks.test.tsx` and `PromoteForm.test.tsx`, and by the Simulator form checks and the five-requests-per-day limit.
+- [ ] VoiceOver, TalkBack and real phones for the Promote screen: before launch (v1 section 16), not checked in PR 2.
 
 **PR 3 (map)**
 - [ ] The spike gate was reported and Archan chose go or no-go (D14).

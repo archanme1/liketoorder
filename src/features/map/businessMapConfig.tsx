@@ -1,8 +1,9 @@
+import type { QueryKey } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
 import type { Cuisine } from '@/features/cuisines/schema';
 
-import type { MapErrorCode } from './api';
+import { fetchRestaurantDetails, type MapErrorCode } from './api';
 import { FlagMarker } from './components/FlagMarker';
 import { PromotedMarker } from './components/PromotedMarker';
 import { PLACES_TITLE, NO_PLACES_MESSAGE } from './components/PlacesList';
@@ -12,7 +13,8 @@ import { SheetDetails } from './components/SheetDetails';
 import { ZOOM_IN_MESSAGE } from './components/MapNotices';
 import { REGION_KEY } from './lastRegion';
 import { usePinsInBounds } from './hooks/usePinsInBounds';
-import { useRestaurantSponsored } from './hooks/useRestaurantDetails';
+import type { OfferDetails } from './hooks/useOfferTarget';
+import { detailsKey, useRestaurantSponsored } from './hooks/useRestaurantDetails';
 import type { PromotionLook } from './promotedLayout';
 import type { MapBox } from './region';
 import type { Pin } from './schema';
@@ -71,6 +73,12 @@ export type BusinessMapConfig = {
    * place is not available). Reads the sheet body's own details query, so no extra request.
    */
   useSponsored: (id: string | null) => boolean | undefined;
+  /**
+   * Spec 16 card to map: this tab's details query key and fetcher (the sheet body's own query), so
+   * an Offers card can read the place's details fresh and share the answer with the sheet.
+   */
+  detailsKey: (id: string) => QueryKey;
+  fetchDetails: (id: string) => Promise<OfferDetails>;
 };
 
 export const restaurantMapConfig: BusinessMapConfig = {
@@ -102,4 +110,6 @@ export const restaurantMapConfig: BusinessMapConfig = {
   DetailsBody: SheetDetails,
   Actions: RestaurantSheetActions,
   useSponsored: useRestaurantSponsored,
+  detailsKey,
+  fetchDetails: fetchRestaurantDetails,
 };

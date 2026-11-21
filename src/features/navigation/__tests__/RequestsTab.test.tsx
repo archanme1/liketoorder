@@ -151,7 +151,7 @@ async function settle() {
 // The tab buttons in bar order, by their spoken label ("Requests tab, 3 new" keeps its number).
 const tabLabels = () =>
   screen
-    .getAllByLabelText(/^(Restaurants|Homemade|Requests|Manage|Profile) tab/)
+    .getAllByLabelText(/^(Restaurants|Homemade|Offers|Requests|Manage|Profile) tab/)
     .map((tab) => String(tab.props.accessibilityLabel));
 
 beforeEach(async () => {
@@ -188,7 +188,13 @@ describe('a customer (seller mode off)', () => {
   it('has Restaurants, Homemade, Requests, Profile in that order, and no Manage', async () => {
     await renderRouter('./app', { initialUrl: '/restaurants' });
     await screen.findByLabelText('Requests tab');
-    expect(tabLabels()).toEqual(['Restaurants tab', 'Homemade tab', 'Requests tab', 'Profile tab']);
+    expect(tabLabels()).toEqual([
+      'Restaurants tab',
+      'Homemade tab',
+      'Offers tab',
+      'Requests tab',
+      'Profile tab',
+    ]);
   });
 
   it('opens the Sent list from the Requests tab, with no switches', async () => {
@@ -270,6 +276,7 @@ describe('a seller (seller mode on)', () => {
     );
     expect(screen.queryByLabelText('Restaurants tab')).toBeNull();
     expect(screen.queryByLabelText('Homemade tab')).toBeNull();
+    expect(screen.queryByLabelText('Offers tab')).toBeNull();
   });
 
   it('sends a direct link to a hidden map tab to Requests', async () => {
@@ -309,12 +316,13 @@ describe('a business owner with seller mode off', () => {
     world.sent = [makeRequest({ id: '33333333-3333-4333-8333-333333333333' })];
   });
 
-  it('keeps all four tabs and opens Requests on Sent, with Received one tap away', async () => {
+  it('keeps all five tabs and opens Requests on Sent, with Received one tap away', async () => {
     await renderRouter('./app', { initialUrl: '/requests' });
     expect(await screen.findByRole('radio', { name: /^Sent, selected/ })).toBeTruthy();
     expect(tabLabels()).toEqual([
       'Restaurants tab',
       'Homemade tab',
+      'Offers tab',
       expect.stringMatching(/^Requests tab/),
       'Profile tab',
     ]);

@@ -1,0 +1,284 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  FlatList,
+  Linking,
+  RefreshControl,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { Button, Card, EmptyState, ErrorState, Text } from '@/components/ui';
+import { useCuisines } from '@/features/cuisines/hooks/useCuisines';
+import type { Cuisine } from '@/features/cuisines/schema';
+import { LocationPrompt } from '@/features/map/components/LocationPrompt';
+import { useSignedUrls } from '@/features/media/hooks/useSignedUrls';
+import { MEDIA_BUCKET } from '@/features/menu/photos';
+import { useTheme } from '@/theme/useTheme';
+
+import { distanceKm, distanceText } from '../distance';
+import { useOffers } from '../hooks/useOffers';
+import { useOffersOrigin } from '../hooks/useOffersOrigin';
+import {
+  BROWSE_MAP_LABEL,
+  CHANGE_AREA_LABEL,
+  OFFERS_EMPTY_TEXT,
+  OFFERS_END_TEXT,
+  OFFERS_LOADING_MORE,
+  OFFERS_MORE_FAILED,
+  OFFERS_PROMPT_MESSAGE,
+  OFFERS_REFRESH_FAILED,
+  OFFERS_TITLE,
+  OPEN_SETTINGS_LABEL,
+  offerErrorMessage,
+  offersCountAnnouncement,
+} from '../messages';
+import { areaHeading, areaNotice } from '../offersArea';
+import {
+  DEFAULT_OFFER_FILTERS,
+  OFFERS_PAGE_SIZE,
+  type Offer,
+  type OfferFilters as Filters,
+} from '../schema';
+
+import { ChangeArea, type AreaOption } from './ChangeArea';
+import { OfferCard } from './OfferCard';
+import { OfferFilters } from './OfferFilters';
+import { OfferSkeleton } from './OfferSkeleton';
+
+type OffersScreenProps = {
+  /** The tab is on screen (the route's focus effect). A stale list is reloaded on focus. */
+  focused: boolean;
+  /** Opens the place on its map tab (the route navigates). */
+  onOpenOffer: (offer: Offer) => void;
+  /** The empty state's "Browse the map". */
+  onBrowseMap: () => void;
+};
+
+// Spec 16 Offers: active promotions near the person or a chosen area, for guests and customers.
+// Loading (skeletons), error (Try again), empty (Browse the map), the list with paging, pull to
+// refresh, the filters, Change area and the location notes. Only the snapped grid point is ever
+// sent (useOffersOrigin); distances are worked out here, on the phone.
+export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreenProps) {
+  const { space } = useTheme();
+  const insets = useSafeAreaInsets();
+  const where = useOffersOrigin();
+  const { origin } = where;
+  const point = origin.status === 'ready' ? origin.point : null;
+  const [filters, setFilters] = useState<Filters>(DEFAULT_OFFER_FILTERS);
+  const offers = useOffers(point, filters);
+  const [changing, setChanging] = useState(false);
+
+  const cuisines = useCuisines();
+  const cuisineByCode = useMemo(() => {
+    const map = new Map<string, Cuisine>();
+    for (const cuisine of cuisines.data ?? []) map.set(cuisine.code, cuisine);
+    return map;
+  }, [cuisines.data]);
+
+  const coverPaths = useMemo(
+    () => offers.offers.flatMap((offer) => (offer.cover ? [offer.cover.path] : [])),
+    [offers.offers],
+  );
+  const { urlFor, renew } = useSignedUrls(MEDIA_BUCKET, coverPaths);
+  const onCoverExpired = useCallback((path: string) => void renew(path), [renew]);
+
+  // A stale list is reloaded when the tab comes back into view (stale: older than a minute).
+  const { isStale, isFetching, refetch, data } = offers;
+  const wasFocused = useRef(focused);
+  useEffect(() => {
+    if (focused && !wasFocused.current && data && isStale && !isFetching) void refetch();
+    wasFocused.current = focused;
+  }, [focused, data, isStale, isFetching, refetch]);
+
+  // After a filter or area change, say how many offers the new list has.
+  const announce = useRef(false);
+  const count = offers.offers.length;
+  const settled = offers.isSuccess && !offers.isFetching;
+  useEffect(() => {
+    if (!announce.current || !settled) return;
+    announce.current = false;
+    AccessibilityInfo.announceForAccessibility(offersCountAnnouncement(count, offers.hasNextPage));
+  }, [settled, count, offers.hasNextPage]);
+
+  const onFilters = useCallback((next: Filters) => {
+    announce.current = true;
+    setFilters(next);
+  }, []);
+
+  const onChooseArea = useCallback(
+    (option: AreaOption) => {
+      setChanging(false);
+      announce.current = true;
+      if (option === 'me') void where.chooseMyLocation();
+      else where.chooseArea(option);
+    },
+    [where],
+  );
+
+  const { refresh } = offers;
+  const { refreshPosition } = where;
+  const onRefresh = useCallback(async () => {
+    const moved = await refreshPosition();
+    if (!moved) await refresh();
+  }, [refresh, refreshPosition]);
+
+  const distanceFor = useCallback(
+    (offer: Offer) =>
+      origin.status === 'ready'
+        ? distanceText(distanceKm(origin.position, offer), offer.type)
+        : null,
+    [origin],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: Offer }) => (
+      <OfferCard
+        offer={item}
+        cuisine={cuisineByCode.get(item.cuisine_code)}
+        distance={distanceFor(item)}
+        coverUri={item.cover ? urlFor(item.cover.path) : null}
+        onCoverExpired={onCoverExpired}
+        onOpen={onOpenOffer}
+      />
+    ),
+    [cuisineByCode, distanceFor, urlFor, onCoverExpired, onOpenOffer],
+  );
+
+  const loading = origin.status === 'loading' || (offers.isPending && !offers.isError);
+  const firstPageFailed = offers.isError && !offers.data;
+  const current: AreaOption =
+    origin.status === 'ready' ? origin.kind : where.choice === 'auto' ? 'me' : where.choice;
+
+  const header = (
+    <View style={{ gap: space.md, paddingBottom: space.md }}>
+      <Text variant="h1" accessibilityRole="header">
+        {OFFERS_TITLE}
+      </Text>
+      <View style={[styles.areaRow, { gap: space.sm }]}>
+        <Text variant="bodyLg" style={styles.flex}>
+          {origin.status === 'ready' ? areaHeading(origin.kind) : ' '}
+        </Text>
+        <Button title={CHANGE_AREA_LABEL} variant="secondary" onPress={() => setChanging(true)} />
+      </View>
+      {where.showPrompt ? (
+        <LocationPrompt
+          things="offers"
+          message={OFFERS_PROMPT_MESSAGE}
+          onAllow={() => void where.chooseMyLocation()}
+          onNotNow={where.dismissPrompt}
+        />
+      ) : null}
+      {!where.showPrompt && origin.status === 'ready' && origin.reason && origin.kind !== 'me' ? (
+        <Card style={{ gap: space.sm }}>
+          <Text accessibilityLiveRegion="polite">{areaNotice(origin.reason, origin.kind)}</Text>
+          {origin.reason === 'location_off' && where.settingsOnly ? (
+            <Button
+              title={OPEN_SETTINGS_LABEL}
+              variant="secondary"
+              onPress={() => void Linking.openSettings()}
+              accessibilityHint="Opens the Settings app"
+            />
+          ) : null}
+        </Card>
+      ) : null}
+      {offers.refreshFailed ? <Text color="textMuted">{OFFERS_REFRESH_FAILED}</Text> : null}
+      <OfferFilters value={filters} onChange={onFilters} />
+    </View>
+  );
+
+  let empty;
+  if (loading) empty = <OfferSkeleton />;
+  else if (firstPageFailed && offers.error)
+    empty = (
+      <ErrorState
+        message={offerErrorMessage(offers.error.code)}
+        onRetry={() => void offers.refetch()}
+        retrying={offers.isFetching}
+      />
+    );
+  else
+    empty = (
+      <EmptyState
+        message={OFFERS_EMPTY_TEXT}
+        actionLabel={BROWSE_MAP_LABEL}
+        onAction={onBrowseMap}
+      />
+    );
+
+  let footer = null;
+  if (!loading && count > 0) {
+    if (offers.isFetchingNextPage) {
+      footer = (
+        <View
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={OFFERS_LOADING_MORE}
+          style={[styles.footerRow, { gap: space.sm, padding: space.md }]}
+        >
+          <ActivityIndicator />
+          <Text>{OFFERS_LOADING_MORE}</Text>
+        </View>
+      );
+    } else if (offers.isFetchNextPageError) {
+      footer = (
+        <View style={{ gap: space.sm, padding: space.md }}>
+          <Text accessibilityRole="alert">{OFFERS_MORE_FAILED}</Text>
+          <Button title="Try again" onPress={() => void offers.loadMore()} variant="secondary" />
+        </View>
+      );
+    } else if (!offers.hasNextPage) {
+      footer = (
+        <Text color="textMuted" style={[styles.end, { padding: space.md }]}>
+          {OFFERS_END_TEXT}
+        </Text>
+      );
+    }
+  }
+
+  return (
+    <View testID="offers-screen" style={styles.flex}>
+      <FlatList
+        testID="offers-list"
+        data={loading || firstPageFailed ? [] : offers.offers}
+        keyExtractor={(offer) => offer.business_id}
+        renderItem={renderItem}
+        ListHeaderComponent={header}
+        ListEmptyComponent={empty}
+        ListFooterComponent={footer ?? undefined}
+        ItemSeparatorComponent={() => <View style={{ height: space.md }} />}
+        onEndReached={() => void offers.loadMore()}
+        onEndReachedThreshold={0.5}
+        initialNumToRender={OFFERS_PAGE_SIZE}
+        contentContainerStyle={{
+          paddingTop: insets.top + space.lg,
+          paddingHorizontal: space.lg,
+          paddingBottom: space.xl,
+        }}
+        refreshControl={
+          <RefreshControl
+            refreshing={offers.refreshing}
+            onRefresh={() => void onRefresh()}
+            accessibilityLabel="Refresh offers"
+          />
+        }
+      />
+      <ChangeArea
+        visible={changing}
+        current={current}
+        hasLastMap={where.hasLastMap}
+        onChoose={onChooseArea}
+        onClose={() => setChanging(false)}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  areaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  end: { textAlign: 'center' },
+});

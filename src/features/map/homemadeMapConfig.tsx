@@ -1,9 +1,10 @@
+import { fetchHomemadeDetails } from './api';
 import type { BusinessMapConfig } from './businessMapConfig';
 import { HomemadeMarker } from './components/HomemadeMarker';
 import { HomemadeSheetDetails } from './components/HomemadeSheetDetails';
 import { HomemadeSheetActions } from './components/SheetActions';
 import { HOMEMADE_THINGS } from './homemadeText';
-import { useHomemadeSponsored } from './hooks/useHomemadeDetails';
+import { homemadeDetailsKey, useHomemadeSponsored } from './hooks/useHomemadeDetails';
 import { useHomemadeInBounds } from './hooks/useHomemadeInBounds';
 import { HOMEMADE_REGION_KEY } from './lastRegion';
 
@@ -27,4 +28,6 @@ export const homemadeMapConfig: BusinessMapConfig = {
   DetailsBody: HomemadeSheetDetails,
   Actions: HomemadeSheetActions,
   useSponsored: useHomemadeSponsored,
+  detailsKey: homemadeDetailsKey,
+  fetchDetails: fetchHomemadeDetails,
 };

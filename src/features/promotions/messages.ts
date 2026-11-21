@@ -94,3 +94,33 @@ export function offerErrorMessage(code: OfferErrorCode): string {
       return 'Something went wrong. Please try again.';
   }
 }
+
+export const CHANGE_AREA_LABEL = 'Change area';
+export const CHANGE_AREA_TITLE = 'Show offers near';
+export const USE_MY_LOCATION_LABEL = 'Use my location';
+export const LAST_MAP_AREA_LABEL = 'Area last viewed on the map';
+export const OPEN_SETTINGS_LABEL = 'Open Settings';
+/** The note before the system prompt: Offers sends only a rough area (Decision D2). */
+export const OFFERS_PROMPT_MESSAGE =
+  'LikeToOrder can use your location to show offers near you. Your exact location stays on your phone. We only receive a rough area. You can say no.';
+
+export const FILTER_GROUP_LABELS = {
+  category: 'Category',
+  type: 'Type',
+  distance: 'Distance',
+  tables: 'Table requests',
+} as const;
+export const ALL_LABEL = 'All';
+export const OFFER_TYPE_FILTER_LABELS: Record<OfferType, string> = {
+  restaurant: 'Restaurants',
+  homemade: 'Home cooks',
+};
+export const ANY_TABLES_LABEL = 'Any';
+export const TAKES_TABLES_LABEL = 'Takes table requests';
+
+/** Spoken after a filter or area change, once the new list has loaded. */
+export function offersCountAnnouncement(count: number, more: boolean): string {
+  if (count === 0) return 'No offers';
+  const shown = count === 1 ? '1 offer' : `${count} offers`;
+  return more ? `${shown} so far` : shown;
+}

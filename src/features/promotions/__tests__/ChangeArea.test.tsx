@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react-native';
+import { AccessibilityInfo } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ChangeArea, type AreaOption } from '../components/ChangeArea';
@@ -31,7 +32,16 @@ async function renderSheet({
 
 afterEach(async () => {
   await cleanup();
+  jest.restoreAllMocks();
 });
+
+/** The host Modal around the panel (its props: animationType). */
+function modal() {
+  let node = screen.getByTestId('change-area').parent;
+  while (node && node.type !== 'Modal') node = node.parent;
+  if (!node) throw new Error('no Modal around the panel');
+  return node;
+}
 
 describe('ChangeArea', () => {
   it('offers my location and the launch area, with the current one selected', async () => {
@@ -84,5 +94,18 @@ describe('ChangeArea', () => {
       const flat = Array.isArray(style) ? Object.assign({}, ...style) : style;
       expect(flat.minHeight).toBeGreaterThanOrEqual(44);
     }
+  });
+
+  it('slides in normally, and appears without animation with Reduce Motion on', async () => {
+    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false);
+    await renderSheet();
+    // useReduceMotion reads the setting after the first render.
+    await act(async () => {});
+    expect(modal().props.animationType).toBe('slide');
+    await cleanup();
+    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+    await renderSheet();
+    await act(async () => {});
+    expect(modal().props.animationType).toBe('none');
   });
 });

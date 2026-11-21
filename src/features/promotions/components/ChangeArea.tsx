@@ -3,6 +3,7 @@ import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Text } from '@/components/ui';
+import { useReduceMotion } from '@/lib/useReduceMotion';
 import { maxFontMultiplier } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
@@ -29,13 +30,20 @@ type ChangeAreaProps = {
 export function ChangeArea({ visible, current, hasLastMap, onChoose, onClose }: ChangeAreaProps) {
   const { colors, space, radius, size, stroke, type, weight, opacity, scrim } = useTheme();
   const insets = useSafeAreaInsets();
+  // Reduce Motion: the panel appears without sliding, like the Filters panel.
+  const reduceMotion = useReduceMotion();
   const options: { value: AreaOption; label: string }[] = [
     { value: 'me', label: USE_MY_LOCATION_LABEL },
     ...(hasLastMap ? [{ value: 'last_map' as const, label: LAST_MAP_AREA_LABEL }] : []),
     { value: 'launch', label: LAUNCH_AREA_LABEL },
   ];
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType={reduceMotion ? 'none' : 'slide'}
+      onRequestClose={onClose}
+    >
       <View style={[styles.backdrop, { backgroundColor: scrim }]}>
         <View
           accessibilityViewIsModal

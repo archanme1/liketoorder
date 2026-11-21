@@ -137,12 +137,36 @@ export function testClientOptions() {
 /**
  * Resets every jest.fn in the given mocked modules (calls and implementations), so one test's
  * mockResolvedValue never reaches the next. Unlike jest.resetAllMocks it leaves the jest.setup.ts
- * fakes (getCalendars, getLocales, the picker) alone. Paths resolve as they do from __tests__.
+ * fakes (getCalendars, getLocales, the picker) alone.
+ *
+ * Mock functions one level down inside an exported object are reset too (a mocked
+ * `supabase: { rpc: jest.fn() }` client).
+ *
+ * Paths resolve from THIS file (src/features/food-log/__fixtures__), not from the calling test:
+ * outside food-log, always pass an alias such as '@/features/map/api'. A path whose module has no
+ * mock functions at all throws, so a path that resets nothing is not silently ignored. (A wrong
+ * path to a module that does export functions still resolves to jest's automatic mock of it and
+ * is not caught here.)
  */
 export function resetModuleMocks(...paths: string[]) {
   for (const path of paths) {
-    for (const value of Object.values(jest.requireMock<Record<string, unknown>>(path))) {
-      if (jest.isMockFunction(value)) value.mockReset();
+    const values = Object.values(jest.requireMock<Record<string, unknown>>(path));
+    // Top-level mocks, and those one level down in an exported object (a mocked
+    // `supabase: { rpc: jest.fn() }` client keeps its mocks inside `supabase`).
+    const mocks = values.flatMap((value) => {
+      if (jest.isMockFunction(value)) return [value];
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return Object.values(value as Record<string, unknown>).filter((inner) =>
+          jest.isMockFunction(inner),
+        );
+      }
+      return [];
+    });
+    if (mocks.length === 0) {
+      throw new Error(
+        `resetModuleMocks('${path}'): no mock functions found, so nothing would be reset. Pass the path of a module mocked with jest.mock (an alias such as '@/features/map/api').`,
+      );
     }
+    for (const value of mocks) (value as jest.Mock).mockReset();
   }
 }

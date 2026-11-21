@@ -1,6 +1,7 @@
 import {
   parseMany,
   planManyPromotions,
+  planOffersPromotions,
   planPromotions,
   promotionSeedOwners,
 } from '../promotionsData';
@@ -71,7 +72,11 @@ describe('planManyPromotions (spec 16 PR 3 seed: more promoted places than the d
 describe('promotionSeedOwners (what both modes clean first)', () => {
   it('covers every owner of the default seed and of --many, once each', () => {
     const owners = promotionSeedOwners(NOW, 7);
-    const expected = new Set([...planPromotions(NOW, 7), ...many].map((p) => p.ownerUsername));
+    const expected = new Set(
+      [...planPromotions(NOW, 7), ...many, ...planOffersPromotions(NOW, 7)].map(
+        (p) => p.ownerUsername,
+      ),
+    );
     expect(new Set(owners)).toEqual(expected);
     expect(owners).toHaveLength(expected.size);
   });

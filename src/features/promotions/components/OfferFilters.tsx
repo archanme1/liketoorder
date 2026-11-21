@@ -15,11 +15,58 @@ import {
   TAKES_TABLES_LABEL,
 } from '../messages';
 import {
+  DEFAULT_OFFER_FILTERS,
   OFFER_DISTANCES,
   OFFER_TYPES,
   PROMOTION_CATEGORIES,
   type OfferFilters as Filters,
 } from '../schema';
+
+/** Same filters, group by group. */
+export function sameFilters(a: Filters, b: Filters): boolean {
+  return (
+    a.category === b.category &&
+    a.type === b.type &&
+    a.distanceKm === b.distanceKm &&
+    a.tables === b.tables
+  );
+}
+
+/**
+ * How many groups differ from the defaults (Category All, Type All, About 15 km, Any). The
+ * default distance is not a filter the person chose, so it never counts.
+ */
+export function activeFilterCount(filters: Filters): number {
+  return (
+    Number(filters.category !== DEFAULT_OFFER_FILTERS.category) +
+    Number(filters.type !== DEFAULT_OFFER_FILTERS.type) +
+    Number(filters.distanceKm !== DEFAULT_OFFER_FILTERS.distanceKm) +
+    Number(filters.tables !== DEFAULT_OFFER_FILTERS.tables)
+  );
+}
+
+/** The groups that differ from the defaults, in words: "Special offer, Restaurants, About 30 km". */
+export function filterSummary(filters: Filters): string {
+  const parts: string[] = [];
+  if (filters.category !== DEFAULT_OFFER_FILTERS.category && filters.category) {
+    parts.push(CATEGORY_LABELS[filters.category]);
+  }
+  if (filters.type !== DEFAULT_OFFER_FILTERS.type && filters.type) {
+    parts.push(OFFER_TYPE_FILTER_LABELS[filters.type]);
+  }
+  if (filters.distanceKm !== DEFAULT_OFFER_FILTERS.distanceKm) {
+    parts.push(OFFER_DISTANCE_LABELS[filters.distanceKm]);
+  }
+  if (filters.tables !== DEFAULT_OFFER_FILTERS.tables) parts.push(TAKES_TABLES_LABEL);
+  return parts.join(', ');
+}
+
+/** "Filters" or "Filters (2)" on the button; "Filters" or "Filters, 2 applied" spoken. */
+export function filtersButtonText(count: number): { title: string; label: string } {
+  return count === 0
+    ? { title: 'Filters', label: 'Filters' }
+    : { title: `Filters (${count})`, label: `Filters, ${count} applied` };
+}
 
 type Option<T> = { value: T; label: string };
 
@@ -118,7 +165,10 @@ type OfferFiltersProps = {
   onChange: (value: Filters) => void;
 };
 
-/** Category, type, distance and table requests (spec 16): four radio groups. No cuisine filter. */
+/**
+ * Category, type, distance and table requests (spec 16): four radio groups, shown inside the
+ * Filters panel. No cuisine filter.
+ */
 export function OfferFilters({ value, onChange }: OfferFiltersProps) {
   const { space } = useTheme();
   return (

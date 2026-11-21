@@ -169,6 +169,40 @@ describe('guest', () => {
   });
 });
 
+// Archan's Simulator screenshot showed "About 5 km" on Offers. The default is About 15 km on a
+// fresh open; a choice is kept (in memory only) while the tab stays mounted, which it does across
+// tab switches, so an earlier "About 5 km" still shows when Offers is opened again.
+describe('the default distance', () => {
+  beforeEach(() => {
+    db.auth.getSession.mockResolvedValue({ data: { session: null } });
+  });
+
+  it('is About 15 km on a fresh open', async () => {
+    await renderRouter('./app', { initialUrl: '/offers' });
+    await waitFor(() => expect(server.calls).toHaveLength(1));
+    expect(server.calls[0]).toMatchObject({ p_distance_km: 15 });
+    expect(screen.getByTestId('filters-button').props.accessibilityLabel).toBe('Filters');
+  });
+
+  it('keeps a chosen distance across a tab switch (the tab stays mounted)', async () => {
+    await renderRouter('./app', { initialUrl: '/offers' });
+    await waitFor(() => expect(server.calls).toHaveLength(1));
+    await fireEvent.press(screen.getByTestId('filters-button'));
+    await fireEvent.press(screen.getByRole('radio', { name: 'About 5 km' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Show offers' }));
+    await waitFor(() => expect(server.calls).toHaveLength(2));
+    await fireEvent.press(screen.getByLabelText('Restaurants tab'));
+    await screen.findByText('Restaurants map');
+    await fireEvent.press(screen.getByLabelText('Offers tab'));
+    await waitFor(() =>
+      expect(screen.getByTestId('filters-button').props.accessibilityLabel).toBe(
+        'Filters, 1 applied',
+      ),
+    );
+    expect(screen.getByText('About 5 km')).toBeOnTheScreen();
+  });
+});
+
 describe('signed in, seller mode off', () => {
   beforeEach(() => {
     db.auth.getSession.mockResolvedValue({ data: { session } });

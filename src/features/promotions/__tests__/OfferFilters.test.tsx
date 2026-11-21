@@ -1,6 +1,12 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react-native';
 
-import { OfferFilters } from '../components/OfferFilters';
+import {
+  activeFilterCount,
+  filterSummary,
+  filtersButtonText,
+  OfferFilters,
+  sameFilters,
+} from '../components/OfferFilters';
 import { DEFAULT_OFFER_FILTERS, type OfferFilters as Filters } from '../schema';
 
 async function renderFilters(value: Filters = DEFAULT_OFFER_FILTERS) {
@@ -90,5 +96,48 @@ describe('OfferFilters', () => {
       const flat = Array.isArray(style) ? Object.assign({}, ...style) : style;
       expect(flat.minHeight).toBeGreaterThanOrEqual(44);
     }
+  });
+});
+
+describe('the Filters button and summary helpers', () => {
+  it('counts the groups that differ from the defaults; About 15 km never counts', () => {
+    expect(activeFilterCount(DEFAULT_OFFER_FILTERS)).toBe(0);
+    expect(activeFilterCount({ ...DEFAULT_OFFER_FILTERS, distanceKm: 15 })).toBe(0);
+    expect(activeFilterCount({ ...DEFAULT_OFFER_FILTERS, distanceKm: 5 })).toBe(1);
+    expect(activeFilterCount({ ...DEFAULT_OFFER_FILTERS, category: 'featured' })).toBe(1);
+    expect(
+      activeFilterCount({ distanceKm: 30, category: 'new_dish', type: 'homemade', tables: true }),
+    ).toBe(4);
+  });
+
+  it('words the button and its spoken label', () => {
+    expect(filtersButtonText(0)).toEqual({ title: 'Filters', label: 'Filters' });
+    expect(filtersButtonText(2)).toEqual({ title: 'Filters (2)', label: 'Filters, 2 applied' });
+  });
+
+  it('sums up the chosen groups in order, in words', () => {
+    expect(filterSummary(DEFAULT_OFFER_FILTERS)).toBe('');
+    expect(
+      filterSummary({
+        distanceKm: 30,
+        category: 'special_offer',
+        type: 'restaurant',
+        tables: false,
+      }),
+    ).toBe('Special offer, Restaurants, About 30 km');
+    expect(filterSummary({ ...DEFAULT_OFFER_FILTERS, type: 'homemade', tables: true })).toBe(
+      'Home cooks, Takes table requests',
+    );
+    expect(filterSummary({ ...DEFAULT_OFFER_FILTERS, distanceKm: 5 })).toBe('About 5 km');
+  });
+
+  it('compares filters group by group', () => {
+    expect(sameFilters(DEFAULT_OFFER_FILTERS, { ...DEFAULT_OFFER_FILTERS })).toBe(true);
+    expect(sameFilters(DEFAULT_OFFER_FILTERS, { ...DEFAULT_OFFER_FILTERS, tables: true })).toBe(
+      false,
+    );
+    expect(sameFilters(DEFAULT_OFFER_FILTERS, { ...DEFAULT_OFFER_FILTERS, distanceKm: 30 })).toBe(
+      false,
+    );
   });
 });

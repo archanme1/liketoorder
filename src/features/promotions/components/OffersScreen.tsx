@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
   FlatList,
   Linking,
+  Pressable,
   RefreshControl,
   StyleSheet,
   View,
@@ -17,6 +18,7 @@ import { LocationPrompt } from '@/features/map/components/LocationPrompt';
 import { useSignedUrls } from '@/features/media/hooks/useSignedUrls';
 import { MEDIA_BUCKET } from '@/features/menu/photos';
 import { useTheme } from '@/theme/useTheme';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { distanceKm, distanceText } from '../distance';
 import { useOffers } from '../hooks/useOffers';
@@ -24,6 +26,7 @@ import { useOffersOrigin } from '../hooks/useOffersOrigin';
 import {
   BROWSE_MAP_LABEL,
   CHANGE_AREA_LABEL,
+  CLEAR_FILTERS_LABEL,
   OFFERS_EMPTY_TEXT,
   OFFERS_END_TEXT,
   OFFERS_LOADING_MORE,
@@ -45,7 +48,8 @@ import {
 
 import { ChangeArea, type AreaOption } from './ChangeArea';
 import { OfferCard } from './OfferCard';
-import { OfferFilters } from './OfferFilters';
+import { FiltersPanel } from './FiltersPanel';
+import { activeFilterCount, filterSummary, filtersButtonText, sameFilters } from './OfferFilters';
 import { OfferSkeleton } from './OfferSkeleton';
 
 type OffersScreenProps = {
@@ -62,7 +66,7 @@ type OffersScreenProps = {
 // refresh, the filters, Change area and the location notes. Only the snapped grid point is ever
 // sent (useOffersOrigin); distances are worked out here, on the phone.
 export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreenProps) {
-  const { space } = useTheme();
+  const { colors, space, radius, size, stroke, type, weight, opacity } = useTheme();
   const insets = useSafeAreaInsets();
   const where = useOffersOrigin();
   const { origin } = where;
@@ -103,10 +107,36 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
     AccessibilityInfo.announceForAccessibility(offersCountAnnouncement(count, offers.hasNextPage));
   }, [settled, count, offers.hasNextPage]);
 
-  const onFilters = useCallback((next: Filters) => {
+  // The Filters panel works on a draft; only "Show offers" (or Clear filters) changes these.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersButton = useRef<ComponentRef<typeof View>>(null);
+  const filtersWasOpen = useRef(false);
+  // Back on the Filters button once the panel has closed, however it closed.
+  useEffect(() => {
+    if (filtersWasOpen.current && !filtersOpen) {
+      if (filtersButton.current) {
+        AccessibilityInfo.sendAccessibilityEvent(filtersButton.current, 'focus');
+      }
+    }
+    filtersWasOpen.current = filtersOpen;
+  }, [filtersOpen]);
+
+  const onApplyFilters = useCallback(
+    (next: Filters) => {
+      setFiltersOpen(false);
+      // Nothing changed: just close, and ask the server nothing.
+      if (sameFilters(next, filters)) return;
+      announce.current = true;
+      setFilters(next);
+    },
+    [filters],
+  );
+  const onClearFilters = useCallback(() => {
     announce.current = true;
-    setFilters(next);
+    setFilters(DEFAULT_OFFER_FILTERS);
   }, []);
+  const filterCount = activeFilterCount(filters);
+  const filtersText = filtersButtonText(filterCount);
 
   const onChooseArea = useCallback(
     (option: AreaOption) => {
@@ -158,11 +188,52 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
         {OFFERS_TITLE}
       </Text>
       <View style={[styles.areaRow, { gap: space.sm }]}>
-        <Text variant="bodyLg" style={styles.flex}>
-          {origin.status === 'ready' ? areaHeading(origin.kind) : ' '}
-        </Text>
-        <Button title={CHANGE_AREA_LABEL} variant="secondary" onPress={() => setChanging(true)} />
+        <View style={[styles.areaRow, styles.flex, { gap: space.sm }]}>
+          <Text variant="bodyLg">{origin.status === 'ready' ? areaHeading(origin.kind) : ' '}</Text>
+          <Button title={CHANGE_AREA_LABEL} variant="secondary" onPress={() => setChanging(true)} />
+        </View>
+        <Pressable
+          ref={filtersButton}
+          onPress={() => setFiltersOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={filtersText.label}
+          accessibilityHint="Opens the filters"
+          testID="filters-button"
+          style={({ pressed }) => [
+            styles.filtersButton,
+            {
+              minHeight: size.touch,
+              minWidth: size.touch,
+              gap: space.xs,
+              paddingHorizontal: space.lg,
+              borderRadius: radius.md,
+              borderColor: filterCount > 0 ? colors.primary : colors.border,
+              borderWidth: filterCount > 0 ? stroke.selected : StyleSheet.hairlineWidth,
+              backgroundColor: colors.surface,
+              opacity: pressed ? opacity.pressed : 1,
+            },
+          ]}
+        >
+          <Ionicons
+            name="options-outline"
+            size={type.bodyLg}
+            color={colors.primary}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          />
+          <Text color="primary" style={{ fontWeight: weight.semibold }}>
+            {filtersText.title}
+          </Text>
+        </Pressable>
       </View>
+      {filterCount > 0 ? (
+        <View style={[styles.areaRow, { gap: space.sm }]}>
+          <Text color="textMuted" style={styles.flex}>
+            {filterSummary(filters)}
+          </Text>
+          <Button title={CLEAR_FILTERS_LABEL} variant="ghost" onPress={onClearFilters} />
+        </View>
+      ) : null}
       {where.showPrompt ? (
         <LocationPrompt
           things="offers"
@@ -185,7 +256,6 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
         </Card>
       ) : null}
       {offers.refreshFailed ? <Text color="textMuted">{OFFERS_REFRESH_FAILED}</Text> : null}
-      <OfferFilters value={filters} onChange={onFilters} />
     </View>
   );
 
@@ -201,11 +271,16 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
     );
   else
     empty = (
-      <EmptyState
-        message={OFFERS_EMPTY_TEXT}
-        actionLabel={BROWSE_MAP_LABEL}
-        onAction={onBrowseMap}
-      />
+      <View style={styles.flex}>
+        <EmptyState
+          message={OFFERS_EMPTY_TEXT}
+          actionLabel={BROWSE_MAP_LABEL}
+          onAction={onBrowseMap}
+        />
+        {filterCount > 0 ? (
+          <Button title={CLEAR_FILTERS_LABEL} variant="ghost" onPress={onClearFilters} />
+        ) : null}
+      </View>
     );
 
   let footer = null;
@@ -265,6 +340,13 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
           />
         }
       />
+      {filtersOpen ? (
+        <FiltersPanel
+          applied={filters}
+          onApply={onApplyFilters}
+          onClose={() => setFiltersOpen(false)}
+        />
+      ) : null}
       <ChangeArea
         visible={changing}
         current={current}
@@ -279,6 +361,7 @@ export function OffersScreen({ focused, onOpenOffer, onBrowseMap }: OffersScreen
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   areaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  filtersButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   end: { textAlign: 'center' },
 });

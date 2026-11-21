@@ -96,7 +96,10 @@ it('sends only the snapped point, by POST, through every path, and never stores 
   await act(async () => fireEvent(screen.getByTestId('offers-list'), 'endReached'));
   await waitFor(() => expect(server.calls).toHaveLength(2), SLOW);
   // A filter.
-  await fireEvent.press(screen.getByRole('radio', { name: 'About 30 km' }));
+  await fireEvent.press(screen.getByTestId('filters-button'));
+  const filters = within(await screen.findByTestId('filters-panel', {}, SLOW));
+  await fireEvent.press(filters.getByRole('radio', { name: 'About 30 km' }));
+  await fireEvent.press(filters.getByRole('button', { name: 'Show offers' }));
   await waitFor(() => expect(server.calls).toHaveLength(3), SLOW);
   // Pull to refresh (a new position is read first).
   await act(async () => {

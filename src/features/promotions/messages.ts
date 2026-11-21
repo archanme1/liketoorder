@@ -96,6 +96,7 @@ export function offerErrorMessage(code: OfferErrorCode): string {
 }
 
 export const CHANGE_AREA_LABEL = 'Change area';
+export const CLEAR_FILTERS_LABEL = 'Clear filters';
 export const CHANGE_AREA_TITLE = 'Show offers near';
 export const USE_MY_LOCATION_LABEL = 'Use my location';
 export const LAST_MAP_AREA_LABEL = 'Area last viewed on the map';

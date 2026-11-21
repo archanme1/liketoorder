@@ -26,6 +26,11 @@ import {
 } from '../__fixtures__/offers';
 import { offersScreenTree, setLocation, VIETNAM } from '../__fixtures__/offersScreen';
 import { NETWORK_ERROR, pgError } from '../__fixtures__/promotion';
+import { offersKey } from '../hooks/useOffers';
+import { DEFAULT_OFFER_FILTERS } from '../schema';
+import { snapPoint, type SnappedPoint } from '@/features/map/region';
+
+const DEFAULT_POINT = snapPoint(43.8971, -78.8658) as SnappedPoint;
 
 jest.mock('@/lib/supabase', () => ({ supabase: { rpc: jest.fn(), from: jest.fn() } }));
 jest.mock('@/features/cuisines/api', () => ({
@@ -229,8 +234,28 @@ describe('paging', () => {
   });
 });
 
+// The Filters button opens one panel; chips change a draft, "Show offers" applies it.
+const filtersButton = () => screen.getByTestId('filters-button');
+const panel = () => within(screen.getByTestId('filters-panel'));
+async function openFilters() {
+  await fireEvent.press(filtersButton());
+  return panel();
+}
+async function applyFilters(...chips: string[]) {
+  const sheet = await openFilters();
+  for (const chip of chips) await fireEvent.press(sheet.getByRole('radio', { name: chip }));
+  await fireEvent.press(sheet.getByRole('button', { name: 'Show offers' }));
+}
+/** The host Modal around the panel (its props: animationType, onRequestClose). */
+function panelModal() {
+  let node = screen.getByTestId('filters-panel').parent;
+  while (node && node.type !== 'Modal') node = node.parent;
+  if (!node) throw new Error('no Modal around the panel');
+  return node;
+}
+
 describe('filters', () => {
-  it('starts on All, All, About 15 km and Any', async () => {
+  it('starts on All, All, About 15 km and Any, with "Filters" and no summary', async () => {
     await renderScreen();
     await waitFor(() => expect(cards()).toHaveLength(1));
     expect(lastCall()).toMatchObject({
@@ -239,8 +264,15 @@ describe('filters', () => {
       p_type: null,
       p_tables: false,
     });
+    expect(filtersButton().props.accessibilityLabel).toBe('Filters');
+    expect(filtersButton().props.accessibilityHint).toBe('Opens the filters');
+    expect(within(filtersButton()).getByText('Filters')).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    // No chips on the list itself any more.
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+    const sheet = await openFilters();
     for (const name of ['All, selected', 'About 15 km, selected', 'Any, selected']) {
-      expect(screen.getAllByRole('radio', { name }).length).toBeGreaterThan(0);
+      expect(sheet.getAllByRole('radio', { name }).length).toBeGreaterThan(0);
     }
   });
 
@@ -253,26 +285,215 @@ describe('filters', () => {
     ['About 5 km', { p_distance_km: 5 }],
     ['About 30 km', { p_distance_km: 30 }],
     ['Takes table requests', { p_tables: true }],
-  ])('"%s" asks for a new list with the right argument', async (chip, args) => {
+  ])('"%s", then Show offers, asks once with the right argument', async (chip, args) => {
     await renderScreen();
     await waitFor(() => expect(cards()).toHaveLength(1));
-    await fireEvent.press(screen.getByRole('radio', { name: chip }));
-    await waitFor(() => expect(lastCall()).toMatchObject({ ...args, p_cursor: null }));
-    expect(screen.getByRole('radio', { name: `${chip}, selected` })).toBeOnTheScreen();
+    await applyFilters(chip);
+    await waitFor(() => expect(server.calls).toHaveLength(2));
+    expect(lastCall()).toMatchObject({ ...args, p_cursor: null });
+    await act(async () => {});
+    expect(server.calls).toHaveLength(2);
   });
 
-  it('announces how many offers the new list has', async () => {
+  it('applies several groups in one request, with exactly the right arguments', async () => {
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    await applyFilters('Special offer', 'Restaurants', 'About 30 km');
+    await waitFor(() => expect(server.calls).toHaveLength(2));
+    expect(lastCall()).toEqual({
+      p_lat: 43.9,
+      p_lng: -78.85,
+      p_distance_km: 30,
+      p_category: 'special_offer',
+      p_type: 'restaurant',
+      p_tables: false,
+      p_cursor: null,
+    });
+    expect(screen.queryByTestId('filters-panel')).toBeNull();
+  });
+
+  it('counts the groups that differ from the defaults on the button, and sums them up in words', async () => {
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    await applyFilters('Special offer', 'Restaurants', 'About 30 km');
+    await waitFor(() =>
+      expect(filtersButton().props.accessibilityLabel).toBe('Filters, 3 applied'),
+    );
+    expect(within(filtersButton()).getByText('Filters (3)')).toBeOnTheScreen();
+    expect(screen.getByText('Special offer, Restaurants, About 30 km')).toBeOnTheScreen();
+    // About 15 km is the default: choosing it again does not count.
+    await applyFilters('About 15 km');
+    await waitFor(() =>
+      expect(filtersButton().props.accessibilityLabel).toBe('Filters, 2 applied'),
+    );
+    expect(screen.getByText('Special offer, Restaurants')).toBeOnTheScreen();
+  });
+
+  it('Clear filters sets everything back at once, with one new request for a stale list', async () => {
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    await applyFilters('Featured', 'Home cooks', 'About 5 km', 'Takes table requests');
+    await waitFor(() => expect(server.calls).toHaveLength(2));
+    // The default list is older than a minute by now.
+    await act(async () => {
+      await client.invalidateQueries({
+        queryKey: offersKey(DEFAULT_POINT, DEFAULT_OFFER_FILTERS),
+        refetchType: 'none',
+      });
+    });
+    // The one under the Filters row (these filters also leave the list empty, which adds another).
+    await fireEvent.press(screen.getAllByRole('button', { name: 'Clear filters' })[0]);
+    await waitFor(() => expect(server.calls).toHaveLength(3));
+    expect(lastCall()).toEqual({
+      p_lat: 43.9,
+      p_lng: -78.85,
+      p_distance_km: 15,
+      p_category: null,
+      p_type: null,
+      p_tables: false,
+      p_cursor: null,
+    });
+    expect(filtersButton().props.accessibilityLabel).toBe('Filters');
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    await act(async () => {});
+    expect(server.calls).toHaveLength(3);
+  });
+
+  it('opens the panel on the applied filters', async () => {
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    await applyFilters('Featured', 'About 30 km');
+    const sheet = await openFilters();
+    expect(sheet.getByRole('radio', { name: 'Featured, selected' })).toBeOnTheScreen();
+    expect(sheet.getByRole('radio', { name: 'About 30 km, selected' })).toBeOnTheScreen();
+  });
+
+  it.each([
+    [
+      'the Close x',
+      async () => fireEvent.press(panel().getByRole('button', { name: 'Close filters' })),
+    ],
+    ['the back gesture', async () => fireEvent(panelModal(), 'requestClose')],
+    [
+      'a tap outside',
+      async () =>
+        fireEvent.press(screen.getByTestId('filters-backdrop', { includeHiddenElements: true })),
+    ],
+  ])('throws the draft away when closed with %s', async (_, close) => {
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    const sheet = await openFilters();
+    await fireEvent.press(sheet.getByRole('radio', { name: 'Featured' }));
+    await fireEvent.press(sheet.getByRole('radio', { name: 'About 5 km' }));
+    await close();
+    expect(screen.queryByTestId('filters-panel')).toBeNull();
+    await act(async () => {});
+    expect(server.calls).toHaveLength(1);
+    expect(filtersButton().props.accessibilityLabel).toBe('Filters');
+    const again = await openFilters();
+    expect(again.getByRole('radio', { name: 'About 15 km, selected' })).toBeOnTheScreen();
+    expect(again.getAllByRole('radio', { name: 'All, selected' })).toHaveLength(2);
+  });
+
+  it('chips change only the draft: nothing is asked until Show offers', async () => {
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    const sheet = await openFilters();
+    await fireEvent.press(sheet.getByRole('radio', { name: 'Featured' }));
+    await fireEvent.press(sheet.getByRole('radio', { name: 'Home cooks' }));
+    await act(async () => {});
+    expect(server.calls).toHaveLength(1);
+    expect(filtersButton().props.accessibilityLabel).toBe('Filters');
+  });
+
+  it('Show offers with nothing changed just closes, and asks nothing', async () => {
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    const sheet = await openFilters();
+    // Changed and changed back: the same filters.
+    await fireEvent.press(sheet.getByRole('radio', { name: 'Featured' }));
+    await fireEvent.press(sheet.getAllByRole('radio', { name: 'All' })[0]);
+    await fireEvent.press(sheet.getByRole('button', { name: 'Show offers' }));
+    expect(screen.queryByTestId('filters-panel')).toBeNull();
+    await act(async () => {});
+    expect(server.calls).toHaveLength(1);
+  });
+
+  it('Clear all in the panel changes only the draft', async () => {
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    await applyFilters('Featured', 'About 30 km');
+    await waitFor(() => expect(server.calls).toHaveLength(2));
+    const sheet = await openFilters();
+    await fireEvent.press(sheet.getByRole('button', { name: 'Clear all' }));
+    expect(sheet.getByRole('radio', { name: 'About 15 km, selected' })).toBeOnTheScreen();
+    await act(async () => {});
+    expect(server.calls).toHaveLength(2);
+    expect(filtersButton().props.accessibilityLabel).toBe('Filters, 2 applied');
+    // Applying the cleared draft is one request with the defaults.
+    await fireEvent.press(sheet.getByRole('button', { name: 'Show offers' }));
+    await waitFor(() => expect(server.calls).toHaveLength(3));
+    expect(lastCall()).toMatchObject({ p_distance_km: 15, p_category: null });
+  });
+
+  it('offers Clear filters next to Browse the map when filters leave nothing', async () => {
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    server.rows = [];
+    await applyFilters('Featured');
+    expect(
+      await screen.findByText('No offers near you right now. Check back later or browse the map.'),
+    ).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Browse the map' })).toBeOnTheScreen();
+    server.rows = [makeOffer()];
+    const clears = screen.getAllByRole('button', { name: 'Clear filters' });
+    expect(clears).toHaveLength(2);
+    await fireEvent.press(clears[1]);
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+  });
+
+  it('has no Clear filters in the empty state when no filter is on', async () => {
+    server.rows = [];
+    await renderScreen();
+    await screen.findByText('No offers near you right now. Check back later or browse the map.');
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+  });
+
+  it('announces how many offers the new list has, and puts focus back on Filters', async () => {
     const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+    const focus = jest.spyOn(AccessibilityInfo, 'sendAccessibilityEvent');
     server.rows = manyOffers(3, { category: 'featured' });
     await renderScreen();
     await waitFor(() => expect(cards()).toHaveLength(3));
     expect(announce).not.toHaveBeenCalled();
     server.rows = [];
-    await fireEvent.press(screen.getByRole('radio', { name: 'New on the menu' }));
+    await applyFilters('New on the menu');
     await waitFor(() => expect(announce).toHaveBeenCalledWith('No offers'));
+    // Focus goes back to the Filters button (compared by its testID: printing the native
+    // instance itself in a failure message would hang jest).
+    const focused = focus.mock.calls
+      .filter(([, event]) => event === 'focus')
+      .map(([target]) => (target as unknown as { props?: { testID?: string } }).props?.testID);
+    expect(focused.at(-1)).toBe('filters-button');
     server.rows = manyOffers(3, { category: 'featured' });
-    await fireEvent.press(screen.getByRole('radio', { name: 'Featured' }));
+    await applyFilters('Featured');
     await waitFor(() => expect(announce).toHaveBeenCalledWith('3 offers'));
+  });
+
+  it('wraps the Filters row and the summary at large text sizes', async () => {
+    await renderScreen();
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    await applyFilters('Special offer', 'Restaurants', 'About 30 km', 'Takes table requests');
+    const summary = await screen.findByText(
+      'Special offer, Restaurants, About 30 km, Takes table requests',
+    );
+    expect(summary.props.numberOfLines).toBeUndefined();
+    const flat = (style: unknown) =>
+      Array.isArray(style) ? Object.assign({}, ...style.flat()) : (style as object);
+    expect(flat(summary.parent?.props.style)).toMatchObject({ flexWrap: 'wrap' });
+    expect(flat(filtersButton().parent?.props.style)).toMatchObject({ flexWrap: 'wrap' });
+    expect(flat(filtersButton().props.style).minHeight).toBeGreaterThanOrEqual(44);
   });
 });
 

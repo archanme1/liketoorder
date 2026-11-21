@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Text } from '@/components/ui';
 import { useTheme } from '@/theme/useTheme';
@@ -13,7 +13,7 @@ export function sponsoredLabel(label: string): string {
 // The small written "Ad" on a promoted marker. Dark text on the ring colour (about 10:1). The
 // marker is drawn as a fixed-size picture, so the badge does not grow with the system text size;
 // the spoken label carries "sponsored" instead, so the badge itself is hidden from screen readers.
-export function AdBadge({ style }: { style?: object }) {
+export function AdBadge({ style }: { style?: StyleProp<ViewStyle> }) {
   const { colors, radius, space, weight } = useTheme();
   return (
     <View

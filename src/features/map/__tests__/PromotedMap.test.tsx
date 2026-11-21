@@ -30,7 +30,12 @@ import { HomemadeMapScreen } from '../components/HomemadeMapScreen';
 import { RestaurantMapScreen } from '../components/RestaurantMapScreen';
 import { HOMEMADE_AREA_NOTE } from '../homemadeText';
 import { RATE_LIMITED_MESSAGE } from '../messages';
-import { LARGE_PROMOTED_LIMIT } from '../promotedLayout';
+import {
+  dailyRankKey,
+  LARGE_PROMOTED_LIMIT,
+  pickLargePromoted,
+  utcDateOf,
+} from '../promotedLayout';
 import { CIRCLE_RADIUS_M } from '../region';
 import type { HomemadeDetails, Pin, RestaurantDetails } from '../schema';
 
@@ -81,6 +86,10 @@ const italy: Cuisine = {
 const OSHAWA = { latitude: 43.9, longitude: -78.86, latitudeDelta: 0.1, longitudeDelta: 0.1 };
 // Zoomed out: the same places are a few points apart, so only one can be large.
 const OSHAWA_WIDE = { latitude: 43.9, longitude: -78.86, latitudeDelta: 2, longitudeDelta: 2 };
+// Too wide for the server: nothing is drawn at all.
+const TOO_WIDE = { latitude: 43.9, longitude: -78.86, latitudeDelta: 100, longitudeDelta: 100 };
+// A small pan east: every grid place stays in view, and the east edge moves from -78.81 to -78.805.
+const OSHAWA_PANNED = { ...OSHAWA, longitude: -78.855 };
 // Zoomed in enough for the homemade circle (latitudeDelta <= 0.05).
 const OSHAWA_CLOSE = {
   latitude: 43.9,
@@ -139,7 +148,7 @@ const homemadeDetails = (pin: Pin, sponsored: boolean): HomemadeDetails => ({
 
 const clients: QueryClient[] = [];
 
-async function renderTab(tab: 'restaurants' | 'homemade') {
+async function renderTab(tab: 'restaurants' | 'homemade', { measure = true } = {}) {
   const client = new QueryClient(testClientOptions());
   clients.push(client);
   await render(
@@ -156,9 +165,11 @@ async function renderTab(tab: 'restaurants' | 'homemade') {
   );
   await screen.findByTestId('map-view');
   // The map's measured size: the large set is worked out on screen points.
-  await fireEvent(screen.getByTestId('map-screen'), 'layout', {
-    nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 844 } },
-  });
+  if (measure) {
+    await fireEvent(screen.getByTestId('map-screen'), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 844 } },
+    });
+  }
 }
 
 function moveMap(region: typeof OSHAWA) {
@@ -177,6 +188,13 @@ const aLargeMarker = () => {
   return found;
 };
 const ringedFlags = () => screen.queryAllByTestId('flag-ad-ring');
+/** The spoken names of the large markers on screen, sorted. */
+const largeNames = () =>
+  screen
+    .getAllByTestId('marker')
+    .filter((marker) => within(marker).queryByTestId('promoted-hit'))
+    .map((marker) => marker.props.accessibilityLabel as string)
+    .sort();
 const sponsoredInSheet = () =>
   screen.queryByTestId('sponsored-label', { includeHiddenElements: true });
 
@@ -228,6 +246,67 @@ describe('Restaurants map: promoted places (spec 16)', () => {
         screen.getByRole('button', { name: `${pin.name}, Italy cuisine, sponsored` }),
       ).toBeOnTheScreen();
     }
+  });
+
+  it('draws nothing large until the map has measured its size', async () => {
+    await renderTab('restaurants', { measure: false });
+    await moveMap(OSHAWA);
+    // Every promoted place is there, ringed at normal size, and none is large.
+    await waitFor(() => expect(ringedFlags()).toHaveLength(promotedGrid.length));
+    expect(largeMarkers()).toHaveLength(0);
+  });
+
+  it('draws nothing large (or at all) in a view too wide for the map', async () => {
+    await renderTab('restaurants');
+    await moveMap(OSHAWA);
+    await waitFor(() => expect(largeMarkers()).toHaveLength(LARGE_PROMOTED_LIMIT));
+    await moveMap(TOO_WIDE);
+    await waitFor(() => expect(largeMarkers()).toHaveLength(0));
+    expect(screen.queryAllByTestId('marker')).toHaveLength(0);
+  });
+
+  it('keeps the same large set across a small pan, even when a better-ranked place comes into view', async () => {
+    // A newcomer just east of the first view that outranks one of today's 8 large places, so
+    // without the kept set it would have to become large after the pan.
+    const today = utcDateOf(new Date());
+    const ranked = [...promotedGrid].sort(
+      (a, b) => dailyRankKey(a.id, today) - dailyRankKey(b.id, today),
+    );
+    const worstLarge = dailyRankKey(ranked[LARGE_PROMOTED_LIMIT - 1].id, today);
+    let id = '';
+    for (let i = 0; !id; i++) if (dailyRankKey(`x${i}`, today) < worstLarge) id = `x${i}`;
+    const newcomer: Pin = {
+      id,
+      name: 'Newcomer',
+      cuisine_code: 'IT',
+      lat: 43.945,
+      lng: -78.808,
+      promoted: true,
+    };
+    const pins = [...promotedGrid, organic, newcomer];
+    jest.mocked(fetchPinsInBounds).mockResolvedValue({ pins, capped: false, too_large: false });
+    // The fixture really discriminates: with no memory, the newcomer is large after the pan.
+    const fresh = pickLargePromoted({
+      pins,
+      region: OSHAWA_PANNED,
+      screen: { width: 390, height: 844 },
+      previous: new Set(),
+      utcDate: today,
+    });
+    expect(fresh.has(id)).toBe(true);
+
+    await renderTab('restaurants');
+    await moveMap(OSHAWA);
+    await waitFor(() => expect(largeMarkers()).toHaveLength(LARGE_PROMOTED_LIMIT));
+    const before = largeNames();
+    await moveMap(OSHAWA_PANNED);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Newcomer, Italy cuisine, sponsored' }),
+      ).toBeOnTheScreen(),
+    );
+    expect(largeNames()).toEqual(before);
+    expect(largeNames()).not.toContain('Newcomer, Italy cuisine, sponsored');
   });
 
   it('keeps large markers out of clusters when zoomed out, while ringed ones cluster', async () => {

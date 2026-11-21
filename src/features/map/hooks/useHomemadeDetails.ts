@@ -29,3 +29,12 @@ export function useHomemadeDetails(id: string | null) {
     refetchOnMount: unlessFailed,
   });
 }
+
+/**
+ * Spec 16: whether the open place's details say it is sponsored, for the sheet header. The same
+ * query as the sheet body (shared cache, no extra request). Undefined while loading or when the
+ * place is not available.
+ */
+export function useHomemadeSponsored(id: string | null): boolean | undefined {
+  return useHomemadeDetails(id).data?.sponsored;
+}

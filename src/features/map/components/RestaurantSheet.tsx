@@ -17,11 +17,14 @@ import { AccessibilityInfo, Pressable, StyleSheet, useWindowDimensions, View } f
 import { Text } from '@/components/ui';
 import { CuisineLabel } from '@/features/cuisines/components/CuisineLabel';
 import type { Cuisine } from '@/features/cuisines/schema';
+import { SponsoredLabel } from '@/features/promotions/components/SponsoredLabel';
 import { useTheme } from '@/theme/useTheme';
 
 import { useReduceMotion } from '@/lib/useReduceMotion';
+import { useRestaurantSponsored } from '../hooks/useRestaurantDetails';
 import type { Pin } from '../schema';
 
+import { sponsoredLabel } from './AdBadge';
 import { PlacesList, PLACES_TITLE } from './PlacesList';
 import type { SheetActionsProps } from './SheetActions';
 import { SheetDetails } from './SheetDetails';
@@ -57,6 +60,8 @@ type RestaurantSheetProps = {
   detailsLabel?: string;
   placesTitle?: string;
   emptyText?: string;
+  /** Spec 16: the open place's details say "sponsored" (the tab's details query). */
+  useSponsored?: (id: string | null) => boolean | undefined;
 };
 
 /** What a sheet body (the details of one place) is given. */
@@ -131,6 +136,7 @@ export const RestaurantSheet = memo(function RestaurantSheet({
   detailsLabel = 'Restaurant details',
   placesTitle = PLACES_TITLE,
   emptyText,
+  useSponsored = useRestaurantSponsored,
 }: RestaurantSheetProps) {
   const { colors, space, radius, size } = useTheme();
   const { height: windowHeight, fontScale } = useWindowDimensions();
@@ -182,6 +188,10 @@ export const RestaurantSheet = memo(function RestaurantSheet({
     gap: space.lg,
   };
   const title = detailsMode ? selected.name : placesTitle;
+  // "Sponsored" at the top (spec 16): at once from the pin, then from the details, so it goes away
+  // when the details say the campaign has ended.
+  const detailsSponsored = useSponsored(selected?.id ?? null);
+  const sponsored = detailsMode && (detailsSponsored ?? selected.promoted);
 
   return (
     <BottomSheet
@@ -225,7 +235,15 @@ export const RestaurantSheet = memo(function RestaurantSheet({
         >
           <View style={[styles.header, { gap: space.md, paddingHorizontal: space.lg }]}>
             <View style={[styles.flex, { gap: space.xs }]}>
-              <View ref={titleRef} accessible accessibilityRole="header" testID="sheet-title">
+              {sponsored ? <SponsoredLabel /> : null}
+              <View
+                ref={titleRef}
+                accessible
+                accessibilityRole="header"
+                // The written label is hidden from screen readers; the title says it instead.
+                accessibilityLabel={sponsored ? sponsoredLabel(title) : undefined}
+                testID="sheet-title"
+              >
                 <Text
                   variant="title"
                   numberOfLines={3}

@@ -282,6 +282,9 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
   - Before building the rest of PR 3, a throwaway branch proves on the iOS Simulator (Archan runs the build) that a larger marker can pop in and float inside a react-native-maps custom marker.
   - It also checks that `tracksViewChanges` can stay off for all other markers, with React re-render counts and a frame check while panning, using 8 animated markers and the seeded pins.
   - I stop and report **go** (custom markers) or **no-go**. The no-go fallback is an `Animated.View` overlay positioned with `pointForCoordinate` above the map, re-placed on region change. Nothing else in PR 3 is built until Archan decides.
+  - **Result (2026-11-21): go.** Reanimated with react-native-maps custom markers; no overlay fallback. Archan judged the spike by eye on the iOS Simulator only (the 13 active campaigns of the `--many` seed): the pop-in and the float were clearly visible, nothing was clipped, idle and panning were smooth, and a marker tap opened and closed the sheet. No frame-rate numbers were collected (Simulator numbers say little about phones). The frame rate with 8 animated markers and 500 pins on a real iPhone and a real Android phone stays a before-launch item (v1 section 16).
+  - The spike lived on a local branch (`spike/promotions-marker`, never pushed) that was deleted after the decision. Nothing from it was copied.
+  - Found while probing: the official `react-native-reanimated/mock` fails under jest-expo with Reanimated 4.7.1 (its index runs the native CSS setup), so the global jest fake in `jest.setup.ts` is hand-written (F2).
 - **D15 Offer card to map (Resolved Q15).** The card pushes the place's map tab with `business=<id>`. The map loads its details. If the result is `null` or `sponsored = false`, it shows "This offer has ended or the place isn't available right now." and refreshes Offers. A place that is visible but no longer sponsored still opens; the message is shown above its sheet.
 - **D16 No cuisine parameter yet (Resolved Q12).** I recommend **not** adding a cuisine parameter to `list_offers_near` now. Every parameter needs validation and pgTAP tests, the UI won't use it, and adding it later is one small replacing migration.
 - **D17 Docs timing (change 7).** The decided changes to v1 §4 (Offers tab for guests and customers), §7 (larger marker, pop-in then float, display limit of 8, Sponsored and Ad labels, admin activation, no payment) and the §16 before-launch items are written at PR 1's docs gate. The map-markers skill is updated in PR 3.
@@ -356,7 +359,7 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
 - [ ] VoiceOver, TalkBack and real phones for the Promote screen: before launch (v1 section 16), not checked in PR 2.
 
 **PR 3 (map)**
-- [ ] The spike gate was reported and Archan chose go or no-go (D14).
+- [x] The spike gate was reported and Archan chose go or no-go (D14): go, judged by eye on the iOS Simulator (see D14).
 - [ ] A promoted pin draws a larger marker with the ring and an "Ad" text badge. It pops in once and then floats. With Reduce Motion on, no animation starts (a jest test spies on reanimated).
 - [ ] `promotedLayout`: never more than 8 large markers; none closer than the minimum spacing; extras drawn normal size with the ring and badge.
 - [ ] The marker's spoken label ends with ", sponsored". Both sheets show "Sponsored" for a sponsored place and nothing otherwise.

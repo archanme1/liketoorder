@@ -50,6 +50,12 @@ export const size = {
   clusterSm: 36,
   clusterMd: 42,
   clusterLg: 48,
+  // Promoted (ad) markers (spec 16): the larger pill, about 1.3 times the flag pill, and the
+  // marker's box, which leaves room for the ad ring, the "Ad" badge and the 4 pt float without
+  // clipping (a marker is drawn as a picture of exactly this box). Also above the 44 pt target.
+  promotedFlagWidth: 42,
+  promotedFlagHeight: 31,
+  promotedMarker: 64,
   // Activity grid squares and the gap between them (spec 14 Decision 11). The squares are the one
   // documented exception to the 44 pt touch rule: every action they offer is also reachable
   // through 44 pt controls (the list view, Previous / Next day, the day panel rows).
@@ -69,7 +75,8 @@ export const maxFontMultiplier = 1.6;
 
 // Border widths: a selected option gets a thicker border as well as a check icon. today: the
 // activity grid marks today with a thinner dark outline than the selected day (spec 14).
-export const stroke = { selected: 2, today: 1 };
+// adRing: the ring around a promoted map marker (spec 16), drawn in colors.adRing.
+export const stroke = { selected: 2, today: 1, adRing: 2 };
 
 // The homemade "somewhere in this area" circle (spec 08): the primary colour, translucent fill with
 // a firmer outline so the edge still reads without relying on the fill alone.

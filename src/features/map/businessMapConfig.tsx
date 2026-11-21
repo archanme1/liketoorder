@@ -4,6 +4,7 @@ import type { Cuisine } from '@/features/cuisines/schema';
 
 import type { MapErrorCode } from './api';
 import { FlagMarker } from './components/FlagMarker';
+import { PromotedMarker } from './components/PromotedMarker';
 import { PLACES_TITLE, NO_PLACES_MESSAGE } from './components/PlacesList';
 import type { SheetBodyProps } from './components/RestaurantSheet';
 import { RestaurantSheetActions, type SheetActionsProps } from './components/SheetActions';
@@ -11,6 +12,8 @@ import { SheetDetails } from './components/SheetDetails';
 import { ZOOM_IN_MESSAGE } from './components/MapNotices';
 import { REGION_KEY } from './lastRegion';
 import { usePinsInBounds } from './hooks/usePinsInBounds';
+import { useRestaurantSponsored } from './hooks/useRestaurantDetails';
+import type { PromotionLook } from './promotedLayout';
 import type { MapBox } from './region';
 import type { Pin } from './schema';
 
@@ -21,6 +24,8 @@ export type MarkerProps = {
   onSelect: (pin: Pin) => void;
   /** True while zoomed in enough for the Homemade circle. The Restaurants marker ignores it. */
   zoomedIn: boolean;
+  /** Spec 16: organic, a promoted place drawn with the ring, or one of the large ones. */
+  promotion?: PromotionLook;
 };
 
 /** What a pins hook hands the screen (the shape usePinsQuery returns). */
@@ -61,6 +66,11 @@ export type BusinessMapConfig = {
   DetailsBody: (props: SheetBodyProps) => ReactNode;
   /** The sheet's fixed action row for the open business. */
   Actions: (props: SheetActionsProps) => ReactNode;
+  /**
+   * Whether the open place's details say it is sponsored (undefined while they load or when the
+   * place is not available). Reads the sheet body's own details query, so no extra request.
+   */
+  useSponsored: (id: string | null) => boolean | undefined;
 };
 
 export const restaurantMapConfig: BusinessMapConfig = {
@@ -77,9 +87,19 @@ export const restaurantMapConfig: BusinessMapConfig = {
     detailsLabel: 'Restaurant details',
   },
   usePins: usePinsInBounds,
-  renderMarker: ({ pin, cuisine, selected, onSelect }) => (
-    <FlagMarker pin={pin} cuisine={cuisine} selected={selected} onSelect={onSelect} />
-  ),
+  renderMarker: ({ pin, cuisine, selected, onSelect, promotion = 'none' }) =>
+    promotion === 'large' ? (
+      <PromotedMarker pin={pin} cuisine={cuisine} selected={selected} onSelect={onSelect} />
+    ) : (
+      <FlagMarker
+        pin={pin}
+        cuisine={cuisine}
+        selected={selected}
+        onSelect={onSelect}
+        promotion={promotion}
+      />
+    ),
   DetailsBody: SheetDetails,
   Actions: RestaurantSheetActions,
+  useSponsored: useRestaurantSponsored,
 };

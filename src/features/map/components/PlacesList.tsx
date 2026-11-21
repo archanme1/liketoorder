@@ -13,10 +13,12 @@ import {
 import { Text } from '@/components/ui';
 import type { Cuisine } from '@/features/cuisines/schema';
 import { CuisineGlyph } from '@/features/cuisines/components/CuisineLabel';
+import { SponsoredLabel } from '@/features/promotions/components/SponsoredLabel';
 import { useTheme } from '@/theme/useTheme';
 
 import type { Pin } from '../schema';
 
+import { sponsoredLabel } from './AdBadge';
 import { markerLabel } from './FlagMarker';
 
 type PlacesListProps = {
@@ -40,11 +42,13 @@ type RowProps = {
 
 const PlacesRow = memo(function PlacesRow({ pin, cuisine, onSelect }: RowProps) {
   const { colors, space, size, radius } = useTheme();
+  const label = markerLabel(pin.name, cuisine);
   return (
     <Pressable
       onPress={() => onSelect(pin)}
       accessibilityRole="button"
-      accessibilityLabel={markerLabel(pin.name, cuisine)}
+      // A promoted place (spec 16) says so in words, written and spoken.
+      accessibilityLabel={pin.promoted ? sponsoredLabel(label) : label}
       style={[
         styles.row,
         {
@@ -59,6 +63,7 @@ const PlacesRow = memo(function PlacesRow({ pin, cuisine, onSelect }: RowProps) 
     >
       <CuisineGlyph cuisine={cuisine} size={size.tabIcon} />
       <View style={styles.text}>
+        {pin.promoted ? <SponsoredLabel /> : null}
         <Text numberOfLines={3}>{pin.name}</Text>
         {cuisine ? (
           <Text variant="caption" color="textMuted">

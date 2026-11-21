@@ -123,8 +123,17 @@ const MANY_LINES: { category: PromotionCategory; headline: string }[] = [
   { category: 'special_offer', headline: 'Curry leaf thali, extra roti free' },
 ];
 
-/** The `--many` flag of scripts/seed/promotions.ts. */
+const KNOWN_ARGS: ReadonlySet<string> = new Set(['--many']);
+
+/**
+ * The `--many` flag of scripts/seed/promotions.ts. Any other argument is refused, so a typo such as
+ * `--mnay` stops the seed instead of quietly writing the default four campaigns.
+ */
 export function parseMany(args: readonly string[]): boolean {
+  const unknown = args.filter((arg) => !KNOWN_ARGS.has(arg));
+  if (unknown.length > 0) {
+    throw new Error(`Unknown argument ${unknown.join(', ')}. The only option is --many.`);
+  }
   return args.includes('--many');
 }
 

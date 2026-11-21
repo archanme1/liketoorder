@@ -300,6 +300,7 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
 
 ## Out of scope
 - In-app payment and any payment provider (a later spec if Archan wants it; Resolved Q10)
+- Payment moves to spec 16b (promotion-payment, planned): in-app payment through Stripe after the headline is approved, replacing the manual invoice
 - Ad inventory caps (§3); only the display limit exists
 - Opening hours and "open now"
 - A cuisine filter in Offers

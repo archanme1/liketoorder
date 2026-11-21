@@ -42,16 +42,13 @@ type RowProps = {
 
 const PlacesRow = memo(function PlacesRow({ pin, cuisine, onSelect }: RowProps) {
   const { colors, space, size, radius } = useTheme();
+  const label = markerLabel(pin.name, cuisine);
   return (
     <Pressable
       onPress={() => onSelect(pin)}
       accessibilityRole="button"
       // A promoted place (spec 16) says so in words, written and spoken.
-      accessibilityLabel={
-        pin.promoted
-          ? sponsoredLabel(markerLabel(pin.name, cuisine))
-          : markerLabel(pin.name, cuisine)
-      }
+      accessibilityLabel={pin.promoted ? sponsoredLabel(label) : label}
       style={[
         styles.row,
         {

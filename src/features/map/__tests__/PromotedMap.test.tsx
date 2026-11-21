@@ -24,10 +24,12 @@ import {
   fetchHomemadeInBounds,
   fetchPinsInBounds,
   fetchRestaurantDetails,
+  MapAppError,
 } from '../api';
 import { HomemadeMapScreen } from '../components/HomemadeMapScreen';
 import { RestaurantMapScreen } from '../components/RestaurantMapScreen';
 import { HOMEMADE_AREA_NOTE } from '../homemadeText';
+import { RATE_LIMITED_MESSAGE } from '../messages';
 import { LARGE_PROMOTED_LIMIT } from '../promotedLayout';
 import { CIRCLE_RADIUS_M } from '../region';
 import type { HomemadeDetails, Pin, RestaurantDetails } from '../schema';
@@ -303,7 +305,7 @@ describe('Restaurants map: promoted places (spec 16)', () => {
     expect(screen.getByTestId('sheet-title').props.accessibilityLabel).toBeUndefined();
   });
 
-  it('keeps "Sponsored" from the pin when the details are not available', async () => {
+  it('drops "Sponsored" once the details say the place is not available', async () => {
     jest.mocked(fetchRestaurantDetails).mockResolvedValue(null);
     await renderTab('restaurants');
     await moveMap(OSHAWA);
@@ -312,7 +314,34 @@ describe('Restaurants map: promoted places (spec 16)', () => {
       screen.getByRole('button', { name: 'Promoted 0, Italy cuisine, sponsored' }),
     );
     await screen.findByText("This restaurant isn't available right now.");
+    expect(sponsoredInSheet()).toBeNull();
+    expect(screen.getByTestId('sheet-title').props.accessibilityLabel).toBeUndefined();
+  });
+
+  it('keeps "Sponsored" from the pin while the details load and when their request failed', async () => {
+    let fail: (error: Error) => void = () => undefined;
+    jest.mocked(fetchRestaurantDetails).mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    await renderTab('restaurants');
+    await moveMap(OSHAWA);
+    await waitFor(() => expect(largeMarkers()).toHaveLength(LARGE_PROMOTED_LIMIT));
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Promoted 0, Italy cuisine, sponsored' }),
+    );
+    // Loading: the pin's own flag.
+    await waitFor(() => expect(fetchRestaurantDetails).toHaveBeenCalledWith('p0'));
     expect(sponsoredInSheet()).toBeTruthy();
+    // Failed (unknown): still the pin's flag. rate_limited is never retried.
+    await act(async () => fail(new MapAppError('rate_limited')));
+    await screen.findByText(RATE_LIMITED_MESSAGE);
+    expect(sponsoredInSheet()).toBeTruthy();
+    expect(screen.getByTestId('sheet-title').props.accessibilityLabel).toBe(
+      'Promoted 0, sponsored',
+    );
   });
 });
 

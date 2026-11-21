@@ -2,6 +2,7 @@ import {
   useInfiniteQuery,
   useQueryClient,
   type InfiniteData,
+  type Query,
   type QueryKey,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,6 +37,12 @@ const RETRY_ONCE: ReadonlySet<OfferErrorCode> = new Set(['network', 'unknown']);
 
 type Cursor = string | null;
 type Pages = InfiniteData<OffersPage, Cursor>;
+
+// A failed list is only ever asked again by the person (Try again, pull to refresh, a new filter
+// or area). Coming back to the app, a reconnect or a remount never re-send a refused request, so
+// a rate limit can't repeat itself (the same rule as the map pins, usePinsQuery).
+const unlessFailed = (query: Query<OffersPage, OfferAppError, Pages, QueryKey>) =>
+  query.state.status !== 'error';
 
 /** All loaded pages as one list in the server's order, each business once (first wins). */
 export function flattenOffers(data: Pages | undefined): Offer[] {
@@ -79,6 +86,9 @@ export function useOffers(point: SnappedPoint | null, filters: OfferFilters) {
     enabled: point !== null,
     staleTime: OFFERS_STALE_MS,
     retry: (failureCount, error) => RETRY_ONCE.has(error.code) && failureCount < 1,
+    refetchOnWindowFocus: unlessFailed,
+    refetchOnReconnect: unlessFailed,
+    refetchOnMount: unlessFailed,
   });
 
   const offers = useMemo(() => flattenOffers(query.data), [query.data]);
@@ -99,7 +109,15 @@ export function useOffers(point: SnappedPoint | null, filters: OfferFilters) {
     latest.current = { point, filters, queryKey };
   });
 
-  const refresh = useCallback(async (): Promise<boolean> => {
+  // One quiet restart per run of refused cursors, so a server that keeps refusing never loops. A
+  // new list (another key) or a refresh the person asked for starts a new run.
+  const restarted = useRef(false);
+  const keyText = JSON.stringify(queryKey);
+  useEffect(() => {
+    restarted.current = false;
+  }, [keyText]);
+
+  const reload = useCallback(async (): Promise<boolean> => {
     const { point: at, filters: current, queryKey: key } = latest.current;
     if (!at) return false;
     setRefreshing(true);
@@ -118,19 +136,25 @@ export function useOffers(point: SnappedPoint | null, filters: OfferFilters) {
     }
   }, [queryClient]);
 
-  // One quiet restart per run of refused cursors, so a server that keeps refusing never loops.
-  const restarted = useRef(false);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+  /** Pull to refresh: page 1 again, and a new run for the quiet restart once it has loaded. */
+  const refresh = useCallback(async (): Promise<boolean> => {
+    const ok = await reload();
+    if (ok) restarted.current = false;
+    return ok;
+  }, [reload]);
+
+  const { hasNextPage, isFetchingNextPage, isFetching, fetchNextPage } = query;
   const loadMore = useCallback(async () => {
-    if (!hasNextPage || isFetchingNextPage) return;
+    // Not while any read runs (a next page, or a background refetch of the loaded pages).
+    if (!hasNextPage || isFetchingNextPage || isFetching) return;
     const result = await fetchNextPage();
     if (result.error?.code === 'invalid_cursor' && !restarted.current) {
       restarted.current = true;
-      await refresh();
+      await reload();
       return;
     }
     if (!result.error) restarted.current = false;
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, refresh]);
+  }, [hasNextPage, isFetchingNextPage, isFetching, fetchNextPage, reload]);
 
   return { ...query, offers, refresh, refreshing, refreshFailed, loadMore };
 }

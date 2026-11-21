@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
@@ -185,6 +185,54 @@ describe('useOffers', () => {
     expect(rpc.mock.calls.filter(([, a]) => a.p_cursor !== null)).toHaveLength(2);
     await waitFor(() => expect(result.current.isFetchNextPageError).toBe(true));
     expect(result.current.offers).toHaveLength(20);
+  });
+
+  it('gives a new list (a changed filter) its own quiet restart on a stale cursor', async () => {
+    const { result, rerender } = await renderOffers();
+    await waitFor(() => expect(result.current.offers).toHaveLength(20));
+    // First list: its cursor is refused (more than a day old) and it restarts once.
+    server.now = new Date(OFFERS_NOW.getTime() + 2 * DAY_MS);
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    await waitFor(() => expect(result.current.isError).toBe(false));
+    expect(calls().map((c) => c.p_cursor === null)).toEqual([true, false, true]);
+
+    // A new list (About 30 km), then its cursor is refused too: it still gets its restart.
+    await rerender({ point: POINT, filters: { ...DEFAULT_OFFER_FILTERS, distanceKm: 30 } });
+    await waitFor(() => expect(calls().at(-1)?.p_distance_km).toBe(30));
+    await waitFor(() => expect(result.current.offers).toHaveLength(20));
+    server.now = new Date(OFFERS_NOW.getTime() + 4 * DAY_MS);
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    await waitFor(() => expect(result.current.isError).toBe(false));
+    const tail = calls().slice(-3);
+    expect(tail.map((c) => [c.p_distance_km, c.p_cursor === null])).toEqual([
+      [30, true],
+      [30, false],
+      [30, true],
+    ]);
+    expect(result.current.isFetchNextPageError).toBe(false);
+  });
+
+  it('does not ask again for a refused first page when the app comes back into focus', async () => {
+    server.failAlways = pgError('rate_limited');
+    const { result } = await renderOffers();
+    await waitFor(() => expect(result.current.error?.code).toBe('rate_limited'));
+    expect(calls()).toHaveLength(1);
+    try {
+      await act(async () => {
+        focusManager.setFocused(false);
+      });
+      await act(async () => {
+        focusManager.setFocused(true);
+      });
+      await act(async () => {});
+      expect(calls()).toHaveLength(1);
+    } finally {
+      focusManager.setFocused(undefined);
+    }
   });
 
   it('pull to refresh goes back to page 1 only', async () => {

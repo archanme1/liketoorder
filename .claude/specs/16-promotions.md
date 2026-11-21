@@ -189,6 +189,7 @@ None. No payment provider, no secrets.
   - jest tests in `src/features/promotions/__tests__/`
 - PR 3:
   - `src/features/map/components/PromotedMarker.tsx`
+  - `src/features/map/components/AdBadge.tsx` (the "Ad" badge and the ", sponsored" label helper, shared by the large and the ringed markers, the places list and the sheet; its own file so FlagMarker and PromotedMarker do not import each other)
   - `src/features/map/hooks/usePromotedFloat.ts`
   - `src/features/map/promotedLayout.ts`
   - `src/features/promotions/components/SponsoredLabel.tsx`
@@ -360,10 +361,11 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
 
 **PR 3 (map)**
 - [x] The spike gate was reported and Archan chose go or no-go (D14): go, judged by eye on the iOS Simulator (see D14).
-- [ ] A promoted pin draws a larger marker with the ring and an "Ad" text badge. It pops in once and then floats. With Reduce Motion on, no animation starts (a jest test spies on reanimated).
-- [ ] `promotedLayout`: never more than 8 large markers; none closer than the minimum spacing; extras drawn normal size with the ring and badge.
-- [ ] The marker's spoken label ends with ", sponsored". Both sheets show "Sponsored" for a sponsored place and nothing otherwise.
-- [ ] A marker press does not reach the map's onPress (the bubbling fake).
+- [x] A promoted pin draws a larger marker with the ring and an "Ad" text badge. It pops in once and then floats. With Reduce Motion on, no animation starts (a jest test spies on reanimated). Proven by `PromotedMarker.test.tsx` (look, pop-in and float values, Reduce Motion from both sources, live switch-off) and Archan's Simulator run (Reduce Motion live and after relaunch).
+- [x] `promotedLayout`: never more than 8 large markers; none closer than the minimum spacing; extras drawn normal size with the ring and badge. Proven by `promotedLayout.test.ts`, `promotedFlag.test.tsx`, `PromotedMap.test.tsx` (8 large and the rest ringed; large ones kept out of clusters) and the Simulator run with the `--many` seed (at most 8 large, the same set on a slow pan, clusters).
+- [x] The marker's spoken label ends with ", sponsored". Both sheets show "Sponsored" for a sponsored place and nothing otherwise. Proven by `PromotedMarker.test.tsx`, `promotedFlag.test.tsx`, `PromotedMap.test.tsx` (both tabs; details say ended; details unavailable), `PlacesListSponsored.test.tsx` and the Simulator run (sheet header, places list row, the runbook cancel turning the place back into a plain flag).
+- [x] A marker press does not reach the map's onPress (the bubbling fake). Proven by `PromotedMarker.test.tsx` (stopPropagation) and `PromotedMap.test.tsx` (bubbling, and with stopPropagation ignored).
+- [ ] VoiceOver and TalkBack on promoted markers, and the frame rate with 8 animated markers and 500 pins on a real iPhone and a real Android phone: before launch (v1 section 16), not checked in PR 3 (the Simulator run judged motion by eye only).
 
 **PR 4 (Offers)**
 - [ ] The Offers tab is visible to guests and customers and hidden with seller mode on.

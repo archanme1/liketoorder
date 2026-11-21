@@ -17,6 +17,7 @@ import { useReduceMotion } from '@/lib/useReduceMotion';
 import { mapKeyName, useMapConfigured } from '../mapConfig';
 import { isMarkerPressEvent } from '../mapEvents';
 import { MAP_STYLE } from '../mapStyle';
+import { pickLargePromoted, promotionLook, utcDateOf } from '../promotedLayout';
 import {
   CIRCLE_MAX_DELTA,
   isOverServerLimit,
@@ -48,6 +49,27 @@ type LocationNoticeReason = 'denied' | 'denied_forever' | 'services_off' | 'no_f
 
 const CAMERA_MS = 600;
 const NO_PINS: Pin[] = [];
+const NO_IDS: ReadonlySet<string> = new Set();
+
+/** What the large promoted set is worked out from; a new object only when one of them changes. */
+type LargeInputs = {
+  pins: readonly Pin[];
+  region: MapRegion | null;
+  width: number;
+  height: number;
+};
+
+/** The large set for these inputs, starting from the last one (promotedLayout). */
+function nextLargeIds(inputs: LargeInputs, previous: ReadonlySet<string>): ReadonlySet<string> {
+  if (!inputs.region) return NO_IDS;
+  return pickLargePromoted({
+    pins: inputs.pins,
+    region: inputs.region,
+    screen: { width: inputs.width, height: inputs.height },
+    previous,
+    utcDate: utcDateOf(new Date()),
+  });
+}
 
 // The map screen both tabs share. Public: guests see the map too. The Google map, the opening
 // view, the location flow, and the places in the visible area as markers and clusters, with the
@@ -100,7 +122,44 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
   // One boolean, not the region, goes to the markers: a pan re-renders them only when it flips.
   const zoomedIn = region !== null && region.latitudeDelta <= CIRCLE_MAX_DELTA;
 
-  const clusterIndex = useMemo(() => createClusterIndex(pins.pins), [pins.pins]);
+  // The size of the area the sheet slides in (the map fills it), so snap heights, scroll space and
+  // on-screen marker spacing are exact.
+  const [containerHeight, setContainerHeight] = useState(0);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // Spec 16: the promoted places drawn large (at most 8, spaced on screen, promotedLayout). Worked
+  // out again only when the settled region, the pins or the map size change, starting from the
+  // last set so a pan never reshuffles it. Kept in state and updated during render (like
+  // usePinsQuery's last good answer), so the clusters below are built in the same render.
+  const largeInputs = useMemo<LargeInputs>(
+    () => ({
+      pins: pins.pins,
+      region: region && !wideView ? region : null,
+      width: containerWidth,
+      height: containerHeight,
+    }),
+    [pins.pins, region, wideView, containerWidth, containerHeight],
+  );
+  const [large, setLarge] = useState<{ inputs: LargeInputs | null; ids: ReadonlySet<string> }>({
+    inputs: null,
+    ids: NO_IDS,
+  });
+  const largeStale = large.inputs !== largeInputs;
+  const largeIds = largeStale ? nextLargeIds(largeInputs, large.ids) : large.ids;
+  if (largeStale) setLarge({ inputs: largeInputs, ids: largeIds });
+  // A stable string, so the clusters are rebuilt only when the large set really changes.
+  const largeKey = [...largeIds].sort().join(',');
+  const largePins = useMemo(() => {
+    const ids = new Set(largeKey ? largeKey.split(',') : []);
+    return ids.size ? pins.pins.filter((pin) => ids.has(pin.id)) : NO_PINS;
+  }, [pins.pins, largeKey]);
+
+  // The large ones are drawn on their own, above everything, and never inside a cluster. Every
+  // other pin (promoted ones with the ring included) clusters as before.
+  const clusterIndex = useMemo(() => {
+    const ids = new Set(largePins.map((pin) => pin.id));
+    return createClusterIndex(ids.size ? pins.pins.filter((pin) => !ids.has(pin.id)) : pins.pins);
+  }, [pins.pins, largePins]);
   const items = useMemo(
     () => (region && !wideView ? clusterIndex.itemsFor(region) : []),
     [clusterIndex, region, wideView],
@@ -111,8 +170,6 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
   const [listOpen, setListOpen] = useState(false);
   // True when the open place was picked from the list, so "Back to list" is offered.
   const [openedFromList, setOpenedFromList] = useState(false);
-  // The size of the area the sheet slides in, so snap heights and scroll space are exact.
-  const [containerHeight, setContainerHeight] = useState(0);
 
   const moveTo = useCallback(
     (target: MapRegion) => {
@@ -233,7 +290,10 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
     <View
       testID="map-screen"
       style={styles.flex}
-      onLayout={(event) => setContainerHeight(event.nativeEvent.layout.height)}
+      onLayout={(event) => {
+        setContainerHeight(event.nativeEvent.layout.height);
+        setContainerWidth(event.nativeEvent.layout.width);
+      }}
     >
       <MapView
         ref={mapRef}
@@ -266,10 +326,24 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
                 selected: item.pin.id === selected?.id,
                 onSelect: onSelectPin,
                 zoomedIn,
+                promotion: promotionLook(item.pin, largeIds),
               })}
             </Fragment>
           ),
         )}
+        {/* Empty while the view is too wide (the large set is worked out for drawn views only). */}
+        {largePins.map((pin) => (
+          <Fragment key={`p-${pin.id}`}>
+            {config.renderMarker({
+              pin,
+              cuisine: cuisineByCode.get(pin.cuisine_code),
+              selected: pin.id === selected?.id,
+              onSelect: onSelectPin,
+              zoomedIn,
+              promotion: 'large',
+            })}
+          </Fragment>
+        ))}
       </MapView>
       <View
         pointerEvents="box-none"
@@ -367,6 +441,7 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
         detailsLabel={config.texts.detailsLabel}
         placesTitle={config.texts.placesTitle}
         emptyText={config.texts.listEmpty}
+        useSponsored={config.useSponsored}
       />
     </View>
   );

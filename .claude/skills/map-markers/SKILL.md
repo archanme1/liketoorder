@@ -18,42 +18,27 @@ Product rules live in `docs/product/v1.md` §6–7. This skill is the *how*.
 | Organic | Country flag in a rounded pill with soft shadow | 32×24 flag, 40pt hit area |
 | Neutral | Cuisine icon in same pill (no country fits) | same |
 | Cluster | Circle with count; may show up to 3 mini flags | 36–48 by count |
-| Promoted | Same flag pill + small "Ad" badge + highlight ring, rises and falls | same size as organic (never bigger) |
+| Promoted, large (spec 16) | Pill about 1.3 times the flag pill (`size.promotedFlagWidth/Height`, 42 x 31) inside the ad ring (`colors.adRing`, `stroke.adRing`) + written "Ad" badge; pops in once, then rises and falls | box `size.promotedMarker` (64), so the float never clips |
+| Promoted, ringed (spec 16) | Same size flag pill inside the ad ring + "Ad" badge; still | same as organic (never bigger) |
 
-## Clustering + promoted markers
-- Feed **only organic** sellers into supercluster.
-- Render promoted sellers **separately, never clustered**, with higher `zIndex`, so when zoomed out they "pop out" of the cluster with their highlight.
-- Zoomed in: organic markers render individually; promoted keep animating.
+## Clustering + promoted markers (spec 16)
+- `promotedLayout.ts` (pure) picks the **large** set for the settled region: at most `LARGE_PROMOTED_LIMIT` (8), never two closer than `PROMOTED_MIN_SPACING_PX` (60 points) on screen, ordered by the daily UTC rank (`dailyRankKey`), with the last region's set kept first so a pan never reshuffles it.
+- Only the large ones are kept out of supercluster: `BusinessMapScreen` builds the index from the pins **minus the large ids** and draws the large ones on their own (`zIndex` 3, selected 4). `clustering.ts` knows nothing about promotions.
+- Every other promoted place is a ringed normal-size flag (`FlagMarker promotion="ring"`, `zIndex` 3) and clusters like any pin. `promotionLook(pin, large)` gives `'none' | 'ring' | 'large'`.
+- Zooming out shrinks the distances, so some large markers become ringed ones and join clusters; zooming in makes room and new ones pop in.
+- The large set is kept in screen state and worked out again during render only when the settled region, the pins or the map's measured size change (the same pattern as `usePinsQuery`'s last good answer). Nothing is large until the map has been measured (`onLayout`).
 - Recompute clusters on `onRegionChangeComplete` (not on every frame).
 
-## The rise-and-fall animation
-```tsx
-import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming,
-  Easing, useReducedMotion } from 'react-native-reanimated';
-
-const AMPLITUDE = 4;      // points — subtle
-const DURATION = 1400;    // ms per half-cycle
-
-export function useFloat() {
-  const reduceMotion = useReducedMotion();
-  const y = useSharedValue(0);
-  useEffect(() => {
-    if (reduceMotion) { y.value = 0; return; }
-    y.value = withRepeat(
-      withTiming(-AMPLITUDE, { duration: DURATION, easing: Easing.inOut(Easing.sin) }),
-      -1, true,
-    );
-  }, [reduceMotion]);
-  return useAnimatedStyle(() => ({ transform: [{ translateY: y.value }] }));
-}
-```
-- Easing must be `inOut(sin)` — smooth, no bounce, no flashing, no scale pulsing.
-- Reduce motion ON → no movement; the highlight ring alone marks it.
-- Add a small random start delay per marker so several ads don't move in lockstep.
+## Pop-in, then rise and fall (`usePromotedFloat`, spec 16)
+- **Pop-in once:** scale from 0.8 to 1 in 220 ms, `Easing.out(Easing.cubic)`, no spring, no overshoot.
+- **Then float:** `translateY` to -4 and back, 1400 ms each way, `Easing.inOut(Easing.sin)`, `withRepeat(..., -1, true)`, after the pop-in plus a random 0 to 1400 ms delay drawn once per marker, so ads never move in step.
+- No repeating grow-and-shrink, no flashing, no pop-out.
+- **Reduce Motion = no movement at all**: no pop-in and no float, the same larger marker with ring and badge, still. Read both Reanimated's `useReducedMotion()` (correct on the first frame) and our live `useReduceMotion()` (starts as false, then follows the setting). Turned on while floating: `cancelAnimation` and back to rest. Once seen, the marker stays still until it is drawn again, even if the setting is turned back off.
+- The float moves the marker's picture on screen only, never its coordinate.
 
 ## Performance rules
-- Organic markers: `tracksViewChanges={false}` after the flag image has loaded (set true → false on image `onLoad`). This stops Android re-rasterising every marker.
-- Promoted markers need `tracksViewChanges={true}` to animate on Android. That's OK because they're few. If profiling shows jank, fall back to an overlay: an `Animated.View` positioned with `mapRef.pointForCoordinate` above the map.
+- Organic markers: `tracksViewChanges` is true while a marker is new or its look just changed, and false `TRACK_VIEW_MS` (300 ms) later (`useTracksViewChanges`, keyed on the look), so a late icon font still lands. This stops Android re-rasterising every marker.
+- Large promoted markers keep `tracksViewChanges` on while they move (`animating`) and for 300 ms after a look change (`settling`: new, selected, cuisine loaded, or stopping for Reduce Motion, which is how the still frame gets drawn), so at most 8 re-draw continuously; with Reduce Motion they stop after that like every other marker. Ringed promoted flags behave like organic ones. The overlay fallback (an `Animated.View` placed with `mapRef.pointForCoordinate`) was not needed (spec 16 spike: go).
 - Memoize marker components (`React.memo`) and pass stable callbacks (`useCallback`).
 - Flags: bundle local PNG/SVG assets keyed by ISO code (`assets/flags/ca.png`) — no network fetch per marker.
 - Only render markers within the visible region (+ small padding).
@@ -62,7 +47,7 @@ export function useFloat() {
 - `onPress` on a marker sets `selectedSellerId` (Zustand or screen state) and snaps the sheet to the half position. Do not navigate away; keep the map region.
 - Snap points: `['15%', '50%', '92%']`. Swipe down dismisses and clears selection.
 - Selected marker gets a slightly darker ring (not bigger).
-- Promoted seller: sheet shows a "Sponsored" label at the top.
+- Promoted seller (spec 16): `SponsoredLabel` in the sheet's fixed header above the title, from the details once they have answered (`sponsored`, or false when the place is not available) and from `pin.promoted` only while they load or when their request failed (`useRestaurantSponsored` / `useHomemadeSponsored`). The sheet's `useSponsored` prop is required. The title's spoken label becomes "<name>, sponsored". Each tab's config gives the sheet `useSponsored`, which reads the same details query as the body (no extra request).
 
 ## Sheet content order (spec 08 Decision 15, both tabs)
 - Fixed header (name, flag, cuisine) outside the scroll. Inside the scroll, top to bottom: cover banner (88 pt, `size.coverBanner`, `PhotoTile width="100%"`, nothing when there is no cover), homemade safety row (`HomemadeDisclaimer`, collapsed by default at every size), menu-page thumbnails (96 pt, `size.photoThumb`, own viewer), menu items, gallery (`useCoverAndGallery`: banner and gallery share one viewer; "No photos yet" only with neither), then the address + Directions (restaurant) or the approximate-area note (homemade).
@@ -70,7 +55,9 @@ export function useFloat() {
 - **Action row (spec 09 Gate F):** under the fixed header and also outside the scroll sits the fixed action row (`SheetActionRow`, `testID="sheet-actions"`): one or two wrapping buttons, today Request pickup, later Reserve a table (spec 11). It is given to the sheet as the `Actions` prop (set in each tab's config) and built from `useSheetActions`; it is shown at the half and full snaps and **hidden at the collapsed snap**, which has room for the header only. Do not grow the collapsed snap for it: `collapsedSnap`, `snapHeights` and `scrollBottomSpace` are pinned by spec 07 tests. It costs about 56 pt of the scroll area (a restaurant shows about one item row less at half). A new sheet action is a new entry in `useSheetActions`, never a button inside the scrolling body.
 
 ## Accessibility
-- Marker `accessibilityLabel`: "<Business name>, <Cuisine> cuisine" + ", sponsored" for ads.
+- Marker `accessibilityLabel`: "<Business name>, <Cuisine> cuisine" + ", sponsored" for ads (`sponsoredLabel` in `AdBadge.tsx`; large and ringed alike; homemade: "..., homemade, approximate area, sponsored").
+- The "Ad" badge and the "Sponsored" label are written text, hidden from screen readers because the spoken label already says it. The badge does not scale with text size (the marker is a fixed-size picture); `SponsoredLabel` does.
+- The places list rows of promoted places show "Sponsored" and say ", sponsored".
 - Cluster: "<n> places, double tap to zoom in".
 - Provide a "List view" button on the map for screen-reader users.
 
@@ -81,6 +68,7 @@ export function useFloat() {
 - `Circle` goes under every flag (`zIndex` 0; flags are 1 and 2).
 - **The circle is not tappable.** react-native-maps 1.29 gives `Circle` no `onPress`, no `tappable` and no `stopPropagation` (only `Marker` has `stopPropagation`), on iOS or Android; the Android `overlay-press` event is for ground overlays, not circles. A tap inside a circle reaches the map as a plain map press (iOS: no `action` field; Android: `action: 'press'`), so it clears the selection like any bare-map tap. Only the flag opens the sheet. The jest `Circle` fake has no press either.
 - The sheet says "approximate area" on purpose: no address, no Directions, no place ID. Marker label: "<Name>, <Cuisine> cuisine, homemade, approximate area".
+- A promoted cook (spec 16) keeps exactly the same circle (500 m, the server point, the same colours, only when zoomed in); only the flag becomes large or ringed. The float is a screen offset of the picture, never a different map position.
 
 ## Lessons from spec 07 (read before any map work)
 Each one cost a fix after the spec 07 manual run. Source: `.claude/specs/07-restaurant-map.md` (Decisions 23–31, device-run notes).
@@ -110,3 +98,13 @@ Each one cost a fix after the spec 07 manual run. Source: `.claude/specs/07-rest
 **Setup and tests**
 - The app needs the `expo-dev-client` development build (`npx expo run:ios`, run by Archan); Expo Go cannot run the map.
 - Local demo seed data makes pgTAP tests that count rows fail until `npx supabase db reset`.
+
+## Lessons from spec 16 (promoted markers)
+Source: `.claude/specs/16-promotions.md` (Decision D14 and the PR 3 gates).
+
+- **Spike result: go.** Reanimated inside react-native-maps custom markers (`tracksViewChanges` on only for the animating ones) shows the pop-in and the float. Judged **by eye on the iOS Simulator only** (13 active campaigns from `scripts/seed/promotions.ts --many`): visible motion, no clipping, smooth idle and pan, taps open and close the sheet. No frame-rate numbers were collected. The frame rate with 8 animated markers and 500 pins on a real iPhone and a real Android phone is a before-launch item (v1 section 16).
+- A marker is drawn as a picture of its box: give an animated marker room for its movement (`size.promotedMarker`), or the top of the float is cut off.
+- Reanimated needs no babel change (babel-preset-expo adds the worklets plugin) and no rebuild (the dev build already has it, through @gorhom/bottom-sheet).
+- **jest:** the official `react-native-reanimated/mock` fails under jest-expo with Reanimated 4.7.1 (its index runs the native CSS setup). `jest.setup.ts` has a hand-written fake: animation helpers return their end value and are jest.fns (`withTiming`, `withDelay`, `withRepeat`, `cancelAnimation`), `useReducedMotion` is a jest.fn, and `__reset()` runs after each test (guarded: expo-router's `renderRouter` suites install their own reanimated mock). Prove "no motion" by asserting those spies were never called. The style it returns is the first frame only (nothing re-renders when a shared value changes). A name it lacks throws "not in the jest Reanimated fake"; the names react-native-gesture-handler feature-detects are declared absent.
+- The map's `onLayout` gives width and height; screen tests must fire it (`fireEvent(screen.getByTestId('map-screen'), 'layout', ...)`) before anything is large.
+- With both press layers in place (`stopPropagation` and `isMarkerPressEvent`), removing one alone does not reopen the closing-sheet bug, so each layer has its own test: the marker's `stopPropagation` prop, and the screen with `__setIgnoreStopPropagation(true)`.

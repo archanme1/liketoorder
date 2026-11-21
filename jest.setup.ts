@@ -389,3 +389,106 @@ jest.mock('@react-native-community/datetimepicker', () => {
   const DateTimePickerAndroid = { open: jest.fn(), dismiss: jest.fn(async () => true) };
   return { __esModule: true, default: DateTimePicker, DateTimePickerAndroid };
 });
+
+// -- Spec 16 promoted markers: react-native-reanimated --
+// Hand-written, because the library's own `react-native-reanimated/mock` fails under jest-expo with
+// Reanimated 4.7.1 (its index runs the native CSS setup, which the JS fallback refuses). Same
+// names as the library for what the app uses. Like the library's jest mode, an animation helper
+// returns its end value and calls its completion callback at once; withTiming, withDelay,
+// withRepeat and cancelAnimation are jest.fns over that behaviour, so tests can read what was
+// started (or prove nothing was). A shared value is a plain { value } box kept per component.
+// useReducedMotion (the system setting, read synchronously) is a jest.fn returning false; tests
+// override it with jest.mocked(useReducedMotion).mockReturnValue(true). __reset() restores every
+// fake after each test.
+// useAnimatedStyle runs the worklet once per render and nothing re-renders when a shared value
+// changes, so the style a test reads is the FIRST frame only (e.g. scale 0.8 before the pop-in);
+// assert what was started through the jest.fns, never an end state through the style.
+// Any name the fake does not define throws "not in the jest Reanimated fake: <name>" at once, so
+// a new import fails where it is used instead of as a mysterious undefined later.
+jest.mock('react-native-reanimated', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const React = require('react');
+  const { View, Text, ScrollView, Image } = require('react-native');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const identity = (t: number) => t;
+  const curve = () => identity;
+  const Easing = {
+    linear: identity,
+    ease: identity,
+    quad: identity,
+    cubic: identity,
+    sin: identity,
+    exp: identity,
+    in: curve,
+    out: curve,
+    inOut: curve,
+    bezier: curve,
+  };
+  const impl = {
+    withTiming: (to: unknown, _config?: unknown, done?: (finished: boolean) => void) => {
+      done?.(true);
+      return to;
+    },
+    withDelay: (_ms: number, animation: unknown) => animation,
+    withRepeat: (animation: unknown, _times?: number, _reverse?: boolean) => animation,
+    cancelAnimation: (_value: unknown) => undefined,
+    useReducedMotion: () => false,
+  };
+  const fns = {
+    withTiming: jest.fn(impl.withTiming),
+    withDelay: jest.fn(impl.withDelay),
+    withRepeat: jest.fn(impl.withRepeat),
+    cancelAnimation: jest.fn(impl.cancelAnimation),
+    useReducedMotion: jest.fn(impl.useReducedMotion),
+  };
+  const Animated = {
+    View,
+    Text,
+    ScrollView,
+    Image,
+    createAnimatedComponent: (component: unknown) => component,
+  };
+  const fake: Record<string | symbol, unknown> = {
+    // react-native-gesture-handler feature-detects these (lib/.../reanimatedWrapper.js and its
+    // gesture hooks). Deliberately absent, as before this fake existed: they read as undefined.
+    setGestureState: undefined,
+    isSharedValue: undefined,
+    useEvent: undefined,
+    useHandler: undefined,
+    useComposedEventHandler: undefined,
+    NativeEventsManager: undefined,
+    __esModule: true,
+    default: Animated,
+    ...Animated,
+    Easing,
+    useSharedValue: (initial: unknown) => {
+      const [box] = React.useState(() => ({ value: initial }));
+      return box;
+    },
+    useAnimatedStyle: (style: () => object) => style(),
+    ...fns,
+    __reset: () => {
+      for (const key of Object.keys(fns) as (keyof typeof fns)[]) {
+        fns[key].mockReset();
+        (fns[key] as jest.Mock).mockImplementation(impl[key]);
+      }
+    },
+  };
+  // Property probes made by Babel's import helpers and Jest's own formatting, not by app code.
+  const probes = new Set(['then', 'toJSON', '$$typeof', 'asymmetricMatch', 'nodeType', 'constructor']);
+  return new Proxy(fake, {
+    get(target, name) {
+      if (name in target) return target[name];
+      if (typeof name === 'symbol' || probes.has(name) || /^(__|@@)/.test(name)) return undefined;
+      throw new Error(`not in the jest Reanimated fake: ${name} (add it in jest.setup.ts)`);
+    },
+  });
+});
+
+afterEach(() => {
+  // expo-router's testing library (renderRouter) installs its own reanimated mock in the suites
+  // that use it; only our fake has __reset.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const reanimated = require('react-native-reanimated') as { __reset?: () => void };
+  reanimated.__reset?.();
+});

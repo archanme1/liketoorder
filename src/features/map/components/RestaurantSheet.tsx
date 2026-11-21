@@ -17,11 +17,13 @@ import { AccessibilityInfo, Pressable, StyleSheet, useWindowDimensions, View } f
 import { Text } from '@/components/ui';
 import { CuisineLabel } from '@/features/cuisines/components/CuisineLabel';
 import type { Cuisine } from '@/features/cuisines/schema';
+import { SponsoredLabel } from '@/features/promotions/components/SponsoredLabel';
 import { useTheme } from '@/theme/useTheme';
 
 import { useReduceMotion } from '@/lib/useReduceMotion';
 import type { Pin } from '../schema';
 
+import { sponsoredLabel } from './AdBadge';
 import { PlacesList, PLACES_TITLE } from './PlacesList';
 import type { SheetActionsProps } from './SheetActions';
 import { SheetDetails } from './SheetDetails';
@@ -57,6 +59,11 @@ type RestaurantSheetProps = {
   detailsLabel?: string;
   placesTitle?: string;
   emptyText?: string;
+  /**
+   * Spec 16: the open place's details say "sponsored". Required: it must read the same details
+   * query as this tab's DetailsBody, so there is no restaurant default to fall back on by mistake.
+   */
+  useSponsored: (id: string | null) => boolean | undefined;
 };
 
 /** What a sheet body (the details of one place) is given. */
@@ -131,6 +138,7 @@ export const RestaurantSheet = memo(function RestaurantSheet({
   detailsLabel = 'Restaurant details',
   placesTitle = PLACES_TITLE,
   emptyText,
+  useSponsored,
 }: RestaurantSheetProps) {
   const { colors, space, radius, size } = useTheme();
   const { height: windowHeight, fontScale } = useWindowDimensions();
@@ -182,6 +190,10 @@ export const RestaurantSheet = memo(function RestaurantSheet({
     gap: space.lg,
   };
   const title = detailsMode ? selected.name : placesTitle;
+  // "Sponsored" at the top (spec 16): from the details once they have answered (false when the
+  // place is not available), from the pin only while they load or when the request failed.
+  const detailsSponsored = useSponsored(selected?.id ?? null);
+  const sponsored = detailsMode && (detailsSponsored ?? selected.promoted);
 
   return (
     <BottomSheet
@@ -225,7 +237,15 @@ export const RestaurantSheet = memo(function RestaurantSheet({
         >
           <View style={[styles.header, { gap: space.md, paddingHorizontal: space.lg }]}>
             <View style={[styles.flex, { gap: space.xs }]}>
-              <View ref={titleRef} accessible accessibilityRole="header" testID="sheet-title">
+              {sponsored ? <SponsoredLabel /> : null}
+              <View
+                ref={titleRef}
+                accessible
+                accessibilityRole="header"
+                // The written label is hidden from screen readers; the title says it instead.
+                accessibilityLabel={sponsored ? sponsoredLabel(title) : undefined}
+                testID="sheet-title"
+              >
                 <Text
                   variant="title"
                   numberOfLines={3}

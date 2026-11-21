@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { charCount } from '@/features/food-log/text';
+import { detailsPhotoSchema } from '@/features/map/schema';
 
 import { checkHeadline, MAX_HEADLINE_CHARS, type HeadlineProblem } from './text';
 
@@ -93,3 +94,65 @@ export const promoteFormSchema = z.object({
   preferredStart: dateSchema.nullable(),
 });
 export type PromoteFormInput = z.input<typeof promoteFormSchema>;
+
+// -- Offers (spec 16 PR 4): the answer of list_offers_near ---------------------------------
+// Exactly the keys of the offer objects built in 20261120214854_promotions.sql. Strict like the map
+// schemas: an extra key (an owner, an exact point, a price, a status) means the server contract
+// changed, and the whole page is refused.
+
+export const OFFER_TYPES = ['restaurant', 'homemade'] as const;
+export type OfferType = (typeof OFFER_TYPES)[number];
+
+/** The server accepts exactly these (about 5, 15 or 30 km). */
+export const OFFER_DISTANCES = [5, 15, 30] as const;
+export type OfferDistance = (typeof OFFER_DISTANCES)[number];
+export const DEFAULT_OFFER_DISTANCE: OfferDistance = 15;
+
+/** list_offers_near's c_page. The server enforces it; the app never sends a size. */
+export const OFFERS_PAGE_SIZE = 20;
+
+/** The cursor list_offers_near builds and accepts: day | band | rotation key | business id. */
+export const OFFER_CURSOR_PATTERN =
+  /^[0-9]{4}-[0-9]{2}-[0-9]{2}\|[0-2]\|[0-9a-f]{32}\|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** The business's cover photo: the same five keys as a details photo, and always a cover. */
+export const offerCoverSchema = detailsPhotoSchema.refine((photo) => photo.kind === 'cover');
+
+export const offerSchema = z.strictObject({
+  business_id: z.uuid(),
+  type: z.enum(OFFER_TYPES),
+  name: z.string().min(1),
+  cuisine_code: z.string().min(1),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  accepts_table_requests: z.boolean(),
+  category: z.enum(PROMOTION_CATEGORIES),
+  headline: z
+    .string()
+    .refine((value) => charCount(value) >= 1 && charCount(value) <= MAX_HEADLINE_CHARS),
+  ends_at: timestampSchema,
+  band: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  cover: offerCoverSchema.nullable(),
+});
+export type Offer = z.infer<typeof offerSchema>;
+
+export const offersPageSchema = z.strictObject({
+  offers: z.array(offerSchema).max(OFFERS_PAGE_SIZE),
+  next_cursor: z.string().regex(OFFER_CURSOR_PATTERN).nullable(),
+});
+export type OffersPage = z.infer<typeof offersPageSchema>;
+
+/** The list's filters. Null means All; `tables` false means any place. */
+export type OfferFilters = {
+  distanceKm: OfferDistance;
+  category: PromotionCategory | null;
+  type: OfferType | null;
+  tables: boolean;
+};
+
+export const DEFAULT_OFFER_FILTERS: OfferFilters = {
+  distanceKm: DEFAULT_OFFER_DISTANCE,
+  category: null,
+  type: null,
+  tables: false,
+};

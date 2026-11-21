@@ -72,7 +72,7 @@ function mockProfileTable() {
   mocked.from.mockReturnValue(builder);
 }
 
-const TAB_LABELS = ['Restaurants', 'Homemade', 'Profile'];
+const TAB_LABELS = ['Restaurants', 'Homemade', 'Offers', 'Profile'];
 
 describe('tab bar', () => {
   beforeEach(async () => {
@@ -88,7 +88,7 @@ describe('tab bar', () => {
       mocked.auth.getSession.mockResolvedValue({ data: { session: null } });
     });
 
-    it('shows exactly Restaurants, Homemade and Profile', async () => {
+    it('shows exactly Restaurants, Homemade, Offers and Profile', async () => {
       await renderRouter('./app', { initialUrl: '/restaurants' });
       for (const label of TAB_LABELS) {
         expect(await screen.findByLabelText(`${label} tab`)).toBeTruthy();
@@ -120,6 +120,7 @@ describe('tab bar', () => {
       const restaurants = await screen.findByLabelText('Restaurants tab');
       expect(restaurants).toBeSelected();
       expect(screen.getByLabelText('Homemade tab')).not.toBeSelected();
+      expect(screen.getByLabelText('Offers tab')).not.toBeSelected();
       expect(screen.getByLabelText('Profile tab')).not.toBeSelected();
     });
 
@@ -154,7 +155,7 @@ describe('tab bar', () => {
       mocked.auth.getSession.mockResolvedValue({ data: { session } });
     });
 
-    it('shows Restaurants, Homemade, Requests and Profile, and no Manage', async () => {
+    it('shows Restaurants, Homemade, Offers, Requests and Profile, and no Manage', async () => {
       await renderRouter('./app', { initialUrl: '/restaurants' });
       for (const label of [...TAB_LABELS, 'Requests']) {
         expect(await screen.findByLabelText(`${label} tab`)).toBeTruthy();
@@ -183,6 +184,7 @@ describe('tab bar', () => {
       expect(screen.getByText('Manage')).toBeTruthy();
       await waitFor(() => expect(screen.queryByLabelText('Restaurants tab')).toBeNull());
       expect(screen.queryByLabelText('Homemade tab')).toBeNull();
+      expect(screen.queryByLabelText('Offers tab')).toBeNull();
     });
 
     it('opens Manage Business from the Manage tab', async () => {

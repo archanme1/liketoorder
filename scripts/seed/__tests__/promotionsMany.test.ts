@@ -1,6 +1,7 @@
 import {
-  parseMany,
+  parseSeedMode,
   planManyPromotions,
+  planOffersPromotions,
   planPromotions,
   promotionSeedOwners,
 } from '../promotionsData';
@@ -71,23 +72,27 @@ describe('planManyPromotions (spec 16 PR 3 seed: more promoted places than the d
 describe('promotionSeedOwners (what both modes clean first)', () => {
   it('covers every owner of the default seed and of --many, once each', () => {
     const owners = promotionSeedOwners(NOW, 7);
-    const expected = new Set([...planPromotions(NOW, 7), ...many].map((p) => p.ownerUsername));
+    const expected = new Set(
+      [...planPromotions(NOW, 7), ...many, ...planOffersPromotions(NOW, 7)].map(
+        (p) => p.ownerUsername,
+      ),
+    );
     expect(new Set(owners)).toEqual(expected);
     expect(owners).toHaveLength(expected.size);
   });
 });
 
-describe('parseMany', () => {
-  it('is true only when --many is given', () => {
-    expect(parseMany([])).toBe(false);
-    expect(parseMany(['--many'])).toBe(true);
+describe('parseSeedMode for --many (moved from the removed parseMany)', () => {
+  it('is many only when --many is given', () => {
+    expect(parseSeedMode([])).toBe('default');
+    expect(parseSeedMode(['--many'])).toBe('many');
   });
 
   it('refuses any other argument, so a typo never seeds the default set by mistake', () => {
-    expect(() => parseMany(['--mnay'])).toThrow(
-      'Unknown argument --mnay. The only option is --many.',
+    expect(() => parseSeedMode(['--mnay'])).toThrow(
+      'Unknown argument --mnay. The only options are --many and --offers.',
     );
-    expect(() => parseMany(['--extra'])).toThrow(/Unknown argument --extra/);
-    expect(() => parseMany(['--other', '--many'])).toThrow(/Unknown argument --other/);
+    expect(() => parseSeedMode(['--extra'])).toThrow(/Unknown argument --extra/);
+    expect(() => parseSeedMode(['--other', '--many'])).toThrow(/Unknown argument --other/);
   });
 });

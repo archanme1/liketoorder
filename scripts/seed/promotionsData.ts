@@ -123,20 +123,6 @@ const MANY_LINES: { category: PromotionCategory; headline: string }[] = [
   { category: 'special_offer', headline: 'Curry leaf thali, extra roti free' },
 ];
 
-const KNOWN_ARGS: ReadonlySet<string> = new Set(['--many']);
-
-/**
- * The `--many` flag of scripts/seed/promotions.ts. Any other argument is refused, so a typo such as
- * `--mnay` stops the seed instead of quietly writing the default four campaigns.
- */
-export function parseMany(args: readonly string[]): boolean {
-  const unknown = args.filter((arg) => !KNOWN_ARGS.has(arg));
-  if (unknown.length > 0) {
-    throw new Error(`Unknown argument ${unknown.join(', ')}. The only option is --many.`);
-  }
-  return args.includes('--many');
-}
-
 /** 13 active campaigns (11 restaurants, 2 home cooks), each started half its length ago. */
 export function planManyPromotions(now: Date, lengthDays: number): PlannedPromotion[] {
   const owners = [
@@ -162,11 +148,121 @@ export function planManyPromotions(now: Date, lengthDays: number): PlannedPromot
   }));
 }
 
+// --offers (spec 16 PR 4): 22 campaigns running now, more than one Offers page of 20, so paging can
+// be tried in the Simulator. Everything within "About 30 km" of Oshawa (34 km from its grid point
+// 43.9, -78.85, the server's 4 km margin included): the 14 Oshawa restaurants, Whitby (045, 7 km),
+// Ajax (044, 15 km), Pickering (043, 20 km), Scarborough (040, 34 km) and the 5 Oshawa home cooks.
+// Only seed_rest_001 is left out (kept for the Promote invitation). Unlike --many, this mode also
+// promotes seed_rest_004, seed_rest_010 and seed_cook_1. At "About 15 km" (19 km) it gives exactly
+// 20 offers (no second page); only "About 30 km" shows paging (20, then 2).
+const OFFERS_RESTAURANTS = [
+  '002',
+  '003',
+  '004',
+  '005',
+  '006',
+  '007',
+  '008',
+  '009',
+  '010',
+  '011',
+  '012',
+  '013',
+  '014',
+  '040',
+  '043',
+  '044',
+  '045',
+];
+const OFFERS_COOKS = [1, 2, 3, 4, 5];
+
+const OFFERS_LINES: { category: PromotionCategory; headline: string }[] = [
+  { category: 'special_offer', headline: 'Pho for two, spring rolls on us' },
+  { category: 'new_dish', headline: 'New: tandoori mixed grill' },
+  { category: 'featured', headline: 'Jerk chicken, Saturday special' },
+  { category: 'special_offer', headline: 'Taco Tuesday, three for two' },
+  { category: 'new_dish', headline: 'New: lamb gyro platter' },
+  { category: 'featured', headline: 'Bento boxes made fresh daily' },
+  { category: 'special_offer', headline: 'Pad thai lunch with free iced tea' },
+  { category: 'new_dish', headline: 'New: haddock and mushy peas' },
+  { category: 'featured', headline: 'Korean fried chicken, our classic' },
+  { category: 'special_offer', headline: 'Piri piri chicken, half price Mondays' },
+  { category: 'new_dish', headline: 'New: falafel and halloumi plate' },
+  { category: 'featured', headline: 'Smoked brisket, 12 hours low and slow' },
+  { category: 'special_offer', headline: 'Late-night street tacos, two for one' },
+  { category: 'new_dish', headline: 'New: chicken adobo rice bowl' },
+  { category: 'featured', headline: 'Fish tacos by the bay' },
+  { category: 'special_offer', headline: 'Arepas lunch combo with a drink' },
+  { category: 'new_dish', headline: 'New: weekend brunch board' },
+  { category: 'featured', headline: 'Fresh pasta every Friday' },
+  { category: 'special_offer', headline: 'Jollof tray for four, dessert free' },
+  { category: 'new_dish', headline: 'New: dosa with three chutneys' },
+  { category: 'featured', headline: 'Empanadas baked to order' },
+  { category: 'special_offer', headline: 'Banchan set, an extra side free' },
+];
+
+/** 22 active campaigns (17 restaurants, 5 home cooks), each started half its length ago. */
+export function planOffersPromotions(now: Date, lengthDays: number): PlannedPromotion[] {
+  const owners = [
+    ...OFFERS_RESTAURANTS.map((n) => ({
+      ownerUsername: `seed_rest_${n}`,
+      ownerEmail: `seed-restaurant-${n}@example.com`,
+    })),
+    ...OFFERS_COOKS.map((n) => ({
+      ownerUsername: `seed_cook_${n}`,
+      ownerEmail: `seed-homemade-${n}@example.com`,
+    })),
+  ];
+  const startsAt = new Date(now.getTime() - (lengthDays / 2) * DAY_MS);
+  const endsAt = new Date(startsAt.getTime() + lengthDays * DAY_MS);
+  return owners.map((owner, index) => ({
+    state: 'active',
+    ...owner,
+    ...OFFERS_LINES[index],
+    status: 'approved',
+    preferredStart: null,
+    startsAt: startsAt.toISOString(),
+    endsAt: endsAt.toISOString(),
+  }));
+}
+
+export type SeedMode = 'default' | 'many' | 'offers';
+
+const MODE_ARGS: ReadonlySet<string> = new Set(['--many', '--offers']);
+
 /**
- * Every demo owner either plan uses. Both modes first remove the campaigns of all of them, so a
- * switch between the default seed and --many never leaves rows from the other one behind.
+ * The flag of scripts/seed/promotions.ts: none, --many or --offers. Any other argument, or both
+ * flags together, is refused, so a typo never quietly writes the default four campaigns.
+ */
+export function parseSeedMode(args: readonly string[]): SeedMode {
+  const unknown = args.filter((arg) => !MODE_ARGS.has(arg));
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown argument ${unknown.join(', ')}. The only options are --many and --offers.`,
+    );
+  }
+  const many = args.includes('--many');
+  const offers = args.includes('--offers');
+  if (many && offers) throw new Error('Use --many or --offers, not both.');
+  return offers ? 'offers' : many ? 'many' : 'default';
+}
+
+/** The campaigns one mode writes. */
+export function planForMode(mode: SeedMode, now: Date, lengthDays: number): PlannedPromotion[] {
+  if (mode === 'offers') return planOffersPromotions(now, lengthDays);
+  if (mode === 'many') return planManyPromotions(now, lengthDays);
+  return planPromotions(now, lengthDays);
+}
+
+/**
+ * Every demo owner any mode uses. Each mode first removes the campaigns of all of them, so switching
+ * between the default seed, --many and --offers never leaves rows from another mode behind.
  */
 export function promotionSeedOwners(now: Date, lengthDays: number): string[] {
-  const all = [...planPromotions(now, lengthDays), ...planManyPromotions(now, lengthDays)];
+  const all = [
+    ...planPromotions(now, lengthDays),
+    ...planManyPromotions(now, lengthDays),
+    ...planOffersPromotions(now, lengthDays),
+  ];
   return [...new Set(all.map((plan) => plan.ownerUsername))].sort();
 }

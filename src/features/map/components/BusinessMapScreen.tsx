@@ -6,17 +6,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useCuisines } from '@/features/cuisines/hooks/useCuisines';
 import type { Cuisine } from '@/features/cuisines/schema';
-import { Text } from '@/components/ui';
+import { Button, Card, Text } from '@/components/ui';
+import { OFFER_ENDED_TEXT } from '@/features/promotions/messages';
 import { useTheme } from '@/theme/useTheme';
 
 import { createClusterIndex } from '../clustering';
 import { useInitialRegion } from '../hooks/useInitialRegion';
 import { useLocationPermission } from '../hooks/useLocationPermission';
 import { useMapRegion } from '../hooks/useMapRegion';
+import { useOfferTarget } from '../hooks/useOfferTarget';
 import { useReduceMotion } from '@/lib/useReduceMotion';
 import { mapKeyName, useMapConfigured } from '../mapConfig';
 import { isMarkerPressEvent } from '../mapEvents';
 import { MAP_STYLE } from '../mapStyle';
+import type { OfferTarget } from '../offerTarget';
 import { pickLargePromoted, promotionLook, utcDateOf } from '../promotedLayout';
 import {
   CIRCLE_MAX_DELTA,
@@ -74,7 +77,21 @@ function nextLargeIds(inputs: LargeInputs, previous: ReadonlySet<string>): Reado
 // The map screen both tabs share. Public: guests see the map too. The Google map, the opening
 // view, the location flow, and the places in the visible area as markers and clusters, with the
 // details sheet. What differs between the tabs (data, texts, marker, sheet body) is the config.
-export function BusinessMapScreen({ config }: { config: BusinessMapConfig }) {
+type BusinessMapScreenProps = {
+  config: BusinessMapConfig;
+  /** Spec 16: a place to open, from an Offers card (the route's params). */
+  offerTarget?: OfferTarget | null;
+  /** The target was taken in; the route clears its params. */
+  onOfferTargetHandled?: () => void;
+};
+
+const noop = () => {};
+
+export function BusinessMapScreen({
+  config,
+  offerTarget = null,
+  onOfferTargetHandled = noop,
+}: BusinessMapScreenProps) {
   const configured = useMapConfigured();
   if (!configured) {
     // __DEV__ only: the variable name is a hint for the developer, not for users.
@@ -84,10 +101,20 @@ export function BusinessMapScreen({ config }: { config: BusinessMapConfig }) {
       </View>
     );
   }
-  return <ConfiguredMap config={config} />;
+  return (
+    <ConfiguredMap
+      config={config}
+      offerTarget={offerTarget}
+      onOfferTargetHandled={onOfferTargetHandled}
+    />
+  );
 }
 
-function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
+function ConfiguredMap({
+  config,
+  offerTarget,
+  onOfferTargetHandled,
+}: Required<BusinessMapScreenProps>) {
   const { colors, space, radius, size, opacity } = useTheme();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReduceMotion();
@@ -184,11 +211,6 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
   const [mapReady, setMapReady] = useState(false);
   const onMapReady = useCallback(() => setMapReady(true), []);
   const movedTo = useRef<MapRegion | null>(null);
-  useEffect(() => {
-    if (!myRegion || !mapReady || movedTo.current === myRegion) return;
-    movedTo.current = myRegion;
-    moveTo(myRegion);
-  }, [myRegion, mapReady, moveTo]);
 
   // Tapping a flag on the map does not move the map.
   const onSelectPin = useCallback((pin: Pin) => {
@@ -212,6 +234,31 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
     },
     [moveTo],
   );
+  // Spec 16 card to map (Decision D15): the camera, a fresh details read, then the sheet or the
+  // "offer has ended" message.
+  const currentRegion = useCallback(() => regionRef.current, []);
+  const offer = useOfferTarget({
+    target: offerTarget,
+    ready: mapReady,
+    detailsKey: config.detailsKey,
+    fetchDetails: config.fetchDetails,
+    pins: pins.pins,
+    moveTo,
+    currentRegion,
+    open: onSelectPin,
+    onHandled: onOfferTargetHandled,
+  });
+  const { dismissEnded } = offer;
+
+  // The position arrived in time (see above): move there once the map is ready.
+  useEffect(() => {
+    if (!myRegion || !mapReady || movedTo.current === myRegion) return;
+    movedTo.current = myRegion;
+    // Spec 16: an Offers card already moved the camera to its place; a late fix must not undo it.
+    if (offer.cameraTaken.current) return;
+    moveTo(myRegion);
+  }, [myRegion, mapReady, moveTo, offer.cameraTaken]);
+
   const onClearSelection = useCallback(() => {
     setSelected(null);
     setListOpen(false);
@@ -222,8 +269,9 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
     (event: unknown) => {
       if (isMarkerPressEvent(event)) return;
       onClearSelection();
+      dismissEnded();
     },
-    [onClearSelection],
+    [onClearSelection, dismissEnded],
   );
   const onOpenList = useCallback(() => {
     setSelected(null);
@@ -372,6 +420,14 @@ function ConfiguredMap({ config }: { config: BusinessMapConfig }) {
           />
         ) : null}
         {empty ? <EmptyAreaNotice title={config.texts.emptyTitle} /> : null}
+        {offer.ended ? (
+          <Card style={{ gap: space.sm }}>
+            <Text accessibilityRole="alert" accessibilityLiveRegion="polite">
+              {OFFER_ENDED_TEXT}
+            </Text>
+            <Button title="Close" onPress={dismissEnded} variant="secondary" />
+          </Card>
+        ) : null}
         {notice ? (
           <LocationNotice
             reason={notice}

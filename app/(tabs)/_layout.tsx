@@ -29,13 +29,15 @@ function tabOptions(label: string, icon: TabIconName, badge?: number) {
 // Built once: they depend only on constants, so the tab bar gets stable props.
 const RESTAURANTS_OPTIONS = tabOptions('Restaurants', 'restaurant');
 const HOMEMADE_OPTIONS = tabOptions('Homemade', 'home');
+const OFFERS_OPTIONS = tabOptions('Offers', 'pricetag');
 const PROFILE_OPTIONS = tabOptions('Profile', 'person');
 const MANAGE_OPTIONS = tabOptions('Manage', 'storefront');
 
 // Which tabs show is decided in one place (useTabVisibility). Hiding is UX only: seller data and
-// every request are protected by RLS. A guest sees Restaurants, Homemade, Profile; a customer adds
-// Requests; a seller (seller mode on) sees Requests, Manage, Profile, so the home route
-// /restaurants sends a seller to Requests as soon as the profile has loaded.
+// every request are protected by RLS. A guest sees Restaurants, Homemade, Offers, Profile; a
+// customer adds Requests; a seller (seller mode on) sees Requests, Manage, Profile, so the home
+// route /restaurants sends a seller to Requests as soon as the profile has loaded. Offers (spec 16)
+// shares the maps' guard: it is for customers and guests, and out of the way in seller mode.
 export default function TabsLayout() {
   const { colors, size } = useTheme();
   const visibility = useTabVisibility();
@@ -55,6 +57,7 @@ export default function TabsLayout() {
       <Tabs.Protected guard={visibility.maps} redirectTo="/requests">
         <Tabs.Screen name="restaurants" options={RESTAURANTS_OPTIONS} />
         <Tabs.Screen name="homemade" options={HOMEMADE_OPTIONS} />
+        <Tabs.Screen name="offers" options={OFFERS_OPTIONS} />
       </Tabs.Protected>
       <Tabs.Protected guard={visibility.requests} redirectTo="/restaurants">
         <Tabs.Screen name="requests" options={requestsOptions} />

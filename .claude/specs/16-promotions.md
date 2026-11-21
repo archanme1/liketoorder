@@ -3,7 +3,7 @@
 **Branch:** `feature/promotions-backend` (PR 1), then `feature/promotions-seller` (PR 2), `feature/promotions-map` (PR 3), `feature/promotions-offers` (PR 4). Each is cut from `main` after the previous PR is merged.
 **Product spec:** `docs/product/v1.md` §7 (Ads), §4 (Navigation), §13 (Legal: disclose "Sponsored"), §14 row 16, §3 (out of scope), §15 Q1, Q3 and Q5, §16 (before launch)
 **Plan mode:** required: it changes the schema and RLS, touches more than 5 files and changes navigation (a new tab).
-**Status:** PR 2 merged as #36 (3dda392); PR 3 in progress
+**Status:** ✅ Shipped. PR 4 merged as #38 (squash commit on main; its hash is recorded by the next branch's first commit, as for PR 3). PR 1 #35 (ad3e19d), PR 2 #36 (3dda392), PR 3 #37 (cc01fa5).
 
 ## Overview
 A seller asks for a fixed-price, fixed-length promotion from Manage Business. Archan is paid outside the app (invoice) and approves it with one SQL call. While the campaign runs, the place gets three things:
@@ -197,6 +197,12 @@ None. No payment provider, no secrets.
 - PR 4:
   - `app/(tabs)/offers.tsx`
   - the Offers components, hooks and helpers listed above
+  - `src/features/promotions/offersArea.ts` (the fallback area: last Restaurants view, then last Homemade view, then the launch area)
+  - `src/features/promotions/hooks/useOffersOrigin.ts` (decides "near me")
+  - `src/features/promotions/components/OfferSkeleton.tsx`
+  - `src/features/promotions/__fixtures__/offers.ts` (a faithful fake of `list_offers_near`)
+  - `src/features/map/offerTarget.ts` (parses the `business`, `lat`, `lng` route params)
+  - `src/features/map/hooks/useOfferTarget.ts` (card to map)
   - jest tests
 
 ## Files to change
@@ -226,6 +232,9 @@ None. No payment provider, no secrets.
   - `src/features/map/region.ts`
   - `src/features/map/components/LocationPrompt.tsx` (wording)
   - `app.config.ts` (the location permission text, which needs a native rebuild)
+  - `src/features/map/components/BusinessMapScreen.tsx`, `RestaurantMapScreen.tsx`, `HomemadeMapScreen.tsx`, `businessMapConfig.tsx`, `homemadeMapConfig.tsx` (card to map: the target, fresh details, the late-fix guard)
+  - `src/features/navigation/components/TabIcon.tsx` (the `pricetag` icon)
+  - `scripts/seed/promotions.ts`, `scripts/seed/promotionsData.ts` and its test (the `--offers` flag: 25 active campaigns around Oshawa, for paging)
 
 ## New dependencies
 No new dependencies. `react-native-reanimated` 4.7.1 is already installed (unused until PR 3). `btree_gist` is a Postgres extension that ships with Supabase, not an npm package.
@@ -286,9 +295,15 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
   - **Result (2026-11-21): go.** Reanimated with react-native-maps custom markers; no overlay fallback. Archan judged the spike by eye on the iOS Simulator only (the 13 active campaigns of the `--many` seed): the pop-in and the float were clearly visible, nothing was clipped, idle and panning were smooth, and a marker tap opened and closed the sheet. No frame-rate numbers were collected (Simulator numbers say little about phones). The frame rate with 8 animated markers and 500 pins on a real iPhone and a real Android phone stays a before-launch item (v1 section 16).
   - The spike lived on a local branch (`spike/promotions-marker`, never pushed) that was deleted after the decision. Nothing from it was copied.
   - Found while probing: the official `react-native-reanimated/mock` fails under jest-expo with Reanimated 4.7.1 (its index runs the native CSS setup), so the global jest fake in `jest.setup.ts` is hand-written (F2).
-- **D15 Offer card to map (Resolved Q15).** The card pushes the place's map tab with `business=<id>`. The map loads its details. If the result is `null` or `sponsored = false`, it shows "This offer has ended or the place isn't available right now." and refreshes Offers. A place that is visible but no longer sponsored still opens; the message is shown above its sheet.
+- **D15 Offer card to map (Resolved Q15).** The card pushes the place's map tab with `business=<id>` and the place's public `lat` and `lng` (the shifted point for home cooks), so the camera can move before that area's pins load. The map loads its details fresh (`staleTime: 0`) when a card opens a place, so a cached answer never still says "sponsored". If the result is `null` or `sponsored = false`, it shows "This offer has ended or the place isn't available right now." and refreshes Offers. A place that is visible but no longer sponsored still opens; the message is shown above its sheet.
 - **D16 No cuisine parameter yet (Resolved Q12).** I recommend **not** adding a cuisine parameter to `list_offers_near` now. Every parameter needs validation and pgTAP tests, the UI won't use it, and adding it later is one small replacing migration.
 - **D17 Docs timing (change 7).** The decided changes to v1 §4 (Offers tab for guests and customers), §7 (larger marker, pop-in then float, display limit of 8, Sponsored and Ad labels, admin activation, no payment) and the §16 before-launch items are written at PR 1's docs gate. The map-markers skill is updated in PR 3.
+
+- **D18 Filters in one panel (PR 4 gate G2b, Archan's design change on 2026-11-21).** Four always-visible rows of chips were too cluttered. Offers shows one **Filters** button beside the area line instead.
+  - The button reads "Filters", or "Filters (N)" where N counts the groups not at their default (Category All, Type All, About 15 km, Any); the default distance never counts. Spoken: "Filters" or "Filters, N applied", hint "Opens the filters".
+  - When N > 0, a summary line in words ("Special offer, Restaurants, About 30 km") with **Clear filters**, which resets every group at once. The empty state also offers Clear filters when filters are on.
+  - The button opens one bottom panel (`FiltersPanel`, `accessibilityViewIsModal`, no slide with Reduce Motion) with the same four radio groups. Chips change a draft only. **Show offers** applies it; **Clear all** resets the draft without applying; the x ("Close filters"), the back gesture or a tap outside discard it. Applying with no change just closes and sends no request. After applying, the result count is announced and focus returns to the Filters button.
+  - The chosen filters are kept in memory while the tab stays mounted (across tab switches and sign-in or sign-out) and reset on the next launch. This explains the "About 5 km" seen on opening Offers in the Simulator run; the default on a fresh open is About 15 km (proven in `OffersTab.test.tsx`).
 
 ## Rules for implementation
 - RLS on every new table, plus pgTAP proving outsiders are refused.
@@ -368,11 +383,12 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
 - [ ] VoiceOver and TalkBack on promoted markers, and the frame rate with 8 animated markers and 500 pins on a real iPhone and a real Android phone: before launch (v1 section 16), not checked in PR 3 (the Simulator run judged motion by eye only).
 
 **PR 4 (Offers)**
-- [ ] The Offers tab is visible to guests and customers and hidden with seller mode on.
-- [ ] `snapPoint` never returns the input position for off-grid input. `OffersScreen` sends only the snapped point (an api spy).
-- [ ] Offers shows loading, empty (message and Browse the map), error and Retry, success, paging, every filter, Change area, the location-denied fallback (last region, then the launch city), and "Sponsored" on every card.
-- [ ] Card to map opens the sheet. A no-longer-sponsored or hidden place shows the friendly message.
-- [ ] Archan's Simulator run (the script below) passes.
+- [x] The Offers tab is visible to guests and customers and hidden with seller mode on. Proven by `OffersTab.test.tsx` (order for guest, customer and seller; `/offers` goes to Requests in seller mode), the approved `TabsLayout.test.tsx` and `RequestsTab.test.tsx` edits, and Archan's Simulator run (guest, customer, seller mode).
+- [x] `snapPoint` never returns the input position for off-grid input. `OffersScreen` sends only the snapped point (an api spy). Proven by `snapPoint.test.ts` (grid rounding, longitude wrap, latitude clamp, -0, 2000 seeded off-grid points) and `OffersPrivacy.test.tsx` (every call a POST with exactly two arguments, on the grid, no raw digits in the arguments, the query keys, storage writes or logs), plus `offersApi.test.ts`.
+- [x] Offers shows loading, empty (message and Browse the map), error and Retry, success, paging, every filter, Change area, the location-denied fallback (last region, then the launch city), and "Sponsored" on every card. Proven by `OffersScreen.test.tsx`, `OffersLocation.test.tsx`, `FiltersPanel.test.tsx`, `OfferFilters.test.tsx`, `OfferCard.test.tsx`, `ChangeArea.test.tsx`, `useOffers.test.tsx` and the Simulator run (including paging 20 then 2 at About 30 km with the `--offers` seed).
+- [x] Card to map opens the sheet. A no-longer-sponsored or hidden place shows the friendly message. Proven by `OfferToMap.test.tsx` (both tabs: camera, fresh details, stub pin, null and not-sponsored, late-fix guard, params cleared, repeat taps) and the Simulator run (a restaurant, a home cook, and the message after the runbook cancel).
+- [x] Archan's Simulator run (the script below, with the Filters panel steps of G2b) passed on 2026-11-21: tab bars, the primer and the new permission text, filters, distances, paging, pull to refresh, Change area, location denied with the last map view, the empty Ottawa area, card to map, the friendly message, Reduce Motion, the largest text size with five tabs, customer and seller mode.
+- [ ] VoiceOver and TalkBack on Offers (cards, the Filters button and panel, Change area), the Android location permission text, real GPS accuracy, and the frame rate on real phones: before launch (v1 section 16), not checked in PR 4 (iOS Simulator only).
 
 ## Test plan
 - **jest** (written by hand with the code; helper tests in the same gate as the helper):
@@ -453,3 +469,42 @@ Differences between this spec and what was built, with their follow-ups.
 
 - **Headline hidden-character rule (PR 2):** the PR 1 migration refuses U+200D in a headline (the joiner inside combined emoji such as the woman-cook or family emoji), while the food-log description rule allows U+200D and U+FE0F. PR 2 mirrors the server: the app refuses a joiner before sending, with "This emoji can't be used in a headline. Try a simpler one." **Follow-up:** align the headline rule with food-log (allow U+200D and U+FE0F; U+FE0F is already allowed today) through a small new migration in a later PR, then drop the app's joiner check with it.
 - **"Cancelled on <date>" (PR 2):** `get_my_promotion` returns no `cancelled_at`, so the Promote screen shows "Cancelled." with no date (approved for PR 2). Showing the date needs a small replacing migration first.
+- **Change area and Reduce Motion (PR 4):** at gate H the Change area panel still slid in with Reduce Motion on (only the Filters panel had the fix). **Fixed in the PR 4 review** (commit `8b8081e`): it now uses `useReduceMotion()` and appears without sliding, with a test in `ChangeArea.test.tsx`.
+- **LocationPrompt wording prop (PR 4):** the plan named a "received sentence" prop; what was built is an optional `message` prop that replaces the whole explanation. The maps keep their wording byte for byte; Offers passes its own text ("...We only receive a rough area...").
+- **Clear filters and the cache (PR 4):** returning to the default filters within a minute shows the default list already cached, with no new request (React Query `staleTime` of 60 s); an older list is fetched once. The tests prove the second case.
+- **Filters and account changes (PR 4): decided: keep** (Archan, 2026-11-21). The filters survive sign-in and sign-out because the tab group stays mounted, and reset on the next launch. Filters are a browsing preference, and Offers is the same list for guests and customers.
+- **Filters panel closing (PR 4): accepted.** The panel is mounted only while it is open, so every opening starts a fresh draft from the applied filters. As a result it has no slide-out animation when it closes.
+- **The map after an offer card (PR 4): intended.** Once an Offers card has moved a map tab's camera (`cameraTaken`), that map does not recentre on a later "my position" fix, so the camera stays on the offer's place.
+- **`--offers` seed (PR 4):** 25 campaigns near Oshawa were asked for, but only 23 demo businesses lie within About 30 km of Oshawa, so the seed has 22 (everything except `seed_rest_001`, kept for the Promote invitation; this mode also promotes `seed_rest_004`, `seed_rest_010` and `seed_cook_1`). About 30 km pages 20 then 2; About 15 km gives exactly 20. The unused `parseMany` was removed in the review; its assertions now check `parseSeedMode`.
+
+## PR 4 review fixes (2026-11-21)
+`/code-review-feature 16-promotions`: security found one Low and nothing higher. Quality gave "approved with suggestions". Archan approved the plan; every fix has its own commit and was proven by a deliberate break, red on its named test, then reverted and checked with `cmp`.
+
+1. **Card to map, two cards in a row** (`useOfferTarget.ts`): each target is a run. A slow details answer from an earlier card no longer opens its sheet or shows the ended message. Success and failure use separate handlers. Tests in `OfferToMap.test.tsx`.
+2. **Change area and Reduce Motion** (`ChangeArea.tsx`): no slide with Reduce Motion. Test in `ChangeArea.test.tsx`.
+3. **Offers paging and refetch rules** (`useOffers.ts`):
+   - The quiet restart on a refused cursor starts afresh for a new list and after a pull to refresh.
+   - A failed list is not sent again on app focus, reconnect or remount (`unlessFailed`, the security Low).
+   - Load more waits while any read runs.
+   - Tests in `useOffers.test.tsx`.
+4. **`promotedLayout.test.ts`** (a PR 3 test file, changed with Archan's approval): the wall-clock assertion (20 runs under 500 ms, which failed once at 573 ms under a full parallel run) is replaced by structural checks: 500 and 50 places give the same cap of 8, only real ids, and the same set on every call.
+5. **`resetModuleMocks` and `PromotedMap.test.tsx`** (the shared food-log fixture and a PR 3 test file, changed with Archan's approval):
+   - `'../api'` resolved from the fixture file to the food-log api, so `PromotedMap.test.tsx` never reset the map api mocks. It now passes `'@/features/map/api'`.
+   - The helper now throws when a path holds no mock functions, and resets the mocks one level down in an exported object.
+   - The throw found one more case: in 8 promotions test files (`OffersLocation`, `OffersPrivacy`, `OffersScreen`, `useOffers`, `PromoteForm`, `PromoteScreen`, `a11y`, `hooks`), `'@/lib/supabase'` (a mocked `{ supabase: { rpc, from } }` client) was never reset. The helper fix covers them with no change to those tests, and the full suite stays green with the real resets.
+   - A wrong path to a module that exports functions still resolves to jest's automatic mock and is not caught. A stricter check (refusing relative paths) would touch 17 food-log test files and is left as a follow-up.
+   - New test `resetModuleMocks.test.ts`.
+6. **`locationPromise.test.ts`** (an older test, approved): the top comment and the first test title now say "a rough area".
+7. **Seed** (`promotionsData.ts`): the unused `parseMany` and `KNOWN_ARGS` were removed. Their three assertions now check `parseSeedMode` in `promotionsMany.test.ts` (approved).
+8. **Offers screen polish** (`OffersScreen.tsx`):
+   - Announcements are numbered requests, announced even when the new list is already loaded with the same count, and never later on an unrelated update.
+   - The list separator is its own component.
+   - The area line says "Finding offers near you" while the screen works out where to look.
+   - Tests in `OffersScreen.test.tsx`.
+
+**Older test files changed in PR 4, all with Archan's approval:**
+- `TabsLayout.test.tsx` and `RequestsTab.test.tsx` (G2).
+- `scripts/seed/__tests__/promotionsMany.test.ts` (seed, review item 7).
+- `locationPromise.test.ts` (G3, review item 6).
+- `promotedLayout.test.ts` and `PromotedMap.test.tsx` (PR 3 files, review items 4 and 5).
+- The shared `src/features/food-log/__fixtures__/foodLog.ts` helper (review item 5).

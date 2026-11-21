@@ -228,7 +228,7 @@ afterEach(async () => {
     '@/features/cuisines/api',
     '@/features/menu/api',
     '@/features/media/api',
-    '../api',
+    '@/features/map/api',
   );
 });
 

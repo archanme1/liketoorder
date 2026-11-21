@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { AccessibilityInfo, Alert, RefreshControl, View } from 'react-native';
 
 import { Banner, Button, Card, ErrorState, Text } from '@/components/ui';
@@ -20,7 +20,14 @@ import { PromotionStatusCard } from './PromotionStatusCard';
 
 const OPEN_STATES: readonly Promotion['state'][] = ['requested', 'scheduled', 'active'];
 
-type Notice = { tone: 'success' | 'error'; message: string };
+// A success notice belongs to the state it reports (`signature`): once the screen shows another
+// state it is hidden, so "Request sent" never sits above "Promoted until ...". A pull to refresh
+// clears every notice.
+type Notice = { tone: 'success' | 'error'; message: string; signature?: string };
+
+function stateSignature(promotion: Promotion | null): string {
+  return promotion ? `${promotion.id}:${promotion.state}` : 'none';
+}
 
 // Spec 16: the seller's own promotion, from Manage Business. Signed-in business owners only (the
 // seller screen gate); the server answers only for the caller's business, so nothing here can show
@@ -28,10 +35,14 @@ type Notice = { tone: 'success' | 'error'; message: string };
 export function PromoteScreen() {
   const query = useMyPromotion();
   const [pulling, setPulling] = useState(false);
-  const onRefresh = useCallback(() => {
+  const [notice, setNotice] = useState<Notice | null>(null);
+  // A plain function: the React Compiler memoizes it. Destructuring `refetch` for a useCallback left
+  // the screen on Loading in the tests (the query only re-renders for the fields read in render).
+  const onRefresh = () => {
+    setNotice(null);
     setPulling(true);
     void query.refetch().finally(() => setPulling(false));
-  }, [query]);
+  };
 
   return (
     <SellerScreenFrame
@@ -56,19 +67,28 @@ export function PromoteScreen() {
               />
             );
           }
-          return <PromoteBody data={query.data} />;
+          return <PromoteBody data={query.data} notice={notice} setNotice={setNotice} />;
         }}
       </SellerScreenGate>
     </SellerScreenFrame>
   );
 }
 
-function PromoteBody({ data }: { data: MyPromotion }) {
+type PromoteBodyProps = {
+  data: MyPromotion;
+  notice: Notice | null;
+  setNotice: (notice: Notice | null) => void;
+};
+
+function PromoteBody({ data, notice, setNotice }: PromoteBodyProps) {
   const { space } = useTheme();
   const cancel = useCancelPromotion();
   const [composing, setComposing] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
   const promotion = data.promotion;
+  const shown =
+    notice && (notice.signature === undefined || notice.signature === stateSignature(promotion))
+      ? notice
+      : null;
   const open = promotion !== null && OPEN_STATES.includes(promotion.state);
 
   const tell = (next: Notice) => {
@@ -94,10 +114,11 @@ function PromoteBody({ data }: { data: MyPromotion }) {
         style: 'destructive',
         onPress: () =>
           cancel.mutate(current.id, {
-            onSuccess: () =>
+            onSuccess: (answer) =>
               tell({
                 tone: 'success',
                 message: request ? 'Request cancelled' : 'Promotion cancelled',
+                signature: stateSignature(answer.promotion),
               }),
             onError: (error) => showError(error.code),
           }),
@@ -111,7 +132,7 @@ function PromoteBody({ data }: { data: MyPromotion }) {
         Promote your business
       </Text>
       {promotion ? <PromotionStatusCard promotion={promotion} /> : null}
-      {notice ? <Banner tone={notice.tone} message={notice.message} /> : null}
+      {shown ? <Banner tone={shown.tone} message={shown.message} /> : null}
       {promotion && open ? (
         <Button
           title={promotion.state === 'requested' ? 'Cancel request' : 'Cancel promotion'}
@@ -133,9 +154,13 @@ function PromoteBody({ data }: { data: MyPromotion }) {
         <Invitation
           settings={data.settings}
           eligible={data.eligible}
-          onSent={() => {
+          onSent={(answer) => {
             setComposing(false);
-            tell({ tone: 'success', message: 'Request sent' });
+            tell({
+              tone: 'success',
+              message: 'Request sent',
+              signature: stateSignature(answer.promotion),
+            });
           }}
           onError={showError}
           onClose={promotion === null ? undefined : () => setComposing(false)}
@@ -148,7 +173,7 @@ function PromoteBody({ data }: { data: MyPromotion }) {
 type InvitationProps = {
   settings: PromotionSettings | null;
   eligible: boolean;
-  onSent: () => void;
+  onSent: (answer: MyPromotion) => void;
   onError: (code: PromotionErrorCode) => void;
   /** "Not now" after Promote again; absent when there was never a campaign. */
   onClose?: () => void;

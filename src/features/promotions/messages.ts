@@ -20,7 +20,7 @@ export const REJECT_REASON_TEXT: Record<RejectReason, string> = {
   headline: "the headline can't be used. You can send a new request with another one.",
   not_paid: "the invoice wasn't paid.",
   not_eligible: "this business can't be promoted right now.",
-  other: 'for another reason.',
+  other: "the request couldn't be accepted.",
 };
 
 export function promotionErrorMessage(code: PromotionErrorCode): string {

@@ -38,6 +38,12 @@ export function formatPromotionPrice(cents: number, currency: string, locale = p
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
+  // The amount goes in as a decimal string such as "25.00", built from the integer cents with
+  // string steps only. The cast is because TypeScript's Intl type accepts only numbers. An engine
+  // whose Intl takes decimal strings (the newer spec) formats that exact value. An older one, possibly
+  // Hermes on a phone, turns the string into a Number first: that is still exact for any whole number
+  // of cents below 2^53, far above any promotion price, so no rounding can show. Same approach as
+  // formatPrice in src/features/menu/price.ts.
   return format.format(minorToDecimalString(cents, digits) as unknown as number);
 }
 

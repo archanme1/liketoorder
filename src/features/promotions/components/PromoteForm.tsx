@@ -22,6 +22,7 @@ import { ASAP_LABEL, CATEGORY_LABELS, promotionErrorMessage, START_NOTE } from '
 import {
   PROMOTION_CATEGORIES,
   promoteFormSchema,
+  type MyPromotion,
   type PromoteFormInput,
   type PromotionCategory,
 } from '../schema';
@@ -32,9 +33,12 @@ const WARNING = '\u26A0';
 const HEADLINE_HINT = 'One line, up to 60 characters. No phone numbers or emails.';
 
 type PromoteFormProps = {
-  /** The request was saved; the screen now shows it. */
-  onSent: () => void;
-  /** The server refused or could not be reached; the screen shows the message. */
+  /** The request was saved; the screen now shows the answer. */
+  onSent: (answer: MyPromotion) => void;
+  /**
+   * The server refused or could not be reached, for a reason that is not about one field; the
+   * screen shows the message. A refused headline or category shows on its own field only.
+   */
   onError: (code: PromotionErrorCode) => void;
   /** For the start-day chips. The phone's clock, zone and language by default; set in tests. */
   now?: Date;
@@ -86,8 +90,8 @@ export function PromoteForm({ onSent, onError, now, timeZone, locale }: PromoteF
         onSuccess: onSent,
         onError: (error) => {
           const message = promotionErrorMessage(error.code);
-          if (error.code === 'invalid_headline') setError('headline', { message });
-          if (error.code === 'invalid_category') setError('category', { message });
+          if (error.code === 'invalid_headline') return setError('headline', { message });
+          if (error.code === 'invalid_category') return setError('category', { message });
           if (error.code === 'invalid_start') setValue('preferredStart', null);
           onError(error.code);
         },

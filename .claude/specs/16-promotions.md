@@ -3,7 +3,7 @@
 **Branch:** `feature/promotions-backend` (PR 1), then `feature/promotions-seller` (PR 2), `feature/promotions-map` (PR 3), `feature/promotions-offers` (PR 4). Each is cut from `main` after the previous PR is merged.
 **Product spec:** `docs/product/v1.md` §7 (Ads), §4 (Navigation), §13 (Legal: disclose "Sponsored"), §14 row 16, §3 (out of scope), §15 Q1, Q3 and Q5, §16 (before launch)
 **Plan mode:** required: it changes the schema and RLS, touches more than 5 files and changes navigation (a new tab).
-**Status:** PR 2 merged as #36 (3dda392); PR 3 in progress
+**Status:** PR 3 merged as #37 (cc01fa5); PR 4 in progress
 
 ## Overview
 A seller asks for a fixed-price, fixed-length promotion from Manage Business. Archan is paid outside the app (invoice) and approves it with one SQL call. While the campaign runs, the place gets three things:
@@ -197,6 +197,12 @@ None. No payment provider, no secrets.
 - PR 4:
   - `app/(tabs)/offers.tsx`
   - the Offers components, hooks and helpers listed above
+  - `src/features/promotions/offersArea.ts` (the fallback area: last Restaurants view, then last Homemade view, then the launch area)
+  - `src/features/promotions/hooks/useOffersOrigin.ts` (decides "near me")
+  - `src/features/promotions/components/OfferSkeleton.tsx`
+  - `src/features/promotions/__fixtures__/offers.ts` (a faithful fake of `list_offers_near`)
+  - `src/features/map/offerTarget.ts` (parses the `business`, `lat`, `lng` route params)
+  - `src/features/map/hooks/useOfferTarget.ts` (card to map)
   - jest tests
 
 ## Files to change
@@ -226,6 +232,9 @@ None. No payment provider, no secrets.
   - `src/features/map/region.ts`
   - `src/features/map/components/LocationPrompt.tsx` (wording)
   - `app.config.ts` (the location permission text, which needs a native rebuild)
+  - `src/features/map/components/BusinessMapScreen.tsx`, `RestaurantMapScreen.tsx`, `HomemadeMapScreen.tsx`, `businessMapConfig.tsx`, `homemadeMapConfig.tsx` (card to map: the target, fresh details, the late-fix guard)
+  - `src/features/navigation/components/TabIcon.tsx` (the `pricetag` icon)
+  - `scripts/seed/promotions.ts`, `scripts/seed/promotionsData.ts` and its test (the `--offers` flag: 25 active campaigns around Oshawa, for paging)
 
 ## New dependencies
 No new dependencies. `react-native-reanimated` 4.7.1 is already installed (unused until PR 3). `btree_gist` is a Postgres extension that ships with Supabase, not an npm package.
@@ -286,7 +295,7 @@ D1 to D9 were approved by Archan on 2026-11-20. D10 to D17 come from his approva
   - **Result (2026-11-21): go.** Reanimated with react-native-maps custom markers; no overlay fallback. Archan judged the spike by eye on the iOS Simulator only (the 13 active campaigns of the `--many` seed): the pop-in and the float were clearly visible, nothing was clipped, idle and panning were smooth, and a marker tap opened and closed the sheet. No frame-rate numbers were collected (Simulator numbers say little about phones). The frame rate with 8 animated markers and 500 pins on a real iPhone and a real Android phone stays a before-launch item (v1 section 16).
   - The spike lived on a local branch (`spike/promotions-marker`, never pushed) that was deleted after the decision. Nothing from it was copied.
   - Found while probing: the official `react-native-reanimated/mock` fails under jest-expo with Reanimated 4.7.1 (its index runs the native CSS setup), so the global jest fake in `jest.setup.ts` is hand-written (F2).
-- **D15 Offer card to map (Resolved Q15).** The card pushes the place's map tab with `business=<id>`. The map loads its details. If the result is `null` or `sponsored = false`, it shows "This offer has ended or the place isn't available right now." and refreshes Offers. A place that is visible but no longer sponsored still opens; the message is shown above its sheet.
+- **D15 Offer card to map (Resolved Q15).** The card pushes the place's map tab with `business=<id>` and the place's public `lat` and `lng` (the shifted point for home cooks), so the camera can move before that area's pins load. The map loads its details fresh (`staleTime: 0`) when a card opens a place, so a cached answer never still says "sponsored". If the result is `null` or `sponsored = false`, it shows "This offer has ended or the place isn't available right now." and refreshes Offers. A place that is visible but no longer sponsored still opens; the message is shown above its sheet.
 - **D16 No cuisine parameter yet (Resolved Q12).** I recommend **not** adding a cuisine parameter to `list_offers_near` now. Every parameter needs validation and pgTAP tests, the UI won't use it, and adding it later is one small replacing migration.
 - **D17 Docs timing (change 7).** The decided changes to v1 §4 (Offers tab for guests and customers), §7 (larger marker, pop-in then float, display limit of 8, Sponsored and Ad labels, admin activation, no payment) and the §16 before-launch items are written at PR 1's docs gate. The map-markers skill is updated in PR 3.
 

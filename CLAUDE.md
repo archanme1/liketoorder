@@ -194,7 +194,7 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 14 | activity-grid | ✅ Shipped | .claude/specs/14-activity-grid.md |
 | 15 | activity-grid-cuisine-view | ✅ Shipped | .claude/specs/15-activity-grid-cuisine-view.md |
 | 16 | promotions | ✅ Shipped | .claude/specs/16-promotions.md |
-| 16b | promotion-payment | 📝 Planned (not started) | — |
+| 16b | promotion-payment: payment outside the app (store rules) | 📝 Spec written | .claude/specs/16b-promotion-payment.md |
 | 17 | reports | ⬜ Not started | — |
 | 18 | legal-pages | ⬜ Not started | — |
 

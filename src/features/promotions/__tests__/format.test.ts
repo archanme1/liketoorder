@@ -125,3 +125,26 @@ describe('the headline counter', () => {
     expect(counterAnnouncement(3, 4)).toBeNull();
   });
 });
+
+describe('statusText: spec 16b states', () => {
+  it('words the three new states in the spec 16b wording', () => {
+    expect(statusText(promotion('awaiting_payment'), TORONTO)).toBe(
+      "Your headline was approved. We'll be in touch with next steps.",
+    );
+    expect(statusText(promotion('payment_expired'), TORONTO)).toBe('Payment window closed.');
+    expect(statusText(promotion('refunded'), TORONTO)).toBe('Refunded.');
+  });
+
+  it('never puts a price, an amount or payment instructions in the new status lines', () => {
+    for (const state of ['awaiting_payment', 'payment_expired', 'refunded'] as const) {
+      const text = statusText(promotion(state), TORONTO);
+      expect(text).not.toMatch(/\$|CAD|[0-9]|invoice|e-?mail|stripe|online|pay by|card|link/i);
+    }
+  });
+
+  it('does not call a headline-approved campaign scheduled, active or promoted', () => {
+    expect(statusText(promotion('awaiting_payment'), TORONTO)).not.toMatch(
+      /scheduled|active|promoted|starts/i,
+    );
+  });
+});

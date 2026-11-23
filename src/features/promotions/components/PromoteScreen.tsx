@@ -18,7 +18,24 @@ import type { MyPromotion, Promotion, PromotionSettings } from '../schema';
 import { PromoteForm } from './PromoteForm';
 import { PromotionStatusCard } from './PromotionStatusCard';
 
-const OPEN_STATES: readonly Promotion['state'][] = ['requested', 'scheduled', 'active'];
+// Open: the server refuses a new request (already_open), so there is no Promote again.
+const OPEN_STATES: readonly Promotion['state'][] = [
+  'requested',
+  'awaiting_payment',
+  'scheduled',
+  'active',
+];
+// Waiting for review or for the money: cancelled like a request (spec 16b).
+const REQUEST_STATES: readonly Promotion['state'][] = ['requested', 'awaiting_payment'];
+
+// A paid campaign cannot be ended from the app (the server answers contact_support), so it gets no
+// cancel button; spec 16b PR 3 adds "Contact us to cancel". A free campaign keeps spec 16 behaviour.
+function canCancel(promotion: Promotion): boolean {
+  return (
+    REQUEST_STATES.includes(promotion.state) ||
+    ((promotion.state === 'scheduled' || promotion.state === 'active') && promotion.is_free)
+  );
+}
 
 // A success notice belongs to the state it reports (`signature`): once the screen shows another
 // state it is hidden, so "Request sent" never sits above "Promoted until ...". A pull to refresh
@@ -99,9 +116,12 @@ function PromoteBody({ data, notice, setNotice }: PromoteBodyProps) {
     tell({ tone: 'error', message: promotionErrorMessage(code) });
 
   const confirmCancel = (current: Promotion) => {
-    const request = current.state === 'requested';
+    const request = REQUEST_STATES.includes(current.state);
     const [title, message] = request
-      ? ['Cancel this request?', "We won't review it."]
+      ? [
+          'Cancel this request?',
+          current.state === 'requested' ? "We won't review it." : "Your promotion won't go ahead.",
+        ]
       : current.state === 'scheduled'
         ? ['Cancel this promotion?', "It won't start."]
         : ['Stop your promotion now?', 'It ends at once. Refunds are handled outside the app.'];
@@ -133,9 +153,9 @@ function PromoteBody({ data, notice, setNotice }: PromoteBodyProps) {
       </Text>
       {promotion ? <PromotionStatusCard promotion={promotion} /> : null}
       {shown ? <Banner tone={shown.tone} message={shown.message} /> : null}
-      {promotion && open ? (
+      {promotion && open && canCancel(promotion) ? (
         <Button
-          title={promotion.state === 'requested' ? 'Cancel request' : 'Cancel promotion'}
+          title={REQUEST_STATES.includes(promotion.state) ? 'Cancel request' : 'Cancel promotion'}
           variant="secondary"
           loading={cancel.isPending}
           onPress={() => confirmCancel(promotion)}

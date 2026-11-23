@@ -1,8 +1,20 @@
-// Demo promotions (spec 16): one campaign in each state a seller and a customer can see. Pure, so it is
-// unit-tested; scripts/seed/promotions.ts writes the rows.
+// Demo promotions (spec 16, 16b): one campaign in each state a seller and a customer can see. Pure, so
+// it is unit-tested; scripts/seed/promotions.ts writes the rows.
 
 export type PromotionCategory = 'new_dish' | 'special_offer' | 'featured';
-export type SeedPromotionState = 'active' | 'scheduled' | 'ended' | 'requested';
+export type SeedPromotionState =
+  'active' | 'scheduled' | 'ended' | 'requested' | 'payment_due' | 'paid_scheduled';
+
+/**
+ * Spec 16b: the fake Stripe payment row of a demo campaign. Obvious fakes that match the table's id
+ * checks; no real Stripe object exists, and nothing here is ever sent to Stripe.
+ */
+export type PlannedPayment = {
+  status: 'open' | 'paid';
+  customerId: string;
+  invoiceId: string;
+  paymentIntentId: string | null;
+};
 
 export type PlannedPromotion = {
   state: SeedPromotionState;
@@ -12,7 +24,14 @@ export type PlannedPromotion = {
   category: PromotionCategory;
   headline: string;
   /** Stored status: scheduled, active and ended are all 'approved', told apart by the window. */
-  status: 'approved' | 'requested';
+  status: 'approved' | 'requested' | 'payment_due';
+  /** Spec 16b: approved by hand with no payment (every demo except the paid one). */
+  isFree: boolean;
+  /** Spec 16b: the end of the payment window (payment_due only). */
+  payBy: string | null;
+  /** Spec 16b: when Stripe took the money (the paid demo only). */
+  paidAt: string | null;
+  payment: PlannedPayment | null;
   /** YYYY-MM-DD, or null. */
   preferredStart: string | null;
   startsAt: string | null;
@@ -28,7 +47,11 @@ const OWNERS: Record<SeedPromotionState, string> = {
   scheduled: '003',
   ended: '005',
   requested: '006',
+  payment_due: '007',
+  paid_scheduled: '008',
 };
+
+const NOT_PAID = { payBy: null, paidAt: null, payment: null } as const;
 
 function utcDay(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -53,6 +76,8 @@ export function planPromotions(now: Date, lengthDays: number): PlannedPromotion[
       category: 'special_offer',
       headline: 'Two bowls of pho for the price of one',
       status: 'approved',
+      isFree: true,
+      ...NOT_PAID,
       preferredStart: null,
       // Started half its length ago, so it is running now for any length of 1 day or more.
       ...window(-lengthDays / 2),
@@ -63,6 +88,8 @@ export function planPromotions(now: Date, lengthDays: number): PlannedPromotion[
       category: 'new_dish',
       headline: 'New: butter chicken thali',
       status: 'approved',
+      isFree: true,
+      ...NOT_PAID,
       preferredStart: utcDay(at(2)),
       ...window(2),
     },
@@ -72,6 +99,8 @@ export function planPromotions(now: Date, lengthDays: number): PlannedPromotion[
       category: 'featured',
       headline: 'Fresh tacos every day',
       status: 'approved',
+      isFree: true,
+      ...NOT_PAID,
       preferredStart: null,
       ...window(-(lengthDays + 3)),
     },
@@ -81,9 +110,50 @@ export function planPromotions(now: Date, lengthDays: number): PlannedPromotion[
       category: 'new_dish',
       headline: 'New lamb souvlaki plate',
       status: 'requested',
+      isFree: false,
+      ...NOT_PAID,
       preferredStart: utcDay(at(3)),
       startsAt: null,
       endsAt: null,
+    },
+    {
+      // Spec 16b: headline approved, invoice sent, waiting for the money (7-day window).
+      state: 'payment_due',
+      ...owner('payment_due'),
+      category: 'special_offer',
+      headline: 'Bento lunch box with free miso soup',
+      status: 'payment_due',
+      isFree: false,
+      payBy: at(7).toISOString(),
+      paidAt: null,
+      payment: {
+        status: 'open',
+        customerId: 'cus_FakeSeed0001',
+        invoiceId: 'in_FakeSeed0001',
+        paymentIntentId: null,
+      },
+      preferredStart: null,
+      startsAt: null,
+      endsAt: null,
+    },
+    {
+      // Spec 16b: paid an hour ago, starting on its preferred day.
+      state: 'paid_scheduled',
+      ...owner('paid_scheduled'),
+      category: 'featured',
+      headline: 'Green curry made to order',
+      status: 'approved',
+      isFree: false,
+      payBy: null,
+      paidAt: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
+      payment: {
+        status: 'paid',
+        customerId: 'cus_FakeSeed0002',
+        invoiceId: 'in_FakeSeed0002',
+        paymentIntentId: 'pi_FakeSeed0002',
+      },
+      preferredStart: utcDay(at(2)),
+      ...window(2),
     },
   ];
 }
@@ -142,6 +212,8 @@ export function planManyPromotions(now: Date, lengthDays: number): PlannedPromot
     ...owner,
     ...MANY_LINES[index],
     status: 'approved',
+    isFree: true,
+    ...NOT_PAID,
     preferredStart: null,
     startsAt: startsAt.toISOString(),
     endsAt: endsAt.toISOString(),
@@ -220,6 +292,8 @@ export function planOffersPromotions(now: Date, lengthDays: number): PlannedProm
     ...owner,
     ...OFFERS_LINES[index],
     status: 'approved',
+    isFree: true,
+    ...NOT_PAID,
     preferredStart: null,
     startsAt: startsAt.toISOString(),
     endsAt: endsAt.toISOString(),

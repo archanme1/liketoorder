@@ -13,7 +13,16 @@ export const PROMOTION_ID = '00000000-0000-4000-8000-000000001601';
 export const SETTINGS_JSON = { price_cents: 2500, currency_code: 'CAD', length_days: 7 };
 
 type Json = Record<string, unknown>;
-type State = 'requested' | 'scheduled' | 'active' | 'ended' | 'rejected' | 'cancelled';
+type State =
+  | 'requested'
+  | 'awaiting_payment'
+  | 'scheduled'
+  | 'active'
+  | 'ended'
+  | 'rejected'
+  | 'cancelled'
+  | 'payment_expired'
+  | 'refunded';
 
 const WINDOWS: Record<State, { starts_at: string | null; ends_at: string | null }> = {
   requested: { starts_at: null, ends_at: null },
@@ -22,7 +31,13 @@ const WINDOWS: Record<State, { starts_at: string | null; ends_at: string | null 
   ended: { starts_at: at(-10), ends_at: at(-3) },
   rejected: { starts_at: null, ends_at: null },
   cancelled: { starts_at: null, ends_at: null },
+  // Spec 16b. A refunded campaign keeps its (cut) window as history.
+  awaiting_payment: { starts_at: null, ends_at: null },
+  payment_expired: { starts_at: null, ends_at: null },
+  refunded: { starts_at: at(-3), ends_at: at(-1) },
 };
+
+const APPROVED_STATES: readonly State[] = ['scheduled', 'active', 'ended'];
 
 /** One campaign as the server answers it. */
 export function promotionJson(state: State, overrides: Json = {}): Json {
@@ -37,6 +52,9 @@ export function promotionJson(state: State, overrides: Json = {}): Json {
     price_cents: 2500,
     currency_code: 'CAD',
     length_days: 7,
+    // Spec 16 campaigns were approved by hand: free. A refunded one had been paid.
+    paid: state === 'refunded',
+    is_free: APPROVED_STATES.includes(state),
     created_at: at(-12),
     ...overrides,
   };
@@ -66,11 +84,16 @@ type Row = {
   category: string;
   headline: string;
   preferred_start: string | null;
-  status: 'requested' | 'approved' | 'rejected' | 'cancelled';
+  status: 'requested' | 'payment_due' | 'approved' | 'rejected' | 'cancelled' | 'refunded';
   starts_at: string | null;
   ends_at: string | null;
   reject_reason: string | null;
   created_at: string;
+  /** Spec 16b: payment_due rows only. */
+  pay_by?: string | null;
+  /** Spec 16b: defaults follow promotionJson (approved = free, refunded = paid). */
+  paid?: boolean;
+  is_free?: boolean;
 };
 
 export type FakeServer = {
@@ -87,6 +110,9 @@ export type FakeServer = {
 };
 
 function derivedState(row: Row, now: Date): State {
+  if (row.status === 'payment_due') {
+    return now < new Date(row.pay_by as string) ? 'awaiting_payment' : 'payment_expired';
+  }
   if (row.status !== 'approved') return row.status;
   if (now < new Date(row.starts_at as string)) return 'scheduled';
   if (now < new Date(row.ends_at as string)) return 'active';
@@ -115,6 +141,7 @@ export function createFakeServer({
       if (!row || row.status !== 'requested') throw new Error('invalid_transition');
       const length = Number((server.settings ?? SETTINGS_JSON).length_days);
       row.status = 'approved';
+      row.is_free = true;
       row.starts_at = startsAt;
       row.ends_at = new Date(new Date(startsAt).getTime() + length * DAY_MS).toISOString();
     },
@@ -145,6 +172,8 @@ export function createFakeServer({
       price_cents: s.price_cents,
       currency_code: s.currency_code,
       length_days: s.length_days,
+      paid: row.paid ?? row.status === 'refunded',
+      is_free: row.is_free ?? row.status === 'approved',
       created_at: row.created_at,
     };
   }
@@ -176,7 +205,9 @@ export function createFakeServer({
       const offset = start === null ? 0 : (Date.parse(start) - Date.parse(today)) / DAY_MS;
       if (offset < -1 || offset > 90) throw new Error('invalid_start');
       if (
-        server.rows.some((r) => ['requested', 'scheduled', 'active'].includes(derivedState(r, now)))
+        server.rows.some((r) =>
+          ['requested', 'awaiting_payment', 'scheduled', 'active'].includes(derivedState(r, now)),
+        )
       ) {
         throw new Error('already_open');
       }
@@ -199,7 +230,12 @@ export function createFakeServer({
     if (name === 'cancel_my_promotion') {
       const row = server.rows.find((r) => r.id === args.p_promotion_id);
       if (!row) throw new Error('not_found');
-      if (!['requested', 'scheduled', 'active'].includes(derivedState(row, now))) {
+      const state = derivedState(row, now);
+      // Spec 16b: a paid campaign is not cancelled from the app.
+      if ((state === 'scheduled' || state === 'active') && !(row.is_free ?? true)) {
+        throw new Error('contact_support');
+      }
+      if (!['requested', 'awaiting_payment', 'scheduled', 'active'].includes(state)) {
         throw new Error('not_cancellable');
       }
       row.status = 'cancelled';
@@ -212,17 +248,24 @@ export function createFakeServer({
 }
 
 /** A stored row for the fake server, built from a derived state relative to NOW. */
-export function storedRow(state: State, id = PROMOTION_ID): Row {
+export function storedRow(state: State, id = PROMOTION_ID, extra: Partial<Row> = {}): Row {
   const json = promotionJson(state, { id });
+  const payBy = state === 'awaiting_payment' ? at(5) : state === 'payment_expired' ? at(-1) : null;
   return {
     id,
     category: json.category as string,
     headline: json.headline as string,
     preferred_start: null,
-    status: state === 'scheduled' || state === 'active' || state === 'ended' ? 'approved' : state,
+    status: APPROVED_STATES.includes(state)
+      ? 'approved'
+      : state === 'awaiting_payment' || state === 'payment_expired'
+        ? 'payment_due'
+        : (state as Row['status']),
     starts_at: json.starts_at as string | null,
     ends_at: json.ends_at as string | null,
     reject_reason: json.reject_reason as string | null,
     created_at: json.created_at as string,
+    pay_by: payBy,
+    ...extra,
   };
 }

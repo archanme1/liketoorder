@@ -12,15 +12,19 @@ import { checkHeadline, MAX_HEADLINE_CHARS, type HeadlineProblem } from './text'
 export const PROMOTION_CATEGORIES = ['new_dish', 'special_offer', 'featured'] as const;
 export type PromotionCategory = (typeof PROMOTION_CATEGORIES)[number];
 
-// Stored: requested, approved, rejected, cancelled. Scheduled, active and ended are the server
-// clock's reading of an approved window (Decision D5).
+// Stored: requested, payment_due, approved, rejected, cancelled, payment_expired, refunded.
+// Scheduled, active and ended are the server clock's reading of an approved window (Decision D5);
+// awaiting_payment and payment_expired are its reading of a payment_due row (spec 16b).
 export const PROMOTION_STATES = [
   'requested',
+  'awaiting_payment',
   'scheduled',
   'active',
   'ended',
   'rejected',
   'cancelled',
+  'payment_expired',
+  'refunded',
 ] as const;
 export type PromotionState = (typeof PROMOTION_STATES)[number];
 
@@ -57,6 +61,9 @@ export const promotionSchema = z
     price_cents: priceCentsSchema,
     currency_code: currencySchema,
     length_days: lengthDaysSchema,
+    // Spec 16b: paid by Stripe, or a free campaign approved by hand. Not shown yet (PR 3).
+    paid: z.boolean(),
+    is_free: z.boolean(),
     created_at: timestampSchema,
   })
   .refine((p) => (p.starts_at === null) === (p.ends_at === null))

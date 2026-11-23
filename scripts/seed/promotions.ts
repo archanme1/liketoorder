@@ -1,6 +1,10 @@
 /**
- * LOCAL ONLY. Seeds one demo promotion (spec 16) in each of four states: active, scheduled, ended
- * and requested.
+ * LOCAL ONLY. Seeds one demo promotion (spec 16, 16b) in each of six states: active, scheduled,
+ * ended and requested (all free, approved by hand), payment_due (headline approved, an open fake
+ * invoice) and a paid, scheduled campaign (a paid fake invoice).
+ *
+ * The payment rows carry obvious fake Stripe ids (in_FakeSeed0001, cus_FakeSeed0001, ...). No Stripe
+ * object exists for them and nothing here talks to Stripe.
  *
  *   SEED_SERVICE_ROLE_KEY=<local service key> npx tsx scripts/seed/promotions.ts
  *   SEED_SERVICE_ROLE_KEY=<local service key> npx tsx scripts/seed/promotions.ts --many
@@ -18,8 +22,9 @@
  *
  * - Talks only to http://127.0.0.1 or http://localhost (anything else is refused).
  * - The key is read from the environment variable SEED_SERVICE_ROLE_KEY. It is never printed.
- * - Safe to re-run: it first deletes the campaigns of the demo businesses any mode uses only,
- *   after checking each one belongs to a seed account. So switching modes leaves nothing behind.
+ * - Safe to re-run: it first marks the demo businesses' still-payable fake payment rows void, then
+ *   deletes the payment rows, then the campaigns, of the demo businesses any mode uses only, after
+ *   checking each one belongs to a seed account. So switching modes leaves nothing behind.
  * - Times are relative to when you run it, so re-run it for a fresh active window.
  * - Rows are written directly (the admin approval is a database-owner call, not an API one).
  * - Never run by CI.
@@ -91,6 +96,22 @@ async function main() {
   const lengthDays = settings.data.length_days;
   for (const username of promotionSeedOwners(now, lengthDays)) {
     const business = await seedBusiness(db, username);
+    const old = await db.from('promotions').select('id').eq('business_id', business.id);
+    fail(old.error, `find the old campaigns of ${business.name}`);
+    const oldIds = (old.data ?? []).map((row) => row.id);
+    if (oldIds.length > 0) {
+      // Payment rows first. A row that is still payable or owed a refund cannot be deleted (the
+      // promotion_payments_guard_delete trigger), so these local fake rows are first marked void, the
+      // normal end state of an invoice that will not be paid. No bypass of the guard.
+      const voided = await db
+        .from('promotion_payments')
+        .update({ status: 'void' })
+        .in('promotion_id', oldIds)
+        .in('status', ['open', 'void_pending', 'uncollectible', 'needs_refund']);
+      fail(voided.error, `void the old payment rows of ${business.name}`);
+      const payments = await db.from('promotion_payments').delete().in('promotion_id', oldIds);
+      fail(payments.error, `remove the old payment rows of ${business.name}`);
+    }
     const removed = await db.from('promotions').delete().eq('business_id', business.id);
     fail(removed.error, `remove the old campaigns of ${business.name}`);
   }
@@ -98,22 +119,44 @@ async function main() {
   const plans = planForMode(mode, now, lengthDays);
   for (const plan of plans) {
     const business = await seedBusiness(db, plan.ownerUsername);
-    const inserted = await db.from('promotions').insert({
-      business_id: business.id,
-      category: plan.category,
-      headline: plan.headline,
-      preferred_start: plan.preferredStart,
-      status: plan.status,
-      price_cents: settings.data.price_cents,
-      currency_code: settings.data.currency_code,
-      length_days: settings.data.length_days,
-      starts_at: plan.startsAt,
-      ends_at: plan.endsAt,
-      reviewed_at: plan.status === 'approved' ? now.toISOString() : null,
-    });
+    const inserted = await db
+      .from('promotions')
+      .insert({
+        business_id: business.id,
+        category: plan.category,
+        headline: plan.headline,
+        preferred_start: plan.preferredStart,
+        status: plan.status,
+        price_cents: settings.data.price_cents,
+        currency_code: settings.data.currency_code,
+        length_days: settings.data.length_days,
+        starts_at: plan.startsAt,
+        ends_at: plan.endsAt,
+        is_free: plan.isFree,
+        pay_by: plan.payBy,
+        paid_at: plan.paidAt,
+        reviewed_at: plan.status === 'requested' ? null : now.toISOString(),
+      })
+      .select('id')
+      .single();
     fail(inserted.error, `add the ${plan.state} campaign of ${business.name}`);
+    if (plan.payment && inserted.data) {
+      const payment = await db.from('promotion_payments').insert({
+        promotion_id: inserted.data.id,
+        amount_cents: settings.data.price_cents,
+        currency_code: settings.data.currency_code,
+        status: plan.payment.status,
+        customer_id: plan.payment.customerId,
+        invoice_id: plan.payment.invoiceId,
+        livemode: false,
+        invoice_sent_at: now.toISOString(),
+        payment_intent_id: plan.payment.paymentIntentId,
+        paid_at: plan.paidAt,
+      });
+      fail(payment.error, `add the fake payment row of ${business.name}`);
+    }
     console.log(
-      `  ${plan.state.padEnd(9)} ${business.name} (${plan.ownerEmail}): "${plan.headline}"`,
+      `  ${plan.state.padEnd(14)} ${business.name} (${plan.ownerEmail}): "${plan.headline}"`,
     );
   }
   console.log('Sign in as any of these with password password123 to see the seller side.');

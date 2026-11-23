@@ -114,6 +114,9 @@ function storedRowJson(state: Parameters<typeof storedRow>[0]) {
     price_cents: 2500,
     currency_code: 'CAD',
     length_days: 7,
+    // Spec 16b keys, with the fake server's defaults.
+    paid: row.paid ?? row.status === 'refunded',
+    is_free: row.is_free ?? row.status === 'approved',
     created_at: row.created_at,
   };
 }
@@ -428,5 +431,90 @@ describe('PromoteScreen: where messages show', () => {
     });
     await waitFor(() => expect(screen.queryByText('Request cancelled')).toBeNull());
     expect(screen.getByText('Cancelled.')).toBeTruthy();
+  });
+});
+
+// Spec 16b PR 1: the new states are accepted and handled safely. Status only: no price, no payment
+// wording, and no button the server would refuse.
+describe('PromoteScreen: spec 16b states', () => {
+  const PRICE = /\$|CAD|25\.00|2,500|invoice|e-?mail|stripe/i;
+
+  it('shows awaiting_payment as a request with Cancel request, no price and no Promote again', async () => {
+    server.rows.push(storedRow('awaiting_payment'));
+    await renderScreen();
+    expect(
+      await screen.findByText("Your headline was approved. We'll be in touch with next steps."),
+    ).toBeTruthy();
+    expect(screen.queryByText(PRICE)).toBeNull();
+    expect(screen.queryByText(/^Preferred start/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Send request' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cancel request' })).toBeTruthy();
+  });
+
+  it('cancels an awaiting_payment campaign after the confirmation', async () => {
+    server.rows.push(storedRow('awaiting_payment'));
+    await renderScreen();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Cancel request' }));
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Cancel this request?',
+      "Your promotion won't go ahead.",
+      expect.any(Array),
+    );
+    await pressAlertButton('Cancel request');
+    expect(await screen.findByText('Cancelled.')).toBeTruthy();
+    expect(calls('cancel_my_promotion')[0][1]).toEqual({ p_promotion_id: PROMOTION_ID });
+    expect(announce).toHaveBeenCalledWith('Request cancelled');
+    expect(screen.getByRole('button', { name: 'Promote again' })).toBeTruthy();
+  });
+
+  it.each([
+    ['payment_expired', 'Payment window closed.'],
+    ['refunded', 'Refunded.'],
+  ] as const)(
+    'shows %s with Promote again and no cancel button, and a new request is accepted',
+    async (state, text) => {
+      server.rows.push(storedRow(state));
+      await renderScreen();
+      expect(await screen.findByText(text)).toBeTruthy();
+      expect(screen.queryByText(PRICE)).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Cancel/ })).toBeNull();
+
+      await fireEvent.press(screen.getByRole('button', { name: 'Promote again' }));
+      await fillAndSend();
+      expect(await screen.findByText(status('requested'))).toBeTruthy();
+      expect(calls('request_promotion')).toHaveLength(1);
+    },
+  );
+
+  it.each(['scheduled', 'active'] as const)(
+    'gives a paid %s campaign no cancel button and no Promote again (no dead button)',
+    async (state) => {
+      server.rows.push(storedRow(state, PROMOTION_ID, { paid: true, is_free: false }));
+      await renderScreen();
+      expect(await screen.findByText(status(state))).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /^Cancel/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Send request' })).toBeNull();
+    },
+  );
+
+  it('shows contact_support and refreshes when the campaign was paid while the screen was open', async () => {
+    server.rows.push(storedRow('awaiting_payment'));
+    await renderScreen();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Cancel request' }));
+    // Stripe's webhook schedules the paid campaign before the seller confirms.
+    server.rows[0] = storedRow('scheduled', PROMOTION_ID, { paid: true, is_free: false });
+    await pressAlertButton('Cancel request');
+    expect(await screen.findByText("This promotion can't be cancelled here.")).toBeTruthy();
+    expect(await screen.findByText(status('scheduled'))).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Cancel/ })).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
+  });
+
+  it('still offers Cancel promotion on a free (hand-approved) running campaign', async () => {
+    server.rows.push(storedRow('active', PROMOTION_ID, { is_free: true }));
+    await renderScreen();
+    expect(await screen.findByRole('button', { name: 'Cancel promotion' })).toBeTruthy();
   });
 });

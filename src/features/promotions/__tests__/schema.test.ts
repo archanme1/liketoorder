@@ -53,7 +53,10 @@ describe('myPromotionSchema: refuses anything else', () => {
     expect(promotionSchema.safeParse(json).success).toBe(false);
   });
 
-  it.each(Object.keys(promotionJson('active')))('refuses a campaign without %s', (key) => {
+  // paid and is_free have defaults (spec 16b, read from an older server): tested separately below.
+  it.each(
+    Object.keys(promotionJson('active')).filter((key) => key !== 'paid' && key !== 'is_free'),
+  )('refuses a campaign without %s', (key) => {
     const json: Record<string, unknown> = { ...promotionJson('active') };
     delete json[key];
     expect(promotionSchema.safeParse(json).success).toBe(false);
@@ -141,5 +144,49 @@ describe('promoteFormSchema', () => {
     expect(message('Chef' + String.fromCodePoint(0x200d) + 'special')).toBe(
       HEADLINE_MESSAGES.joiner,
     );
+  });
+});
+
+describe('myPromotionSchema: spec 16b states and keys (PR 1, accepted, not shown yet)', () => {
+  it.each(['awaiting_payment', 'payment_expired', 'refunded'] as const)(
+    'accepts a %s campaign exactly as the server builds it',
+    (state) => {
+      expect(myPromotionSchema.safeParse(myPromotionJson(promotionJson(state))).success).toBe(true);
+    },
+  );
+
+  it('accepts a paid campaign (paid true, is_free false) in a window state', () => {
+    for (const state of ['scheduled', 'active', 'ended'] as const) {
+      const json = promotionJson(state, { paid: true, is_free: false });
+      expect(promotionSchema.parse(json)).toMatchObject({ state, paid: true, is_free: false });
+    }
+  });
+
+  it('keeps paid and is_free in the parsed campaign', () => {
+    expect(promotionSchema.parse(promotionJson('scheduled'))).toMatchObject({
+      paid: false,
+      is_free: true,
+    });
+  });
+
+  it('reads a campaign from a server before spec 16b (no paid, no is_free) as not paid, not free', () => {
+    const json: Record<string, unknown> = { ...promotionJson('active') };
+    delete json.paid;
+    delete json.is_free;
+    expect(promotionSchema.parse(json)).toMatchObject({ paid: false, is_free: false });
+  });
+
+  it.each(['paid', 'is_free'])('refuses %s when it is not a boolean', (key) => {
+    for (const value of [null, 'true', 1]) {
+      expect(promotionSchema.safeParse(promotionJson('active', { [key]: value })).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it('still refuses the stored names payment_due and approved (only derived states come out)', () => {
+    for (const state of ['payment_due', 'approved']) {
+      expect(promotionSchema.safeParse(promotionJson('requested', { state })).success).toBe(false);
+    }
   });
 });

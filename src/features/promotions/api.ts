@@ -23,6 +23,7 @@ export type PromotionErrorCode =
   | 'invalid_start'
   | 'not_found'
   | 'not_cancellable'
+  | 'contact_support'
   | 'network'
   | 'unknown';
 
@@ -49,6 +50,8 @@ const KNOWN_CODES: Record<string, PromotionErrorCode> = {
   invalid_start: 'invalid_start',
   not_found: 'not_found',
   not_cancellable: 'not_cancellable',
+  // Spec 16b: cancel_my_promotion refuses a paid campaign.
+  contact_support: 'contact_support',
 };
 
 /** Maps a PostgREST / RPC error. A bad uuid (22P02) is not_found: no such promotion. */

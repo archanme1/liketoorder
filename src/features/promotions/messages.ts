@@ -12,6 +12,11 @@ export const CATEGORY_LABELS: Record<PromotionCategory, string> = {
 
 export const REQUESTED_TEXT = "Waiting for review. We'll contact you about payment.";
 export const CANCELLED_TEXT = 'Cancelled.';
+// Spec 16b: status only, in the spec's final wording. No price and no payment instructions.
+export const AWAITING_PAYMENT_TEXT =
+  "Your headline was approved. We'll be in touch with next steps.";
+export const PAYMENT_EXPIRED_TEXT = 'Payment window closed.';
+export const REFUNDED_TEXT = 'Refunded.';
 export const ASAP_LABEL = 'As soon as possible';
 export const START_NOTE = "We'll confirm the exact dates after payment.";
 export const PAYMENT_NOTE = "Nothing is charged in the app. We'll contact you about payment.";
@@ -45,6 +50,8 @@ export function promotionErrorMessage(code: PromotionErrorCode): string {
       return "This promotion can't be found any more.";
     case 'not_cancellable':
       return 'This promotion has already ended or been cancelled.';
+    case 'contact_support':
+      return "This promotion can't be cancelled here.";
     case 'network':
       return "Can't reach LikeToOrder. Check your connection and try again.";
     case 'unknown':

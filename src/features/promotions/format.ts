@@ -4,7 +4,14 @@ import { minorToDecimalString } from '@/features/menu/price';
 import { deviceTimeZone } from '@/features/requests/time';
 import { addDays } from '@/lib/localDate';
 
-import { CANCELLED_TEXT, REJECT_REASON_TEXT, REQUESTED_TEXT } from './messages';
+import {
+  AWAITING_PAYMENT_TEXT,
+  CANCELLED_TEXT,
+  PAYMENT_EXPIRED_TEXT,
+  REFUNDED_TEXT,
+  REJECT_REASON_TEXT,
+  REQUESTED_TEXT,
+} from './messages';
 import type { Promotion } from './schema';
 import { MAX_HEADLINE_CHARS } from './text';
 
@@ -78,6 +85,12 @@ export function statusText(promotion: Promotion, options: FormatOptions = {}): s
       return `Not approved: ${REJECT_REASON_TEXT[promotion.reject_reason ?? 'other']}`;
     case 'cancelled':
       return CANCELLED_TEXT;
+    case 'awaiting_payment':
+      return AWAITING_PAYMENT_TEXT;
+    case 'payment_expired':
+      return PAYMENT_EXPIRED_TEXT;
+    case 'refunded':
+      return REFUNDED_TEXT;
   }
 }
 

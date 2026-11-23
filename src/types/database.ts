@@ -317,6 +317,26 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"promotion_payments": {
+                  Row: {
+                    "amount_cents": number,"created_at": string,"currency_code": string,"customer_id": string | null,"id": string,"invoice_id": string | null,"invoice_sent_at": string | null,"livemode": boolean | null,"paid_at": string | null,"payment_intent_id": string | null,"promotion_id": string,"refunded_cents": number,"status": string,"updated_at": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "amount_cents": number,"created_at"?: string,"currency_code": string,"customer_id"?: string | null,"id"?: string,"invoice_id"?: string | null,"invoice_sent_at"?: string | null,"livemode"?: boolean | null,"paid_at"?: string | null,"payment_intent_id"?: string | null,"promotion_id": string,"refunded_cents"?: number,"status"?: string,"updated_at"?: string
+                  }
+                  Update: {
+                    "amount_cents"?: number,"created_at"?: string,"currency_code"?: string,"customer_id"?: string | null,"id"?: string,"invoice_id"?: string | null,"invoice_sent_at"?: string | null,"livemode"?: boolean | null,"paid_at"?: string | null,"payment_intent_id"?: string | null,"promotion_id"?: string,"refunded_cents"?: number,"status"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "promotion_payments_promotion_id_fkey"
+      columns: ["promotion_id"]
+isOneToOne: false
+      referencedRelation: "promotions"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"promotion_settings": {
                   Row: {
                     "currency_code": string,"id": boolean,"length_days": number,"price_cents": number
@@ -339,14 +359,14 @@ isOneToOne: false
                   ]
                 },"promotions": {
                   Row: {
-                    "business_id": string,"cancelled_at": string | null,"cancelled_by": string | null,"category": string,"created_at": string,"currency_code": string,"ends_at": string | null,"headline": string,"id": string,"length_days": number,"preferred_start": string | null,"price_cents": number,"reject_reason": string | null,"reviewed_at": string | null,"starts_at": string | null,"status": string
+                    "business_id": string,"cancelled_at": string | null,"cancelled_by": string | null,"category": string,"created_at": string,"currency_code": string,"ends_at": string | null,"headline": string,"id": string,"is_free": boolean,"length_days": number,"paid_at": string | null,"pay_by": string | null,"preferred_start": string | null,"price_cents": number,"refunded_at": string | null,"reject_reason": string | null,"reviewed_at": string | null,"starts_at": string | null,"status": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "business_id": string,"cancelled_at"?: string | null,"cancelled_by"?: string | null,"category": string,"created_at"?: string,"currency_code": string,"ends_at"?: string | null,"headline": string,"id"?: string,"length_days": number,"preferred_start"?: string | null,"price_cents": number,"reject_reason"?: string | null,"reviewed_at"?: string | null,"starts_at"?: string | null,"status"?: string
+                    "business_id": string,"cancelled_at"?: string | null,"cancelled_by"?: string | null,"category": string,"created_at"?: string,"currency_code": string,"ends_at"?: string | null,"headline": string,"id"?: string,"is_free"?: boolean,"length_days": number,"paid_at"?: string | null,"pay_by"?: string | null,"preferred_start"?: string | null,"price_cents": number,"refunded_at"?: string | null,"reject_reason"?: string | null,"reviewed_at"?: string | null,"starts_at"?: string | null,"status"?: string
                   }
                   Update: {
-                    "business_id"?: string,"cancelled_at"?: string | null,"cancelled_by"?: string | null,"category"?: string,"created_at"?: string,"currency_code"?: string,"ends_at"?: string | null,"headline"?: string,"id"?: string,"length_days"?: number,"preferred_start"?: string | null,"price_cents"?: number,"reject_reason"?: string | null,"reviewed_at"?: string | null,"starts_at"?: string | null,"status"?: string
+                    "business_id"?: string,"cancelled_at"?: string | null,"cancelled_by"?: string | null,"category"?: string,"created_at"?: string,"currency_code"?: string,"ends_at"?: string | null,"headline"?: string,"id"?: string,"is_free"?: boolean,"length_days"?: number,"paid_at"?: string | null,"pay_by"?: string | null,"preferred_start"?: string | null,"price_cents"?: number,"refunded_at"?: string | null,"reject_reason"?: string | null,"reviewed_at"?: string | null,"starts_at"?: string | null,"status"?: string
                   }
                   Relationships: [
                     {
@@ -397,6 +417,20 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"stripe_events": {
+                  Row: {
+                    "event_id": string,"livemode": boolean,"outcome": string,"received_at": string,"type": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "event_id": string,"livemode": boolean,"outcome": string,"received_at"?: string,"type": string
+                  }
+                  Update: {
+                    "event_id"?: string,"livemode"?: boolean,"outcome"?: string,"received_at"?: string,"type"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"table_requests": {
                   Row: {
                     "arrived_at": string | null,"business_id": string,"created_at": string,"customer_id": string,"customer_unseen": boolean,"decline_reason": string | null,"expires_at": string,"id": string,"idempotency_key": string,"note": string | null,"party_size": number,"responded_at": string | null,"response_note": string | null,"status": string,"table_at": string,"updated_at": string
@@ -432,11 +466,17 @@ isOneToOne: false
             "apply_places_refresh":
 { Args: { "p_business_id": string,"p_lat": number,"p_lng": number,"p_outcome": string }; Returns: undefined
                            },
+"attach_invoice":
+{ Args: { "p_customer_id": string,"p_invoice_id": string,"p_livemode": boolean,"p_payment_id": string }; Returns: Json
+                           },
 "begin_food_log_upload":
 { Args: { "p_cuisine_code": string,"p_description": string,"p_is_public": boolean,"p_time_zone": string }; Returns: Json
                            },
 "begin_photo_upload":
 { Args: { "p_kind": string,"p_menu_item_id"?: string }; Returns: Json
+                           },
+"begin_promotion_invoice":
+{ Args: { "p_promotion_id": string }; Returns: Json
                            },
 "business_owner_view":
 { Args: { "p_owner_id": string }; Returns: Json
@@ -449,6 +489,9 @@ isOneToOne: false
                            },
 "cancel_table_request":
 { Args: { "p_request_id": string }; Returns: Json
+                           },
+"check_invoice_sendable":
+{ Args: { "p_payment_id": string }; Returns: boolean
                            },
 "claim_food_log_cleanup":
 { Args: Record<PropertyKey, never>; Returns: string[]
@@ -536,6 +579,9 @@ isOneToOne: false
 "list_business_requests":
 { Args: { "p_before"?: string,"p_status"?: string }; Returns: Json
                            },
+"list_invoices_to_void":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "list_my_food_logs":
 { Args: { "p_before"?: string }; Returns: Json
                            },
@@ -557,8 +603,17 @@ isOneToOne: false
 "mark_arrived":
 { Args: { "p_request_id": string }; Returns: Json
                            },
+"mark_invoice_sent":
+{ Args: { "p_payment_id": string }; Returns: boolean
+                           },
+"mark_invoice_void":
+{ Args: { "p_payment_id": string }; Returns: boolean
+                           },
 "mark_my_requests_seen":
 { Args: Record<PropertyKey, never>; Returns: undefined
+                           },
+"mark_refund_requested":
+{ Args: { "p_payment_id": string }; Returns: boolean
                            },
 "mark_request_outcome":
 { Args: { "p_kind"?: string,"p_outcome": string,"p_request_id": string }; Returns: Json
@@ -571,6 +626,9 @@ isOneToOne: false
                            },
 "record_push_results":
 { Args: { "p_results": Json }; Returns: undefined
+                           },
+"record_stripe_event":
+{ Args: { "p_data": Json,"p_event_id": string,"p_livemode": boolean,"p_type": string }; Returns: Json
                            },
 "register_push_token":
 { Args: { "p_platform": string,"p_token": string }; Returns: undefined

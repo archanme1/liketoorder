@@ -140,6 +140,7 @@ describe('useRequestPromotion and useCancelPromotion: the cache', () => {
     'not_configured',
     'not_found',
     'not_cancellable',
+    'contact_support',
   ] as const)('re-reads the server after the refusal %s', async (code) => {
     const { result } = await screenHooks();
     const before = reads();

@@ -2,7 +2,7 @@
 -- service_role functions, the Stripe event rules (D2, D3, D5, D6, D11, D12) and migration safety.
 -- now() is fixed for the whole transaction. All Stripe ids are obvious fakes that match the checks.
 begin;
-select plan(187);
+select plan(195);
 
 -- -- Ids ----------------------------------------------------------------------
 -- Users ...-1b16-<n>, businesses ...-1b17-<n>, promotions ...-1b18-<n>, payments ...-1b19-<n>.
@@ -106,7 +106,7 @@ create function pg_temp.in_offers(n int) returns boolean language sql as $$
                   where (o ->> 'business_id')::uuid = pg_temp.b(n)) $$;
 
 -- -- Fixtures (as postgres) -------------------------------------------------------
-select pg_temp.mkb(n) from generate_series(1, 50) n;
+select pg_temp.mkb(n) from generate_series(1, 51) n;
 
 select pg_temp.mkp(1, 'requested', price => 2000);                                      -- full happy path
 select pg_temp.mkp(2, 'payment_due', payby => '7 days', pref => (now() at time zone 'UTC')::date + 3);
@@ -137,6 +137,7 @@ select pg_temp.mkp(47, 'payment_due', payby => '7 days');                       
 select pg_temp.mkp(48, 'payment_due', payby => '7 days');                                 -- paid_at clamped
 select pg_temp.mkp(49, 'payment_due', payby => '7 days');                                 -- delete guard: open
 select pg_temp.mkp(50, 'cancelled');                                                      -- delete guard: void
+select pg_temp.mkp(51, 'payment_due', payby => '-1 hour');                                -- attach after the window
 update public.promotions set business_id = pg_temp.b(32) where id = pg_temp.p(33);
 select pg_temp.mkp(40, 'approved', '-1 day', '6 days', free => true);                     -- free (spec 16) rows
 select pg_temp.mkp(41, 'approved', '2 days', '9 days', free => true);
@@ -160,6 +161,7 @@ select pg_temp.mkpay(31, 31, 'open');
 select pg_temp.mkpay(32, 32, 'open');
 select pg_temp.mkpay(n, n, 'open') from generate_series(46, 49) n;
 select pg_temp.mkpay(50, 50, 'void');
+select pg_temp.mkpay(51, 51, 'reserved');
 
 -- Settings: this file's own row, independent of seed.sql.
 delete from public.promotion_settings;
@@ -206,16 +208,16 @@ select is_empty($$ select r, f from unnest(array['anon', 'authenticated']) r,
                     unnest(array['public.begin_promotion_invoice(uuid)', 'public.attach_invoice(uuid, text, text, boolean)',
                                  'public.mark_invoice_sent(uuid)', 'public.list_invoices_to_void()',
                                  'public.mark_invoice_void(uuid)', 'public.record_stripe_event(text, text, boolean, jsonb)',
-                                 'public.mark_refund_requested(uuid)']) f
+                                 'public.mark_refund_requested(uuid)', 'public.check_invoice_sendable(uuid)']) f
                     where has_function_privilege(r, f, 'execute') $$,
-  'anon and authenticated cannot execute any of the seven service functions');
+  'anon and authenticated cannot execute any of the eight service functions');
 select is((select count(*)::int from unnest(array['public.begin_promotion_invoice(uuid)',
                                  'public.attach_invoice(uuid, text, text, boolean)', 'public.mark_invoice_sent(uuid)',
                                  'public.list_invoices_to_void()', 'public.mark_invoice_void(uuid)',
                                  'public.record_stripe_event(text, text, boolean, jsonb)',
-                                 'public.mark_refund_requested(uuid)']) f
-            where has_function_privilege('service_role', f, 'execute')), 7,
-  'service_role can execute all seven service functions');
+                                 'public.mark_refund_requested(uuid)', 'public.check_invoice_sendable(uuid)']) f
+            where has_function_privilege('service_role', f, 'execute')), 8,
+  'service_role can execute all eight service functions');
 select ok(not has_function_privilege('service_role', 'private.admin_review_promotion(uuid, text, timestamptz, text)', 'execute'),
   'admin_review_promotion stays database-owner only');
 select is_empty($$ select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -226,7 +228,8 @@ select is_empty($$ select p.proname from pg_proc p join pg_namespace n on n.oid 
 select is_empty($$ select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                     where n.nspname = 'public'
                       and p.proname in ('begin_promotion_invoice', 'attach_invoice', 'mark_invoice_sent', 'list_invoices_to_void',
-                                        'mark_invoice_void', 'record_stripe_event', 'mark_refund_requested')
+                                        'mark_invoice_void', 'record_stripe_event', 'mark_refund_requested',
+                                        'check_invoice_sendable')
                       and (not p.prosecdef or p.proconfig is distinct from array['search_path=""']) $$,
   'every service function is security definer with an empty search_path');
 
@@ -249,6 +252,7 @@ select throws_ok($$ select public.mark_invoice_void(pg_temp.pay(29)) $$, '42501'
 select throws_ok($$ select public.record_stripe_event('evt_FakeTest9999', 'invoice.paid', false, '{}') $$, '42501', null,
   'anon cannot call record_stripe_event');
 select throws_ok($$ select public.mark_refund_requested(pg_temp.pay(29)) $$, '42501', null, 'anon cannot call mark_refund_requested');
+select throws_ok($$ select public.check_invoice_sendable(pg_temp.pay(29)) $$, '42501', null, 'anon cannot call check_invoice_sendable');
 reset role;
 set local role authenticated;
 select pg_temp.as_user(29);
@@ -270,6 +274,8 @@ select throws_ok($$ select public.record_stripe_event('evt_FakeTest9999', 'invoi
   'authenticated cannot call record_stripe_event');
 select throws_ok($$ select public.mark_refund_requested(pg_temp.pay(29)) $$, '42501', null,
   'authenticated cannot call mark_refund_requested');
+select throws_ok($$ select public.check_invoice_sendable(pg_temp.pay(29)) $$, '42501', null,
+  'authenticated cannot call check_invoice_sendable');
 select throws_ok($$ update public.promotions set paid_at = now(), status = 'approved' $$, '42501', null,
   'authenticated cannot write the payment fields of promotions');
 reset role;
@@ -297,6 +303,15 @@ select is(pg_temp.keys(public.list_invoices_to_void() -> 0), array['invoice_id',
 select ok(public.mark_invoice_void(pg_temp.pay(30)), 'mark_invoice_void voids an uncollectible lapsed invoice');
 select is(pg_temp.paystatus(30), 'void', 'the payment row is void');
 select ok(not public.mark_invoice_void(pg_temp.pay(30)), 'marking it again does nothing');
+
+-- -- 4b. Attach and the pre-send check (S3) (6) ---------------------------------------------------
+select throws_ok($$ select public.attach_invoice(pg_temp.pay(51), 'cus_FakeTest0051', 'in_FakeTest0051', false) $$,
+  'P0001', 'not_attachable', 'attach_invoice refuses a reserved row whose payment window has passed');
+select is(pg_temp.paystatus(51), 'reserved', 'the refused attach changed nothing');
+select ok(public.check_invoice_sendable(pg_temp.pay(29)), 'check_invoice_sendable: an open invoice within pay_by may be sent');
+select ok(not public.check_invoice_sendable(pg_temp.pay(9)), 'check_invoice_sendable: not after pay_by');
+select ok(not public.check_invoice_sendable(pg_temp.pay(13)), 'check_invoice_sendable: not after a cancel (void_pending)');
+select ok(not public.check_invoice_sendable('00000000-0000-0000-1b19-999999999999'), 'check_invoice_sendable: not for an unknown id');
 
 -- -- 5. The happy path: approve_headline, invoice, paid, refunds (34) -------------------------
 create temp table rev1 as select private.admin_review_promotion(pg_temp.p(1), 'approve_headline') as j;

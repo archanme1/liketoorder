@@ -7,7 +7,7 @@
 -- (written only when something writes to a lapsed payment_due row) and refunded. Reads never write:
 -- payment_due past pay_by already reads as payment_expired by the server clock.
 --
--- Roles: the three app functions stay granted to authenticated. The seven service functions live in
+-- Roles: the three app functions stay granted to authenticated. The eight service functions live in
 -- public (the API exposes only public; the claim_push_batch pattern) and are granted to service_role
 -- only. admin_review_promotion and the helpers stay in private (database owner only).
 
@@ -466,13 +466,15 @@ revoke execute on function public.begin_promotion_invoice(uuid) from public, ano
 grant execute on function public.begin_promotion_invoice(uuid) to service_role;
 
 -- -- attach_invoice (service_role) -----------------------------------------------------------
--- reserved -> open with the Stripe Customer, the draft invoice and its livemode (D11). Any other status
--- (for example void after a cancel) gives not_attachable, so the caller stops before finalize or send.
+-- reserved -> open with the Stripe Customer, the draft invoice and its livemode (D11), only while the
+-- promotion is still payment_due within pay_by. Any other case (a void row after a cancel, a lapsed or
+-- expired promotion) gives not_attachable, so the caller stops before finalize or send.
 create function public.attach_invoice(p_payment_id uuid, p_customer_id text, p_invoice_id text, p_livemode boolean)
 returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
   v_promotion uuid;
+  p           public.promotions;
   r           public.promotion_payments;
 begin
   if p_customer_id is null or p_customer_id !~ '^cus_[A-Za-z0-9]+$'
@@ -485,9 +487,9 @@ begin
   if v_promotion is null then
     raise exception 'not_found';
   end if;
-  perform 1 from public.promotions where id = v_promotion for update;
+  select * into p from public.promotions where id = v_promotion for update;
   select * into r from public.promotion_payments where id = p_payment_id for update;
-  if r.status <> 'reserved' then
+  if r.status <> 'reserved' or p.status <> 'payment_due' or p.pay_by <= now() then
     raise exception 'not_attachable';
   end if;
 
@@ -519,6 +521,20 @@ begin
 end $$;
 revoke execute on function public.mark_invoice_sent(uuid) from public, anon, authenticated;
 grant execute on function public.mark_invoice_sent(uuid) to service_role;
+
+-- -- check_invoice_sendable (service_role) ----------------------------------------------------
+-- PR 2 calls it after finalize and before send: true only while the payment is open and its promotion
+-- is still payment_due within pay_by. False (for example a cancel landed during the run) means: do not
+-- send; void the finalized invoice instead. An unknown id is false.
+create function public.check_invoice_sendable(p_payment_id uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select coalesce((select r.status = 'open' and p.status = 'payment_due' and now() < p.pay_by
+                     from public.promotion_payments r
+                     join public.promotions p on p.id = r.promotion_id
+                    where r.id = p_payment_id), false);
+$$;
+revoke execute on function public.check_invoice_sendable(uuid) from public, anon, authenticated;
+grant execute on function public.check_invoice_sendable(uuid) to service_role;
 
 -- -- list_invoices_to_void (service_role) --------------------------------------------------------
 -- The invoices that should no longer be paid: every void_pending row, plus open or uncollectible rows

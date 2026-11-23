@@ -490,6 +490,9 @@ isOneToOne: false
 "cancel_table_request":
 { Args: { "p_request_id": string }; Returns: Json
                            },
+"check_invoice_sendable":
+{ Args: { "p_payment_id": string }; Returns: boolean
+                           },
 "claim_food_log_cleanup":
 { Args: Record<PropertyKey, never>; Returns: string[]
                            },

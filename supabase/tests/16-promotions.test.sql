@@ -47,13 +47,13 @@ create function pg_temp.mkp(n int, biz int, st text, s interval default null, e 
 returns void language sql as $$
   insert into public.promotions (id, business_id, category, headline, status, price_cents, currency_code,
                                  length_days, starts_at, ends_at, reject_reason, cancelled_by, cancelled_at,
-                                 created_at)
+                                 created_at, is_free)
   values (pg_temp.p(n), pg_temp.b(biz), cat, 'Fixture headline ' || n, st, 2500, 'CAD', 7,
           now() + s, now() + e,
           case when st = 'rejected' then 'other' end,
           case when st = 'cancelled' then 'admin' end,
           case when st = 'cancelled' then now() - interval '1 day' end,
-          now() + created);
+          now() + created, st = 'approved');
 $$;
 
 create function pg_temp.as_user(n int) returns void language plpgsql as $$
@@ -389,7 +389,7 @@ select results_eq(
 select is(pg_temp.keys((select j from req20)), array['eligible', 'promotion', 'settings'],
   'request_promotion answers with eligible, promotion and settings');
 select is(pg_temp.keys((select j from req20) -> 'promotion'),
-  array['category', 'created_at', 'currency_code', 'ends_at', 'headline', 'id', 'length_days', 'preferred_start',
+  array['category', 'created_at', 'currency_code', 'ends_at', 'headline', 'id', 'is_free', 'length_days', 'paid', 'preferred_start',
         'price_cents', 'reject_reason', 'starts_at', 'state'],
   'the promotion object has exactly the documented keys');
 select is(pg_temp.keys((select j from req20) -> 'settings'), array['currency_code', 'length_days', 'price_cents'],
@@ -556,7 +556,7 @@ select is(public.get_my_promotion() -> 'promotion' ->> 'state', 'requested',
 select is(pg_temp.keys(public.get_my_promotion()), array['eligible', 'promotion', 'settings'],
   'get_my_promotion has exactly eligible, promotion and settings');
 select is(pg_temp.keys(public.get_my_promotion() -> 'promotion'),
-  array['category', 'created_at', 'currency_code', 'ends_at', 'headline', 'id', 'length_days', 'preferred_start',
+  array['category', 'created_at', 'currency_code', 'ends_at', 'headline', 'id', 'is_free', 'length_days', 'paid', 'preferred_start',
         'price_cents', 'reject_reason', 'starts_at', 'state'], 'its promotion has exactly the documented keys');
 select is(public.get_my_promotion() -> 'settings', '{"price_cents": 2500, "currency_code": "CAD", "length_days": 7}'::jsonb,
   'settings carries the price, currency and length');

@@ -216,9 +216,9 @@ select is(
         'consume_map_quota', 'enqueue_request_event', 'expire_pickup_requests', 'flag_customer_unseen', 'food_log_is_live',
         'food_log_upload_allowed', 'homemade_is_fresh', 'invoke_places_refresh', 'invoke_push_sender',
         'owns_business', 'photo_is_live', 'photo_is_public', 'photo_upload_allowed', 'pickup_request_expiry',
-        'pickup_request_json', 'promotion_is_active', 'promotion_json', 'restaurant_is_fresh', 'table_request_expiry',
-        'table_request_json'],
-  'the private schema holds exactly the five RLS helpers, the six spec 07 map helpers, the spec 08 homemade_is_fresh, the two spec 09 pickup helpers, the spec 10 request-object builder, the two spec 11 table helpers, the four spec 12 notification functions, the two spec 13 food log storage helpers and the four spec 16 promotion functions'
+        'pickup_request_json', 'promotion_is_active', 'promotion_json', 'refund_target', 'restaurant_is_fresh',
+        'stop_promotion', 'table_request_expiry', 'table_request_json', 'void_open_payment'],
+  'the private schema holds exactly the five RLS helpers, the six spec 07 map helpers, the spec 08 homemade_is_fresh, the two spec 09 pickup helpers, the spec 10 request-object builder, the two spec 11 table helpers, the four spec 12 notification functions, the two spec 13 food log storage helpers, the four spec 16 promotion functions and the three spec 16b payment helpers'
 );
 select is_empty(
   $$ select p.proname::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace

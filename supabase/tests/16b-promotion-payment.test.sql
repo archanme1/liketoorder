@@ -2,7 +2,7 @@
 -- service_role functions, the Stripe event rules (D2, D3, D5, D6, D11, D12) and migration safety.
 -- now() is fixed for the whole transaction. All Stripe ids are obvious fakes that match the checks.
 begin;
-select plan(170);
+select plan(176);
 
 -- -- Ids ----------------------------------------------------------------------
 -- Users ...-1b16-<n>, businesses ...-1b17-<n>, promotions ...-1b18-<n>, payments ...-1b19-<n>.
@@ -106,7 +106,7 @@ create function pg_temp.in_offers(n int) returns boolean language sql as $$
                   where (o ->> 'business_id')::uuid = pg_temp.b(n)) $$;
 
 -- -- Fixtures (as postgres) -------------------------------------------------------
-select pg_temp.mkb(n) from generate_series(1, 45) n;
+select pg_temp.mkb(n) from generate_series(1, 50) n;
 
 select pg_temp.mkp(1, 'requested', price => 2000);                                      -- full happy path
 select pg_temp.mkp(2, 'payment_due', payby => '7 days', pref => (now() at time zone 'UTC')::date + 3);
@@ -132,6 +132,9 @@ select pg_temp.mkp(30, 'payment_due', payby => '-2 days');                      
 select pg_temp.mkp(31, 'payment_due', payby => '7 days');                                 -- dispute on needs_refund
 select pg_temp.mkp(32, 'payment_expired', payby => '-1 day');                             -- expired, newer request
 select pg_temp.mkp(33, 'requested', created => '-1 day');
+select pg_temp.mkp(46, 'payment_expired', payby => '-1 day');                             -- honour rule, no newer request
+select pg_temp.mkp(47, 'payment_due', payby => '7 days');                                 -- paid_at before the row
+select pg_temp.mkp(48, 'payment_due', payby => '7 days');                                 -- paid_at clamped
 update public.promotions set business_id = pg_temp.b(32) where id = pg_temp.p(33);
 select pg_temp.mkp(40, 'approved', '-1 day', '6 days', free => true);                     -- free (spec 16) rows
 select pg_temp.mkp(41, 'approved', '2 days', '9 days', free => true);
@@ -153,6 +156,7 @@ select pg_temp.mkpay(29, 29, 'open');
 select pg_temp.mkpay(30, 30, 'uncollectible');
 select pg_temp.mkpay(31, 31, 'open');
 select pg_temp.mkpay(32, 32, 'open');
+select pg_temp.mkpay(n, n, 'open') from generate_series(46, 48) n;
 
 -- Settings: this file's own row, independent of seed.sql.
 delete from public.promotion_settings;
@@ -283,7 +287,7 @@ select is((select count(*)::int from public.promotions where status = 'approved'
 
 -- -- 4. list_invoices_to_void and mark_invoice_void, before any event (5) --------------------
 select set_eq($$ select (x ->> 'payment_id')::uuid from jsonb_array_elements(public.list_invoices_to_void()) x $$,
-  $$ values (pg_temp.pay(9)), (pg_temp.pay(10)), (pg_temp.pay(13)), (pg_temp.pay(30)), (pg_temp.pay(32)) $$,
+  $$ values (pg_temp.pay(9)), (pg_temp.pay(10)), (pg_temp.pay(13)), (pg_temp.pay(30)), (pg_temp.pay(32)), (pg_temp.pay(46)) $$,
   'list_invoices_to_void lists exactly the void_pending rows and the open or uncollectible rows past pay_by');
 select is(pg_temp.keys(public.list_invoices_to_void() -> 0), array['invoice_id', 'payment_id'],
   'each listed invoice has exactly payment_id and invoice_id');
@@ -472,6 +476,19 @@ select results_eq($$ select pg_temp.pstatus(11), pg_temp.paystatus(11),
   $$ values ('payment_due'::text, 'open'::text, null::text) $$, 'a mismatch changes nothing');
 select is(pg_temp.ev(1201, 'invoice.paid', pg_temp.pd(12, 2500, 'cad', now() + interval '1 day')) ->> 'outcome', 'mismatch',
   'a paid_at in the future is mismatch');
+select is(pg_temp.ev(4601, 'invoice.paid', pg_temp.pd(46, 2500, 'cad', now() - interval '2 days')) ->> 'outcome', 'applied',
+  'honour rule: paid in time on a campaign already stored payment_expired, with no newer request, activates');
+select results_eq($$ select pg_temp.pstatus(46), pg_temp.paystatus(46) $$, $$ values ('approved'::text, 'paid'::text) $$,
+  'honour rule: the campaign is approved and the payment paid');
+select is(pg_temp.ev(4701, 'invoice.paid', pg_temp.pd(47, 2500, 'cad', now() - interval '6 days')), '{"outcome": "mismatch"}'::jsonb,
+  'a paid_at more than 5 minutes before the payment row was created is mismatch');
+select results_eq($$ select pg_temp.pstatus(47), pg_temp.paystatus(47) $$, $$ values ('payment_due'::text, 'open'::text) $$,
+  'the too-early paid_at changed nothing');
+select is(pg_temp.ev(4801, 'invoice.paid', pg_temp.pd(48, 2500, 'cad', now() + interval '2 minutes')) ->> 'outcome', 'applied',
+  'a paid_at within 5 minutes in the future is accepted');
+select results_eq($$ select paid_at = now() from public.promotions where id = pg_temp.p(48)
+                    union all select paid_at = now() from public.promotion_payments where id = pg_temp.pay(48) $$,
+  $$ values (true), (true) $$, 'and is clamped to now on the campaign and the payment');
 
 -- -- 9. Livemode, voids, unknowns (D3, D11) (9) -------------------------------------------------
 select is(pg_temp.ev(1401, 'invoice.paid', pg_temp.pd(14), true), '{"outcome": "mismatch"}'::jsonb,

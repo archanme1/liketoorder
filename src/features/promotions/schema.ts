@@ -61,9 +61,11 @@ export const promotionSchema = z
     price_cents: priceCentsSchema,
     currency_code: currencySchema,
     length_days: lengthDaysSchema,
-    // Spec 16b: paid by Stripe, or a free campaign approved by hand. Not shown yet (PR 3).
-    paid: z.boolean(),
-    is_free: z.boolean(),
+    // Spec 16b: paid by Stripe, or a free campaign approved by hand. Not shown yet (PR 3). Defaults
+    // let this app read a server from before spec 16b; the new states still need the new app, so the
+    // hosted migration still ships only together with an app update.
+    paid: z.boolean().default(false),
+    is_free: z.boolean().default(false),
     created_at: timestampSchema,
   })
   .refine((p) => (p.starts_at === null) === (p.ends_at === null))

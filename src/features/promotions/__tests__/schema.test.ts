@@ -53,7 +53,10 @@ describe('myPromotionSchema: refuses anything else', () => {
     expect(promotionSchema.safeParse(json).success).toBe(false);
   });
 
-  it.each(Object.keys(promotionJson('active')))('refuses a campaign without %s', (key) => {
+  // paid and is_free have defaults (spec 16b, read from an older server): tested separately below.
+  it.each(
+    Object.keys(promotionJson('active')).filter((key) => key !== 'paid' && key !== 'is_free'),
+  )('refuses a campaign without %s', (key) => {
     const json: Record<string, unknown> = { ...promotionJson('active') };
     delete json[key];
     expect(promotionSchema.safeParse(json).success).toBe(false);
@@ -164,6 +167,13 @@ describe('myPromotionSchema: spec 16b states and keys (PR 1, accepted, not shown
       paid: false,
       is_free: true,
     });
+  });
+
+  it('reads a campaign from a server before spec 16b (no paid, no is_free) as not paid, not free', () => {
+    const json: Record<string, unknown> = { ...promotionJson('active') };
+    delete json.paid;
+    delete json.is_free;
+    expect(promotionSchema.parse(json)).toMatchObject({ paid: false, is_free: false });
   });
 
   it.each(['paid', 'is_free'])('refuses %s when it is not a boolean', (key) => {

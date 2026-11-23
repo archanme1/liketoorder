@@ -586,6 +586,9 @@ grant execute on function public.mark_refund_requested(uuid) to service_role;
 --   invoice.marked_uncollectible   { invoice_id }
 --   charge.refunded                { payment_intent_id, amount_refunded, refunded }  (refunded: fully)
 --   charge.dispute.created         { payment_intent_id }
+-- Raises invalid_event_data (the webhook answers 500 and Stripe retries) when an invoice.paid names OUR
+-- invoice but carries a missing or malformed payment_intent_id or amount_paid, or a paid_at more than
+-- 5 minutes ahead; nothing is stored. Unknown invoices and PaymentIntents are 'mismatch' (not ours).
 -- Answer: { outcome } where outcome is applied, ignored, refund_requested, mismatch or duplicate, plus
 -- { refund: { payment_id, payment_intent_id } } while the payment named is still needs_refund (D12),
 -- also on a duplicate. Event ids are idempotent (D3); every change also checks the current state.
@@ -651,18 +654,28 @@ begin
 
   if p_type = 'invoice.paid' then
     v_pi := p_data ->> 'payment_intent_id';
+    -- The invoice is OURS, so the seller may have paid: bad data must not use the event up. Raising
+    -- rolls the whole call back, the stripe_events row included, so the webhook answers 500 and
+    -- Stripe's retry is processed afresh (not a duplicate). Events for invoices that are not ours
+    -- stay 'mismatch' above: the Stripe account may carry other activity, and those must not loop.
     if v_pi is null or v_pi !~ '^pi_[A-Za-z0-9]+$'
-       or coalesce(p_data ->> 'amount_paid', '') !~ '^[0-9]{1,12}$'
-       or coalesce(p_data ->> 'currency', '') !~ '^[A-Za-z]{3}$'
+       or coalesce(p_data ->> 'amount_paid', '') !~ '^[0-9]{1,12}$' then
+      raise exception 'invalid_event_data';
+    end if;
+    if coalesce(p_data ->> 'currency', '') !~ '^[A-Za-z]{3}$'
        or coalesce(p_data ->> 'paid_at', '') !~ '^[0-9]{1,12}$' then
       update public.stripe_events set outcome = 'mismatch' where event_id = p_event_id;
       return jsonb_build_object('outcome', 'mismatch');
     end if;
     v_amount  := (p_data ->> 'amount_paid')::bigint;
     v_paid_at := to_timestamp((p_data ->> 'paid_at')::bigint);
-    -- Stripe's paid time: never in the future (5 minutes of clock skew allowed, then clamped to now)
-    -- and never before our payment row existed.
-    if v_paid_at > now() + interval '5 minutes' or v_paid_at < r.created_at - interval '5 minutes' then
+    -- Stripe's paid time: more than 5 minutes in the future means a clock is off; raise, so the retry
+    -- succeeds once the clocks agree (within 5 minutes it is clamped to now). Before our payment row
+    -- existed is impossible for this invoice: mismatch.
+    if v_paid_at > now() + interval '5 minutes' then
+      raise exception 'invalid_event_data';
+    end if;
+    if v_paid_at < r.created_at - interval '5 minutes' then
       update public.stripe_events set outcome = 'mismatch' where event_id = p_event_id;
       return jsonb_build_object('outcome', 'mismatch');
     end if;

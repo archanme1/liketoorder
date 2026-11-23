@@ -2,7 +2,7 @@
 -- service_role functions, the Stripe event rules (D2, D3, D5, D6, D11, D12) and migration safety.
 -- now() is fixed for the whole transaction. All Stripe ids are obvious fakes that match the checks.
 begin;
-select plan(182);
+select plan(187);
 
 -- -- Ids ----------------------------------------------------------------------
 -- Users ...-1b16-<n>, businesses ...-1b17-<n>, promotions ...-1b18-<n>, payments ...-1b19-<n>.
@@ -477,8 +477,20 @@ select is(pg_temp.ev(1101, 'invoice.paid', pg_temp.pd(11) - 'paid_at'), '{"outco
 select results_eq($$ select pg_temp.pstatus(11), pg_temp.paystatus(11),
                             (select payment_intent_id from public.promotion_payments where id = pg_temp.pay(11)) $$,
   $$ values ('payment_due'::text, 'open'::text, null::text) $$, 'a mismatch changes nothing');
-select is(pg_temp.ev(1201, 'invoice.paid', pg_temp.pd(12, 2500, 'cad', now() + interval '1 day')) ->> 'outcome', 'mismatch',
-  'a paid_at in the future is mismatch');
+select throws_ok($$ select pg_temp.ev(1201, 'invoice.paid', pg_temp.pd(12, 2500, 'cad', now() + interval '1 day')) $$,
+  'P0001', 'invalid_event_data',
+  'our invoice.paid with a paid_at more than 5 minutes ahead raises (the webhook answers 500, Stripe retries)');
+select is((select count(*)::int from public.stripe_events where event_id = 'evt_FakeTest1201'), 0,
+  'the raise rolled back the event row, so the retry is not a duplicate');
+select is(pg_temp.ev(1201, 'invoice.paid', pg_temp.pd(12)) ->> 'outcome', 'applied',
+  'the retry of the same event id with a sane paid_at is processed');
+select throws_ok($$ select pg_temp.ev(2901, 'invoice.paid', pg_temp.pd(29) - 'payment_intent_id') $$,
+  'P0001', 'invalid_event_data', 'our invoice.paid without a payment_intent_id raises');
+select throws_ok($$ select pg_temp.ev(2902, 'invoice.paid', pg_temp.pd(29) || '{"amount_paid": "25.00"}'::jsonb) $$,
+  'P0001', 'invalid_event_data', 'our invoice.paid with a malformed amount_paid raises');
+select results_eq($$ select pg_temp.paystatus(29), (select count(*)::int from public.stripe_events
+                                                     where event_id in ('evt_FakeTest2901', 'evt_FakeTest2902')) $$,
+  $$ values ('open'::text, 0) $$, 'the raised events stored nothing and changed nothing');
 select is(pg_temp.ev(4601, 'invoice.paid', pg_temp.pd(46, 2500, 'cad', now() - interval '2 days')) ->> 'outcome', 'applied',
   'honour rule: paid in time on a campaign already stored payment_expired, with no newer request, activates');
 select results_eq($$ select pg_temp.pstatus(46), pg_temp.paystatus(46) $$, $$ values ('approved'::text, 'paid'::text) $$,

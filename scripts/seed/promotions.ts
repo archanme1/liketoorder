@@ -22,9 +22,9 @@
  *
  * - Talks only to http://127.0.0.1 or http://localhost (anything else is refused).
  * - The key is read from the environment variable SEED_SERVICE_ROLE_KEY. It is never printed.
- * - Safe to re-run: it first deletes the payment rows, then the campaigns, of the demo businesses any
- *   mode uses only, after checking each one belongs to a seed account. So switching modes leaves
- *   nothing behind.
+ * - Safe to re-run: it first marks the demo businesses' still-payable fake payment rows void, then
+ *   deletes the payment rows, then the campaigns, of the demo businesses any mode uses only, after
+ *   checking each one belongs to a seed account. So switching modes leaves nothing behind.
  * - Times are relative to when you run it, so re-run it for a fresh active window.
  * - Rows are written directly (the admin approval is a database-owner call, not an API one).
  * - Never run by CI.
@@ -100,7 +100,15 @@ async function main() {
     fail(old.error, `find the old campaigns of ${business.name}`);
     const oldIds = (old.data ?? []).map((row) => row.id);
     if (oldIds.length > 0) {
-      // Payment rows first (they would also go by cascade; deleting them by name keeps it explicit).
+      // Payment rows first. A row that is still payable or owed a refund cannot be deleted (the
+      // promotion_payments_guard_delete trigger), so these local fake rows are first marked void, the
+      // normal end state of an invoice that will not be paid. No bypass of the guard.
+      const voided = await db
+        .from('promotion_payments')
+        .update({ status: 'void' })
+        .in('promotion_id', oldIds)
+        .in('status', ['open', 'void_pending', 'uncollectible', 'needs_refund']);
+      fail(voided.error, `void the old payment rows of ${business.name}`);
       const payments = await db.from('promotion_payments').delete().in('promotion_id', oldIds);
       fail(payments.error, `remove the old payment rows of ${business.name}`);
     }

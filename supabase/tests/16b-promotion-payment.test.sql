@@ -2,7 +2,7 @@
 -- service_role functions, the Stripe event rules (D2, D3, D5, D6, D11, D12) and migration safety.
 -- now() is fixed for the whole transaction. All Stripe ids are obvious fakes that match the checks.
 begin;
-select plan(176);
+select plan(182);
 
 -- -- Ids ----------------------------------------------------------------------
 -- Users ...-1b16-<n>, businesses ...-1b17-<n>, promotions ...-1b18-<n>, payments ...-1b19-<n>.
@@ -135,6 +135,8 @@ select pg_temp.mkp(33, 'requested', created => '-1 day');
 select pg_temp.mkp(46, 'payment_expired', payby => '-1 day');                             -- honour rule, no newer request
 select pg_temp.mkp(47, 'payment_due', payby => '7 days');                                 -- paid_at before the row
 select pg_temp.mkp(48, 'payment_due', payby => '7 days');                                 -- paid_at clamped
+select pg_temp.mkp(49, 'payment_due', payby => '7 days');                                 -- delete guard: open
+select pg_temp.mkp(50, 'cancelled');                                                      -- delete guard: void
 update public.promotions set business_id = pg_temp.b(32) where id = pg_temp.p(33);
 select pg_temp.mkp(40, 'approved', '-1 day', '6 days', free => true);                     -- free (spec 16) rows
 select pg_temp.mkp(41, 'approved', '2 days', '9 days', free => true);
@@ -156,7 +158,8 @@ select pg_temp.mkpay(29, 29, 'open');
 select pg_temp.mkpay(30, 30, 'uncollectible');
 select pg_temp.mkpay(31, 31, 'open');
 select pg_temp.mkpay(32, 32, 'open');
-select pg_temp.mkpay(n, n, 'open') from generate_series(46, 48) n;
+select pg_temp.mkpay(n, n, 'open') from generate_series(46, 49) n;
+select pg_temp.mkpay(50, 50, 'void');
 
 -- Settings: this file's own row, independent of seed.sql.
 delete from public.promotion_settings;
@@ -570,6 +573,26 @@ select ok((select bool_and(position(s in j::text) = 0)
 select pg_temp.as_user(10);
 select throws_ok($$ select public.cancel_my_promotion(pg_temp.p(10)) $$, 'P0001', 'not_cancellable',
   'a lapsed payment window cannot be cancelled by the seller (it reads payment_expired)');
+
+-- -- 14. Delete guard: a payment still payable or owed a refund is never deleted (S1) (6) ------
+select throws_ok($$ delete from public.businesses where id = pg_temp.b(49) $$, 'P0001', 'payment_unsettled',
+  'deleting a business with an open invoice is refused');
+select results_eq(
+  $$ select (select count(*)::int from public.businesses where id = pg_temp.b(49)),
+            (select count(*)::int from public.promotions where id = pg_temp.p(49)),
+            (select count(*)::int from public.promotion_payments where id = pg_temp.pay(49)) $$,
+  $$ values (1, 1, 1) $$, 'the refused delete removed nothing');
+select throws_ok($$ delete from public.promotion_payments where id = pg_temp.pay(49) $$, 'P0001', 'payment_unsettled',
+  'an open payment row cannot be deleted directly either');
+select throws_ok($$ delete from public.promotion_payments where id = pg_temp.pay(8) $$, 'P0001', 'payment_unsettled',
+  'a refund-owed (needs_refund) row cannot be deleted');
+select lives_ok($$ delete from public.businesses where id = pg_temp.b(50) $$,
+  'deleting a business whose payment is void works');
+select results_eq(
+  $$ select (select count(*)::int from public.businesses where id = pg_temp.b(50)),
+            (select count(*)::int from public.promotions where id = pg_temp.p(50)),
+            (select count(*)::int from public.promotion_payments where id = pg_temp.pay(50)) $$,
+  $$ values (0, 0, 0) $$, 'the business, its promotion and its void payment row are gone (cascade)');
 
 select * from finish();
 rollback;

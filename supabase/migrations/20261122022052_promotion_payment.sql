@@ -43,8 +43,9 @@ create unique index promotions_one_request on public.promotions (business_id)
 -- Ids, amounts and statuses only: no card data, no email, no name, no Stripe payload.
 -- A row is 'reserved' before Stripe has an invoice; a reserved row cancelled before that becomes 'void'
 -- with no ids. Every other status carries the customer, the invoice and the livemode.
--- on delete cascade: a business delete (cascading to its promotions) must not be blocked. Stripe keeps
--- the financial record; the runbook says to check Stripe before deleting a business with paid campaigns.
+-- on delete cascade: a business delete cascades to its promotions and payment rows, except that
+-- promotion_payments_guard_delete (below) refuses while a row is still payable or owed a refund. Stripe
+-- keeps the financial record; the runbook says to settle and check Stripe before deleting a business.
 create table public.promotion_payments (
   id                uuid primary key default gen_random_uuid(),
   promotion_id      uuid not null references public.promotions(id) on delete cascade,
@@ -74,6 +75,23 @@ create unique index promotion_payments_one_open on public.promotion_payments (pr
   where status in ('reserved', 'open', 'void_pending');
 create unique index promotion_payments_one_paid on public.promotion_payments (promotion_id)
   where status = 'paid';          -- a second paid invoice goes to needs_refund instead
+
+-- A payment row that still matters at Stripe cannot be deleted, not even by the cascade from a business
+-- or account delete: an open, void_pending or uncollectible invoice is still payable (it must be voided
+-- first, admin command void_pending), and a needs_refund row is a refund still owed. Deleting it would
+-- lose the only link between a later payment or refund and the seller. Settle or void first.
+create function private.guard_payment_delete() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if old.status in ('open', 'void_pending', 'uncollectible', 'needs_refund') then
+    raise exception 'payment_unsettled';
+  end if;
+  return old;
+end $$;
+revoke execute on function private.guard_payment_delete() from public, anon, authenticated, service_role;
+create trigger promotion_payments_guard_delete
+  before delete on public.promotion_payments
+  for each row execute function private.guard_payment_delete();
 
 -- -- 7. Webhook idempotency and audit ---------------------------------------------------
 create table public.stripe_events (

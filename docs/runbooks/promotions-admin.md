@@ -197,10 +197,17 @@ on conflict (id) do update
   visible on its map; if the place is hidden, nothing shows, and the campaign's time keeps running.
 - No card data and no email is stored in our database: only Stripe ids, amounts and statuses
   (`public.promotion_payments`, `public.stripe_events`).
-- **Deleting a business or an account with paid campaigns** also deletes its promotions and their
-  payment rows (cascade), so our record of those payments is gone. **Check the payments in Stripe
-  first** (Stripe keeps them). Note for spec 18 (account deletion): handle paid campaigns before
-  deleting.
+- **Before deleting a business or an account** (which also deletes its promotions and payment rows by
+  cascade):
+  1. Void every open invoice at Stripe: cancel the promotion if needed, then run `void_pending`.
+  2. Make sure no payment still owes a refund (`needs_refund` or `refund_requested`, query under
+     "Payments needing attention") and the refunds are done in Stripe.
+  3. Check the paid payments in Stripe (Stripe keeps them; our rows go with the cascade).
+
+  The database refuses the delete with `payment_unsettled` while any payment row of that business is
+  still `open`, `void_pending`, `uncollectible` or `needs_refund`; nothing is deleted then. Note for
+  spec 18 (account deletion): this guard also blocks a self-service account delete until the payments
+  are settled, and the flow must handle it.
 - **Hosted rollout:** each hosted migration must ship together with an app update, never before one.
   The app checks the server's answers strictly: an older app build refuses new keys or states (spec 16's
   `promoted` and `sponsored`; spec 16b's `paid`, `is_free` and the new states).

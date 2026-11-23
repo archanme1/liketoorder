@@ -240,6 +240,7 @@ create table public.stripe_events (
 | `public.mark_invoice_void(p_payment_id uuid)` (new) | service_role only | `open` or `void_pending` -> `void` after Stripe accepted the void call (also set by `invoice.voided`). |
 | `public.record_stripe_event(p_event_id text, p_type text, p_livemode boolean, p_data jsonb) returns jsonb` (new) | service_role only | Inserts into `stripe_events` with `on conflict do nothing`. A duplicate does nothing new, **but** if the payment it names is still `needs_refund`, it returns `{outcome:'duplicate', refund:{payment_id, payment_intent_id}}` again (D12). By type, with row locks: unknown invoice or PaymentIntent -> `mismatch`, nothing changed; **event livemode differs from the payment row's livemode -> `mismatch`, nothing changed** (D11). `invoice.paid` (with `payment_intent_id` resolved by the webhook): stores `payment_intent_id`; `amount_paid` and currency must match the row, the row must be `open`, and the promotion must be `payment_due` within `pay_by` -> `approved`, `paid_at = now()`, window per D2; otherwise payment `needs_refund` and returns the refund target. `invoice.voided` -> payment `void`. `invoice.marked_uncollectible` -> payment `uncollectible` (recorded only). `charge.refunded` -> `refunded_cents`; full -> payment `refunded`, promotion `refunded`, window closed. `charge.dispute.created` -> payment `disputed`, campaign stopped. Any other type -> `ignored`. Any event for a payment still in `needs_refund` also returns its refund target (D12). |
 | `public.mark_refund_requested(p_payment_id uuid)` (new) | service_role only | `needs_refund` -> `refund_requested`, called by the webhook only after Stripe accepted the refund call. Until then the payment stays `needs_refund`. |
+| `public.check_invoice_sendable(p_payment_id uuid) returns boolean` (new, review S3) | service_role only | True only while the payment is `open` and its promotion is `payment_due` with `now() < pay_by`; false otherwise and for an unknown id. PR 2 calls it after finalize and before send. |
 | `private.promotion_is_active(uuid)` | unchanged | Still `approved` and in window; `refunded` rows never count. |
 
 ### PR 1 as built (amendments 2026-11-22, approved by Archan at the PR 1 plan and gates)
@@ -256,6 +257,16 @@ These override the text above where they differ. Migration `20261122022052_promo
 - **FK `on delete cascade`** (not restrict): a business delete cascades to its promotions and must not be blocked. Stripe keeps the financial record; the runbook says to check Stripe before deleting a business with paid campaigns (note for spec 18 / account deletion).
 - **`stripe_events.outcome`** has a check (`applied`, `ignored`, `refund_requested`, `mismatch`); `duplicate` is an answer only. An extra check `promotion_payments_refund_target` requires a PaymentIntent on `needs_refund` and `refund_requested` rows.
 - **`get_my_promotion`** is not redefined: it picks up `paid` and `is_free` through the replaced `private.promotion_json`.
+
+**Review fixes (2026-11-22, approved by Archan):**
+- **Eight service functions** (was seven): `check_invoice_sendable` added (S3). The pgTAP asserts anon and authenticated cannot execute any of the eight and service_role can execute all eight.
+- **S1 delete guard:** a `BEFORE DELETE` trigger on `promotion_payments` (`private.guard_payment_delete`, the fourth private helper) raises `payment_unsettled` (no ids in the message) while a row is `open`, `void_pending`, `uncollectible` or `needs_refund`, including the cascade from a business or account delete; nothing is deleted then. `reserved`, `void`, `paid`, `refunded`, `partially_refunded`, `refund_requested` and `disputed` rows may be deleted. The seed re-run first marks its own still-payable fake rows `void` (a plain service-role update; no bypass), then deletes. Runbook: settle before deleting; spec 18 must handle it.
+- **S2 bad data on our own invoice raises:** an `invoice.paid` that names OUR invoice but has a missing or malformed `payment_intent_id` or `amount_paid`, or a `paid_at` more than 5 minutes ahead, raises `invalid_event_data`. The raise rolls back the whole call, the `stripe_events` row included, so the webhook answers 500 and Stripe's retry is processed afresh (not a duplicate). This replaces the earlier "a paid_at in the future is mismatch". Kept as `mismatch`: invoices and PaymentIntents that are **not ours** (the Stripe account may carry other activity, for example the welcometohvac business, so unknown events are expected and must not loop); a `charge.refunded` or `charge.dispute.created` for a PaymentIntent not recorded yet (refunds and disputes normally come days after the payment); a missing or malformed `currency` or `paid_at`; a `paid_at` more than 5 minutes before the payment row was created. The runbook has queries for `outcome = 'mismatch'` and for `needs_refund` rows older than 10 minutes.
+- **S3 no invoice after the window:** `attach_invoice` also requires the promotion to be `payment_due` with `pay_by > now()` (else `not_attachable`); `check_invoice_sendable` is the pre-send check.
+- **Q-S4:** `void_open_payment` also turns an `uncollectible` row (still payable at Stripe) into `void_pending` on a cancel or reject.
+- **Q3:** the app maps `contact_support` (known and stale codes; "This promotion can't be cancelled here."), so a campaign paid while the Promote screen was open refreshes and the dead Cancel button goes away. No longer a PR 3 item.
+- **Q-S7:** the zod schema gives `paid` and `is_free` a default of false, so the new app reads a server from before 16b. The new states still need the new app, so the hosted rule stays: each hosted migration ships only together with an app update, never before one.
+- **Spec mismatch (review S6), recorded:** the honour rule blocks only on a newer request that is still `requested`, `payment_due` or `approved`. A newer request that was cancelled, rejected or expired does not block it (fair to the seller, who paid in time).
 
 ## Storage
 None.
@@ -277,7 +288,8 @@ Both live in `supabase/functions/` in the existing `index.ts` (wiring) + `handle
      Key: `invoice-<payment id>`. Then `attach_invoice` with the customer id, the invoice id and the invoice's `livemode`.
   3. `POST /v1/invoiceitems` with `customer`, `invoice=<invoice id>` (items can be added only to draft invoices), `amount=<locked cents>`, `currency=cad`, `description="LikeToOrder promotion, 7 days"` and `metadata[payment_id]`. Key: `invoiceitem-<payment id>`.
   4. `POST /v1/invoices/<id>/finalize` (the invoice becomes `open`). Key: `finalize-<payment id>`.
-  5. `POST /v1/invoices/<id>/send` (Stripe emails the invoice). Key: `send-<payment id>`. Then `mark_invoice_sent`.
+  5. **Before sending (PR 1 review S3):** call `check_invoice_sendable(payment id)`. If it is false (a cancel or the window passed during the run), do not send: void the finalized invoice (`POST /v1/invoices/<id>/void`, key `void-<payment id>`, then `mark_invoice_void`) and answer `not_payable`.
+  6. `POST /v1/invoices/<id>/send` (Stripe emails the invoice). Key: `send-<payment id>`. Then `mark_invoice_sent`.
   - Returns `{ ok: true, invoice_status: 'sent' }`, or `{ ok: false, error }` with `not_found`, `not_payable`, `payment_window_closed`, `not_configured`, `already_sent`, `rate_limited`, `payments_unavailable`, `stripe_error`. It never returns the hosted URL, the email or a Stripe id. In test mode Archan opens the invoice from the Stripe dashboard instead.
 - **`void_pending`:** `public.list_invoices_to_void()`, then for each `POST /v1/invoices/<id>/void` (allowed on `open` or `uncollectible` invoices; "This cannot be undone"; voided invoices "aren't payable"). Key: `void-<payment id>`. Then `mark_invoice_void`. Returns `{ ok, voided: n, failed: n }`.
 - Sources for the calls and parameters, read 2026-11-21: [Invoicing integration](https://docs.stripe.com/invoicing/integration), [Create invoice](https://docs.stripe.com/api/invoices/create), [Create invoice item](https://docs.stripe.com/api/invoiceitems/create), [Finalize](https://docs.stripe.com/api/invoices/finalize), [Send](https://docs.stripe.com/api/invoices/send), [Void](https://docs.stripe.com/api/invoices/void), [Invoicing overview](https://docs.stripe.com/invoicing/overview), [Create customer](https://docs.stripe.com/api/customers/create).
@@ -289,6 +301,9 @@ Both live in `supabase/functions/` in the existing `index.ts` (wiring) + `handle
 - **If `attach_invoice` refuses (`not_attachable`, for example after a cancel during the run) after Stripe already created the draft invoice, PR 2 deletes that draft best-effort** (`DELETE /v1/invoices/<id>`; a draft can be deleted, not voided) and never finalizes or sends it. If that call fails, the runbook's "delete an unsent draft by hand" step covers it.
 - Secrets: `PROMOTION_ADMIN_SECRET`, `STRIPE_SECRET_KEY` (a restricted key, D10). Missing Stripe key -> `503 payments_unavailable` (the local default).
 - Logs: event codes only; never a key, a secret, an email, a URL or full ids.
+- **Database errors (PR 1 review S7):** map every RPC error to a code. Never log or return the raw Postgres error: a unique violation's DETAIL contains the full Stripe id.
+- **Drafts in `void_pending` (PR 1 review Q-S9):** `list_invoices_to_void` can list an `open` row whose invoice was never finalized (a draft), which Stripe cannot void. The handler skips or deletes drafts (`DELETE /v1/invoices/<id>`), and must not let a few permanently failing rows at the head of the oldest-first list (limit 100) starve newer ones (for example: count failures and continue, and report them).
+- **`record_stripe_event` may raise `invalid_event_data`** (PR 1 review S2): the webhook then answers 500 so Stripe retries.
 
 **`stripe-webhook`** (`verify_jwt = false`: Stripe sends no JWT; the signature is the auth)
 - Reads the raw body (max 64 KB, else 413) before parsing. Verifies `Stripe-Signature`: `t=` within 300 s of now, and any `v1=` equal (constant-time) to HMAC-SHA256(`STRIPE_WEBHOOK_SECRET`, `t + "." + body`). Failure -> 400, no detail, nothing written.
@@ -333,7 +348,7 @@ Both live in `supabase/functions/` in the existing `index.ts` (wiring) + `handle
 - PR 1: `supabase/tests/05-seller-onboarding.test.sql` (allowlists), `supabase/tests/16-promotions.test.sql` (only the assertions on the old status list and the old `request` / `cancel` behaviour; listed exactly at gate B, stop and ask for any other), `supabase/seed.sql` and `scripts/seed/promotions.ts` (one row in each new state), `src/types/database.ts` (regenerated), `src/features/promotions/schema.ts` (new keys accepted), `docs/runbooks/promotions-admin.md` (`approve_headline`, the `invoice` and `void_pending` admin commands, refunds in Stripe), `docs/product/v1.md` §7, §15, §16.
 - PR 2: `supabase/config.toml` (two function blocks), `supabase/functions/deno.json` (check task), (no `_shared/rateLimit.ts` change: the per-promotion limit is inside `begin_promotion_invoice`, PR 1), `.env.example` (names of the four function secrets, no values).
 - PR 3: `PromoteScreen.tsx`, `PromotionStatusCard.tsx`, `schema.ts`, `format.ts`, `messages.ts`, `src/types/database.ts` (regenerated), and the existing tests that assert the removed price or payment wording (listed exactly at the PR 3 plan; expected: `PromoteScreen.test.tsx`, `format` tests, `schema.test.ts`, `a11y.test.tsx`), plus `supabase/tests/16b-promotion-payment.test.sql` (key set of `get_my_promotion`).
-- PR 4: `docs/product/v1.md` §16 (before-launch list), CLAUDE.md row.
+- PR 4: `docs/product/v1.md` §16 (before-launch list; **PR 1 already wrote it**, review Q-S8: PR 4 only checks and updates it), CLAUDE.md row.
 
 ## New dependencies
 No new dependencies. No Stripe SDK in the app or the Edge Functions (D7), no new Deno import, no native rebuild.
@@ -365,7 +380,7 @@ No new dependencies. No Stripe SDK in the app or the Edge Functions (D7), no new
   - **Order matters:** PR 1 keeps the fields, so the app on main still works. PR 3 removes their use and adds one small replacing migration that drops them, then regenerates types.
   - The length (`length_days`) stays, for "for 7 days".
 - **D16 Voiding stale invoices (consequence of "no job").** A seller cancel, an admin reject or cancel, or a lapsed window does not reach Stripe by itself. The documented admin command `void_pending` voids those invoices at Stripe. Until it runs, a stale invoice stays payable, and a payment on it is refunded by D5 (a small fee). A small worker that voids automatically is a possible later improvement, not built now.
-- **D18 Promote screen in PR 1 (gate C, approved):** the app accepts the new states with the three final status lines ("Your headline was approved. We'll be in touch with next steps.", "Payment window closed.", "Refunded.") and no dead buttons: `awaiting_payment` counts as open and is cancelled like a request ("Cancel request"); a **paid** scheduled or active campaign shows no cancel button and no "Promote again" (the server answers `contact_support`; PR 3 adds "Contact us to cancel"); `payment_expired` and `refunded` offer "Promote again". No price or payment wording was added.
+- **D18 Promote screen in PR 1 (gate C, approved; `contact_support` mapped after the PR 1 review, Q3):** the app accepts the new states with the three final status lines ("Your headline was approved. We'll be in touch with next steps.", "Payment window closed.", "Refunded.") and no dead buttons: `awaiting_payment` counts as open and is cancelled like a request ("Cancel request"); a **paid** scheduled or active campaign shows no cancel button and no "Promote again" (the server answers `contact_support`; PR 3 adds "Contact us to cancel"); `payment_expired` and `refunded` offer "Promote again". No price or payment wording was added.
 - **D17 Pinned Stripe API version.** Every Stripe request sends `Stripe-Version: 2026-11-18.endive` ("The current version is 2026-11-18.endive", [versioning](https://docs.stripe.com/api/versioning), read 2026-11-21). The webhook endpoint is created with the same API version (setup step 10), so event payloads match. Changing it is a reviewed code change.
 
 ## Rules for implementation
@@ -451,7 +466,9 @@ First search (spec draft, 2026-11-21):
   - after `mark_refund_requested`, a duplicate `invoice.paid` returns no refund target;
   - an event whose livemode differs from the payment row's -> `mismatch`, nothing changed;
   - `invoice.paid` with a wrong `amount_paid` or currency, after `pay_by`, or on a `void_pending` row -> `needs_refund`, no activation;
-  - `invoice.voided` -> `void`.
+  - `invoice.voided` -> `void`;
+  - review fixes: bad data on our own `invoice.paid` raises and stores nothing (S2); the honour rule's passing path, a `paid_at` before the payment row (mismatch) and the clamp within 5 minutes (Q2).
+- [x] Review fixes (2026-11-22): the delete guard (S1), `attach_invoice` window check and `check_invoice_sendable` (S3), `void_open_payment` on `uncollectible` (Q-S4), each with pgTAP. The 16b file has **211 assertions**; the section headers carry the true counts.
 - [x] Deliberate breaks, each red on its named test, then reverted and `cmp`-checked:
   - (a) remove the `stripe_events` conflict guard;
   - (b) let `invoice.paid` with a wrong amount activate;
@@ -462,7 +479,12 @@ First search (spec draft, 2026-11-21):
   - (g) make a duplicate `invoice.paid` return the refund target again after `mark_refund_requested`;
   - (h) check `pay_by` against `now()` instead of `paid_at` (red on "late webhook: paid before pay_by but delivered after it activates");
   - (i) guess `resume` from `created_at < now()` (the gate A bug; red on "and says resume").
-  - Done 2026-11-22 (commit 2f3b4ec): each red on its named test, restores proven by `cmp` of function md5s and grants and of the repo files.
+  - (j) drop the honour rule's `payment_expired` branch (red on "honour rule: paid in time on a campaign already stored payment_expired, with no newer request, activates");
+  - (k) drop the delete guard trigger (red on "deleting a business with an open invoice is refused");
+  - (l) store `mismatch` instead of raising for our own invoice with a future `paid_at` (red on "our invoice.paid with a paid_at more than 5 minutes ahead raises ..." and "the raise rolled back the event row ...");
+  - (m) drop the window check in `attach_invoice` (red on "attach_invoice refuses a reserved row whose payment window has passed");
+  - (n) make `check_invoice_sendable` ignore the promotion state (red on "check_invoice_sendable: not after pay_by" and "... not after a cancel").
+  - Done 2026-11-22 (commit 2f3b4ec for (a) to (i)); all of (a) to (n) re-run after the review fixes (commit "test: deliberate breaks ... review re-run"): each red on its named test, restores proven by `cmp` of function md5s and grants and of the repo files.
 - [x] Seed has one row in each new state (as approved at the plan: `payment_due` and a paid campaign); `db:types` regenerated; the zod schema accepts the new keys with no behaviour change; jest, lint, typecheck and `npx supabase test db` green; runbook (with the `invoice` and `void_pending` commands) and v1 §7, §15, §16 updated.
 
 **PR 2 (Edge Functions, `feature/promotion-payment-functions`)**

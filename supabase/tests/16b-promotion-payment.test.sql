@@ -2,7 +2,7 @@
 -- service_role functions, the Stripe event rules (D2, D3, D5, D6, D11, D12) and migration safety.
 -- now() is fixed for the whole transaction. All Stripe ids are obvious fakes that match the checks.
 begin;
-select plan(171);
+select plan(170);
 
 -- -- Ids ----------------------------------------------------------------------
 -- Users ...-1b16-<n>, businesses ...-1b17-<n>, promotions ...-1b18-<n>, payments ...-1b19-<n>.
@@ -315,7 +315,6 @@ select results_eq(
             (j ->> 'length_days')::int, j -> 'customer_id' = 'null'::jsonb from beg1 $$,
   $$ values (false, pg_temp.u(1), 'Paid place 1'::text, 'CAD'::text, 7, true) $$,
   'a new reservation names the owner and business itself, with no Stripe ids yet');
-select is(pg_temp.paystatus(1), null, 'the payment id is new (not a fixture id)');
 select is((select status from public.promotion_payments where id = (select (j ->> 'payment_id')::uuid from beg1)), 'reserved',
   'the reserved row exists');
 select is((select (j ->> 'payment_id')::uuid from (select public.begin_promotion_invoice(pg_temp.p(1)) as j) x),

@@ -148,8 +148,9 @@ language sql stable security definer set search_path = '' as $$
 $$;
 revoke execute on function private.promotion_json(uuid) from public, anon, authenticated, service_role;
 
--- A campaign's open payment row stops being payable from our side: an open invoice becomes
--- void_pending (voided at Stripe by the admin command void_pending, D16); a reserved row with no
+-- A campaign's open payment row stops being payable from our side: an open or uncollectible invoice
+-- (both still payable at Stripe) becomes void_pending (voided at Stripe by the admin command
+-- void_pending, D16); a reserved row with no
 -- invoice yet becomes void, so attach_invoice refuses it and nothing is finalized or sent.
 -- The caller has already locked the promotion row.
 create function private.void_open_payment(p_promotion_id uuid) returns void
@@ -158,7 +159,7 @@ language sql security definer set search_path = '' as $$
      set status = case status when 'reserved' then 'void' else 'void_pending' end,
          updated_at = now()
    where promotion_id = p_promotion_id
-     and status in ('reserved', 'open');
+     and status in ('reserved', 'open', 'uncollectible');
 $$;
 revoke execute on function private.void_open_payment(uuid) from public, anon, authenticated, service_role;
 

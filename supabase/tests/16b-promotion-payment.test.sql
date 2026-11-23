@@ -2,7 +2,7 @@
 -- service_role functions, the Stripe event rules (D2, D3, D5, D6, D11, D12) and migration safety.
 -- now() is fixed for the whole transaction. All Stripe ids are obvious fakes that match the checks.
 begin;
-select plan(195);
+select plan(197);
 
 -- -- Ids ----------------------------------------------------------------------
 -- Users ...-1b16-<n>, businesses ...-1b17-<n>, promotions ...-1b18-<n>, payments ...-1b19-<n>.
@@ -106,7 +106,7 @@ create function pg_temp.in_offers(n int) returns boolean language sql as $$
                   where (o ->> 'business_id')::uuid = pg_temp.b(n)) $$;
 
 -- -- Fixtures (as postgres) -------------------------------------------------------
-select pg_temp.mkb(n) from generate_series(1, 51) n;
+select pg_temp.mkb(n) from generate_series(1, 52) n;
 
 select pg_temp.mkp(1, 'requested', price => 2000);                                      -- full happy path
 select pg_temp.mkp(2, 'payment_due', payby => '7 days', pref => (now() at time zone 'UTC')::date + 3);
@@ -138,6 +138,7 @@ select pg_temp.mkp(48, 'payment_due', payby => '7 days');                       
 select pg_temp.mkp(49, 'payment_due', payby => '7 days');                                 -- delete guard: open
 select pg_temp.mkp(50, 'cancelled');                                                      -- delete guard: void
 select pg_temp.mkp(51, 'payment_due', payby => '-1 hour');                                -- attach after the window
+select pg_temp.mkp(52, 'payment_due', payby => '7 days');                                 -- cancel with uncollectible
 update public.promotions set business_id = pg_temp.b(32) where id = pg_temp.p(33);
 select pg_temp.mkp(40, 'approved', '-1 day', '6 days', free => true);                     -- free (spec 16) rows
 select pg_temp.mkp(41, 'approved', '2 days', '9 days', free => true);
@@ -162,6 +163,7 @@ select pg_temp.mkpay(32, 32, 'open');
 select pg_temp.mkpay(n, n, 'open') from generate_series(46, 49) n;
 select pg_temp.mkpay(50, 50, 'void');
 select pg_temp.mkpay(51, 51, 'reserved');
+select pg_temp.mkpay(52, 52, 'uncollectible');
 
 -- Settings: this file's own row, independent of seed.sql.
 delete from public.promotion_settings;
@@ -551,6 +553,8 @@ select is(private.admin_review_promotion(pg_temp.p(20), 'reject', null, 'not_pai
 select is(pg_temp.paystatus(20), 'void_pending', 'the rejected campaign''s invoice becomes void_pending');
 select is(private.admin_review_promotion(pg_temp.p(21), 'cancel') ->> 'state', 'cancelled', 'admin can cancel while payment is due');
 select is(pg_temp.paystatus(21), 'void_pending', 'the cancelled campaign''s invoice becomes void_pending');
+select is(private.admin_review_promotion(pg_temp.p(52), 'cancel') ->> 'state', 'cancelled', 'admin cancel with an uncollectible invoice');
+select is(pg_temp.paystatus(52), 'void_pending', 'an uncollectible invoice (still payable at Stripe) becomes void_pending on a cancel');
 select is(private.admin_review_promotion(pg_temp.p(24), 'approve', now() + interval '1 day') ->> 'state', 'scheduled',
   'the free approve still works');
 select is((select is_free from public.promotions where id = pg_temp.p(24)), true, 'and marks the campaign free');

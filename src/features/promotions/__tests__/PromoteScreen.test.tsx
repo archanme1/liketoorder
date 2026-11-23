@@ -499,6 +499,19 @@ describe('PromoteScreen: spec 16b states', () => {
     },
   );
 
+  it('shows contact_support and refreshes when the campaign was paid while the screen was open', async () => {
+    server.rows.push(storedRow('awaiting_payment'));
+    await renderScreen();
+    await fireEvent.press(await screen.findByRole('button', { name: 'Cancel request' }));
+    // Stripe's webhook schedules the paid campaign before the seller confirms.
+    server.rows[0] = storedRow('scheduled', PROMOTION_ID, { paid: true, is_free: false });
+    await pressAlertButton('Cancel request');
+    expect(await screen.findByText("This promotion can't be cancelled here.")).toBeTruthy();
+    expect(await screen.findByText(status('scheduled'))).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Cancel/ })).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
+  });
+
   it('still offers Cancel promotion on a free (hand-approved) running campaign', async () => {
     server.rows.push(storedRow('active', PROMOTION_ID, { is_free: true }));
     await renderScreen();

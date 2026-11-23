@@ -50,6 +50,8 @@ export function promotionErrorMessage(code: PromotionErrorCode): string {
       return "This promotion can't be found any more.";
     case 'not_cancellable':
       return 'This promotion has already ended or been cancelled.';
+    case 'contact_support':
+      return "This promotion can't be cancelled here.";
     case 'network':
       return "Can't reach LikeToOrder. Check your connection and try again.";
     case 'unknown':

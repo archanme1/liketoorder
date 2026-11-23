@@ -102,6 +102,7 @@ describe('mapPromotionError: every error the migration raises', () => {
     'invalid_start',
     'not_found',
     'not_cancellable',
+    'contact_support',
   ] as const)('maps %s', async (code) => {
     fails(pgError(code));
     expect(await codeOf(requestPromotion(REQUEST))).toBe(code);

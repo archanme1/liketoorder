@@ -13,6 +13,8 @@ const STALE_CODES: readonly PromotionErrorCode[] = [
   'not_configured',
   'not_found',
   'not_cancellable',
+  // Spec 16b: the campaign was paid meanwhile; the re-read hides the cancel button.
+  'contact_support',
 ];
 
 /** Request and cancel answer with the full get_my_promotion object: show it at once, then re-read. */

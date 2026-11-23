@@ -12,6 +12,7 @@ const CODES: PromotionErrorCode[] = [
   'invalid_start',
   'not_found',
   'not_cancellable',
+  'contact_support',
   'network',
   'unknown',
 ];

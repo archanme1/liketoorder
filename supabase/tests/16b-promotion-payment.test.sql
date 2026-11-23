@@ -2,7 +2,7 @@
 -- service_role functions, the Stripe event rules (D2, D3, D5, D6, D11, D12) and migration safety.
 -- now() is fixed for the whole transaction. All Stripe ids are obvious fakes that match the checks.
 begin;
-select plan(197);
+select plan(211);
 
 -- -- Ids ----------------------------------------------------------------------
 -- Users ...-1b16-<n>, businesses ...-1b17-<n>, promotions ...-1b18-<n>, payments ...-1b19-<n>.
@@ -106,7 +106,7 @@ create function pg_temp.in_offers(n int) returns boolean language sql as $$
                   where (o ->> 'business_id')::uuid = pg_temp.b(n)) $$;
 
 -- -- Fixtures (as postgres) -------------------------------------------------------
-select pg_temp.mkb(n) from generate_series(1, 52) n;
+select pg_temp.mkb(n) from generate_series(1, 54) n;
 
 select pg_temp.mkp(1, 'requested', price => 2000);                                      -- full happy path
 select pg_temp.mkp(2, 'payment_due', payby => '7 days', pref => (now() at time zone 'UTC')::date + 3);
@@ -139,6 +139,8 @@ select pg_temp.mkp(49, 'payment_due', payby => '7 days');                       
 select pg_temp.mkp(50, 'cancelled');                                                      -- delete guard: void
 select pg_temp.mkp(51, 'payment_due', payby => '-1 hour');                                -- attach after the window
 select pg_temp.mkp(52, 'payment_due', payby => '7 days');                                 -- cancel with uncollectible
+select pg_temp.mkp(53, 'cancelled');                                                      -- mark_invoice_void: void_pending
+select pg_temp.mkp(54, 'payment_due', payby => '-1 day');                                 -- mark_invoice_void: open, lapsed
 update public.promotions set business_id = pg_temp.b(32) where id = pg_temp.p(33);
 select pg_temp.mkp(40, 'approved', '-1 day', '6 days', free => true);                     -- free (spec 16) rows
 select pg_temp.mkp(41, 'approved', '2 days', '9 days', free => true);
@@ -164,6 +166,8 @@ select pg_temp.mkpay(n, n, 'open') from generate_series(46, 49) n;
 select pg_temp.mkpay(50, 50, 'void');
 select pg_temp.mkpay(51, 51, 'reserved');
 select pg_temp.mkpay(52, 52, 'uncollectible');
+select pg_temp.mkpay(53, 53, 'void_pending');
+select pg_temp.mkpay(54, 54, 'open');
 
 -- Settings: this file's own row, independent of seed.sql.
 delete from public.promotion_settings;
@@ -200,7 +204,7 @@ select is_empty($$ select 1 from pg_policies where schemaname = 'public'
                      and tablename in ('promotion_payments', 'stripe_events') $$,
   'promotion_payments and stripe_events have no policies');
 
--- -- 2. Privileges and outsiders (32) ---------------------------------------------------
+-- -- 2. Privileges and outsiders (36) ---------------------------------------------------
 select is_empty($$ select r, t, a from unnest(array['anon', 'authenticated']) r,
                                        unnest(array['public.promotion_payments', 'public.stripe_events']) t,
                                        unnest(array['select', 'insert', 'update', 'delete', 'truncate', 'references', 'trigger']) a
@@ -283,28 +287,34 @@ select throws_ok($$ update public.promotions set paid_at = now(), status = 'appr
 reset role;
 select is(pg_temp.paystatus(29), 'open', 'the outsider calls changed nothing');
 
--- -- 3. Migration safety: free (spec 16) campaigns read exactly as before (9) ----------------
+-- -- 3. Migration safety: free (spec 16) campaigns read exactly as before (11) ----------------
 select is(pg_temp.pstate(40), 'active', 'a free running campaign still reads active');
 select is(pg_temp.pstate(41), 'scheduled', 'a free future campaign still reads scheduled');
 select is(pg_temp.pstate(42), 'ended', 'a free past campaign still reads ended');
 select ok(private.promotion_is_active(pg_temp.b(40)), 'a free running campaign is still active');
-select ok(not private.promotion_is_active(pg_temp.b(41)) and not private.promotion_is_active(pg_temp.b(42)),
-  'free scheduled and ended campaigns are not active');
+select ok(not private.promotion_is_active(pg_temp.b(41)), 'a free scheduled campaign is not active');
+select ok(not private.promotion_is_active(pg_temp.b(42)), 'a free ended campaign is not active');
 select ok(pg_temp.promoted(40), 'a free running campaign is still promoted on the map');
-select ok(not pg_temp.promoted(41) and not pg_temp.promoted(42), 'free scheduled and ended campaigns are not promoted');
+select ok(not pg_temp.promoted(41), 'a free scheduled campaign is not promoted');
+select ok(not pg_temp.promoted(42), 'a free ended campaign is not promoted');
 select ok(pg_temp.in_offers(40), 'a free running campaign is still in Offers');
 select is((select count(*)::int from public.promotions where status = 'approved' and not is_free and paid_at is null), 0,
   'no approved row is neither free nor paid');
 
--- -- 4. list_invoices_to_void and mark_invoice_void, before any event (5) --------------------
+-- -- 4. list_invoices_to_void and mark_invoice_void, before any event (8) --------------------
 select set_eq($$ select (x ->> 'payment_id')::uuid from jsonb_array_elements(public.list_invoices_to_void()) x $$,
-  $$ values (pg_temp.pay(9)), (pg_temp.pay(10)), (pg_temp.pay(13)), (pg_temp.pay(30)), (pg_temp.pay(32)), (pg_temp.pay(46)) $$,
+  $$ values (pg_temp.pay(9)), (pg_temp.pay(10)), (pg_temp.pay(13)), (pg_temp.pay(30)), (pg_temp.pay(32)), (pg_temp.pay(46)),
+          (pg_temp.pay(53)), (pg_temp.pay(54)) $$,
   'list_invoices_to_void lists exactly the void_pending rows and the open or uncollectible rows past pay_by');
 select is(pg_temp.keys(public.list_invoices_to_void() -> 0), array['invoice_id', 'payment_id'],
   'each listed invoice has exactly payment_id and invoice_id');
 select ok(public.mark_invoice_void(pg_temp.pay(30)), 'mark_invoice_void voids an uncollectible lapsed invoice');
 select is(pg_temp.paystatus(30), 'void', 'the payment row is void');
 select ok(not public.mark_invoice_void(pg_temp.pay(30)), 'marking it again does nothing');
+select ok(public.mark_invoice_void(pg_temp.pay(53)), 'mark_invoice_void voids a void_pending invoice');
+select ok(public.mark_invoice_void(pg_temp.pay(54)), 'mark_invoice_void voids an open lapsed invoice');
+select results_eq($$ select pg_temp.paystatus(53), pg_temp.paystatus(54) $$, $$ values ('void'::text, 'void'::text) $$,
+  'both rows are void');
 
 -- -- 4b. Attach and the pre-send check (S3) (6) ---------------------------------------------------
 select throws_ok($$ select public.attach_invoice(pg_temp.pay(51), 'cus_FakeTest0051', 'in_FakeTest0051', false) $$,
@@ -315,7 +325,7 @@ select ok(not public.check_invoice_sendable(pg_temp.pay(9)), 'check_invoice_send
 select ok(not public.check_invoice_sendable(pg_temp.pay(13)), 'check_invoice_sendable: not after a cancel (void_pending)');
 select ok(not public.check_invoice_sendable('00000000-0000-0000-1b19-999999999999'), 'check_invoice_sendable: not for an unknown id');
 
--- -- 5. The happy path: approve_headline, invoice, paid, refunds (34) -------------------------
+-- -- 5. The happy path: approve_headline, invoice, paid, refunds (36) -------------------------
 create temp table rev1 as select private.admin_review_promotion(pg_temp.p(1), 'approve_headline') as j;
 select is((select j ->> 'state' from rev1), 'awaiting_payment', 'approve_headline answers awaiting_payment');
 select results_eq(
@@ -376,8 +386,9 @@ select results_eq(
   'the campaign is approved, paid and starts at payment (no preferred start, D2)');
 select is((select status || '|' || payment_intent_id from public.promotion_payments where promotion_id = pg_temp.p(1)),
   'paid|pi_FakeTest0001', 'the payment is paid with its PaymentIntent');
-select ok(private.promotion_is_active(pg_temp.b(1)) and pg_temp.promoted(1) and pg_temp.in_offers(1),
-  'a paid campaign is active, promoted and in Offers');
+select ok(private.promotion_is_active(pg_temp.b(1)), 'a paid campaign is active');
+select ok(pg_temp.promoted(1), 'a paid campaign is promoted on the map');
+select ok(pg_temp.in_offers(1), 'a paid campaign is in Offers');
 select is((select outcome from public.stripe_events where event_id = 'evt_FakeTest0101'), 'applied',
   'the event is recorded as applied');
 select is(pg_temp.ev(101, 'invoice.paid', pg_temp.pd(1)), '{"outcome": "duplicate"}'::jsonb,
@@ -402,10 +413,11 @@ select results_eq(
        join public.promotions p on p.id = r.promotion_id where r.promotion_id = pg_temp.p(1) $$,
   $$ values ('refunded'::text, 2500, 'refunded'::text, true) $$,
   'a full refund marks the payment and the campaign refunded');
-select ok(not private.promotion_is_active(pg_temp.b(1)) and not pg_temp.promoted(1) and not pg_temp.in_offers(1),
-  'a refunded campaign is not active, not promoted and not in Offers');
+select ok(not private.promotion_is_active(pg_temp.b(1)), 'a refunded campaign is not active');
+select ok(not pg_temp.promoted(1), 'a refunded campaign is not promoted on the map');
+select ok(not pg_temp.in_offers(1), 'a refunded campaign is not in Offers');
 
--- -- 6. Preferred start, refunds and disputes on started and scheduled campaigns (16) ---------
+-- -- 6. Preferred start, refunds and disputes on started and scheduled campaigns (20) ---------
 select is(pg_temp.ev(201, 'invoice.paid', pg_temp.pd(2)) ->> 'outcome', 'applied', 'a paid campaign with a preferred day');
 select results_eq(
   $$ select status, starts_at, ends_at from public.promotions where id = pg_temp.p(2) $$,
@@ -418,9 +430,10 @@ select results_eq(
   $$ select status, starts_at = now() - interval '1 day', ends_at = now() from public.promotions where id = pg_temp.p(3) $$,
   $$ values ('refunded'::text, true, true) $$,
   'a started refunded campaign stops now: ends_at is cut, starts_at kept');
-select ok(not pg_temp.promoted(3) and not pg_temp.in_offers(3)
-          and not (public.get_restaurant_details(pg_temp.b(3)) ->> 'sponsored')::boolean,
-  'a refunded campaign is not promoted, not in Offers and not sponsored');
+select ok(not pg_temp.promoted(3), 'a started refunded campaign is not promoted on the map');
+select ok(not pg_temp.in_offers(3), 'a started refunded campaign is not in Offers');
+select ok(not (public.get_restaurant_details(pg_temp.b(3)) ->> 'sponsored')::boolean,
+  'a started refunded campaign is not sponsored');
 select is(pg_temp.ev(401, 'charge.refunded', pg_temp.rd(4, 2500, true)) ->> 'outcome', 'applied', 'full refund, scheduled campaign');
 select results_eq(
   $$ select status, starts_at = now() + interval '2 days', ends_at = now() + interval '9 days' from public.promotions where id = pg_temp.p(4) $$,
@@ -432,8 +445,9 @@ select results_eq(
        from public.promotions p join public.promotion_payments r on r.promotion_id = p.id where p.id = pg_temp.p(5) $$,
   $$ values ('cancelled'::text, 'admin'::text, true, true, 'disputed'::text) $$,
   'a dispute stops a started campaign: cancelled by admin now, the payment disputed');
-select ok(not private.promotion_is_active(pg_temp.b(5)) and not pg_temp.promoted(5) and not pg_temp.in_offers(5),
-  'a disputed campaign is not active, not promoted and not in Offers');
+select ok(not private.promotion_is_active(pg_temp.b(5)), 'a disputed campaign is not active');
+select ok(not pg_temp.promoted(5), 'a disputed campaign is not promoted on the map');
+select ok(not pg_temp.in_offers(5), 'a disputed campaign is not in Offers');
 select is(pg_temp.ev(601, 'charge.dispute.created', pg_temp.dd(6)) ->> 'outcome', 'applied', 'a dispute on a scheduled campaign');
 select results_eq(
   $$ select status, cancelled_by, ends_at = now() + interval '9 days' from public.promotions where id = pg_temp.p(6) $$,
@@ -446,7 +460,7 @@ select is(public.get_my_promotion() -> 'promotion' ->> 'state', 'cancelled', 'th
 select pg_temp.as_user(2);
 select is((public.get_my_promotion() -> 'promotion' ->> 'paid')::boolean, true, 'a paid campaign reads paid');
 
--- -- 7. Payments that cannot be honoured, and refund targets (D5, D12) (18) --------------------
+-- -- 7. Payments that cannot be honoured, and refund targets (D5, D12) (19) --------------------
 select is(pg_temp.ev(701, 'invoice.paid', pg_temp.pd(7, 2400)),
   jsonb_build_object('outcome', 'refund_requested',
                      'refund', jsonb_build_object('payment_id', pg_temp.pay(7), 'payment_intent_id', 'pi_FakeTest0007')),
@@ -479,8 +493,9 @@ select is(pg_temp.ev(3201, 'invoice.paid', pg_temp.pd(32, 2500, 'cad', now() - i
 select is(pg_temp.ev(3101, 'invoice.paid', pg_temp.pd(31, 2400)) ->> 'outcome', 'refund_requested', 'a needs_refund payment');
 select is(pg_temp.ev(3102, 'charge.dispute.created', pg_temp.dd(31)), '{"outcome": "applied"}'::jsonb,
   'a dispute on a payment still owed a refund records disputed and names no refund');
+select is(pg_temp.paystatus(31), 'disputed', 'the payment still owed a refund is now disputed');
 
--- -- 8. Late webhooks: paid_at, not the delivery time, decides (D2, D5) (6) -------------------
+-- -- 8. Late webhooks: paid_at, not the delivery time, decides (D2, D5) (17) -------------------
 select is(pg_temp.ev(901, 'invoice.paid', pg_temp.pd(9, 2500, 'cad', now() - interval '2 days')) ->> 'outcome', 'applied',
   'late webhook: paid before pay_by but delivered after it activates');
 select results_eq(
@@ -537,7 +552,7 @@ select is(pg_temp.ev(1701, 'invoice.paid', pg_temp.pd(99)), '{"outcome": "mismat
   'an invoice that is not ours is mismatch');
 select is(pg_temp.ev(1702, 'customer.created', '{}'), '{"outcome": "ignored"}'::jsonb, 'an unknown event type is ignored');
 
--- -- 10. Seller and admin transitions while payment is due (14) ------------------------------
+-- -- 10. Seller and admin transitions while payment is due (16) ------------------------------
 select pg_temp.as_user(18);
 select is(public.get_my_promotion() -> 'promotion' ->> 'state', 'awaiting_payment', 'payment_due within pay_by reads awaiting_payment');
 select is(public.cancel_my_promotion(pg_temp.p(18)) -> 'promotion' ->> 'state', 'cancelled',

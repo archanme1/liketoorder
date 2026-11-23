@@ -62,6 +62,54 @@ select p.id, b.name, p.status,
 
 `price_cents` is in the currency's minor unit: 2500 with CAD is CAD 25.00.
 
+## See promotions awaiting payment, with their invoice
+
+```sql
+select p.id, b.name, p.pay_by, now() < p.pay_by as within_window, r.status as payment,
+       r.invoice_sent_at, p.price_cents, p.currency_code
+  from public.promotions p
+  join public.businesses b on b.id = p.business_id
+  left join public.promotion_payments r
+         on r.promotion_id = p.id and r.status in ('reserved', 'open', 'void_pending', 'uncollectible')
+ where p.status = 'payment_due'
+ order by p.pay_by;
+```
+
+A row with `within_window` false reads "Payment window closed." to the seller; its open invoice is voided
+by `void_pending`.
+
+## Payments needing attention
+
+Run these from time to time (for example with `void_pending`, once a week) and after any webhook
+trouble. Each normally returns no rows.
+
+```sql
+-- Stripe events that matched none of our payments, newest first.
+select event_id, type, livemode, received_at
+  from public.stripe_events
+ where outcome = 'mismatch'
+ order by received_at desc
+ limit 50;
+
+-- Refunds the webhook still owes (its refund call failed; Stripe retries the event for up to 3 days).
+select r.id, r.promotion_id, r.status, r.payment_intent_id, r.updated_at
+  from public.promotion_payments r
+ where r.status = 'needs_refund'
+   and r.updated_at < now() - interval '10 minutes'
+ order by r.updated_at;
+```
+
+- **`mismatch` is expected for activity that is not ours:** the Stripe account may also carry other
+  payments (for example welcometohvac's other business). Look up the event in the Stripe dashboard
+  (Developers, Events) and act only if it concerns a LikeToOrder promotion. A refund or dispute that
+  arrived before its payment was recorded also shows here: check the campaign and refund or cancel by
+  hand if needed.
+- **An `invoice.paid` for one of our invoices with bad data is never stored as `mismatch`:** the server
+  refuses it (`invalid_event_data`), the webhook answers an error and Stripe retries it. Repeated failures
+  show in the Stripe dashboard (Developers, Webhooks); tell Claude, it is a PR 2 bug or a clock problem.
+- **A `needs_refund` row older than 10 minutes:** the automatic refund has not gone through yet. If it is
+  still there the next day, refund the payment in the Stripe dashboard, then tell Claude.
+
 ## Approve the headline (the normal path)
 
 Before approving, read the headline. **Reject with reason `headline` if it holds a phone number, an
@@ -92,6 +140,9 @@ PR 4 (`docs/runbooks/stripe-setup.md`).
 - It is refused with less than 1 hour left before `pay_by` (`payment_window_closed`), for a promotion
   that is not awaiting payment (`not_payable`), for a currency other than CAD (`not_configured`), and
   after 10 calls for one promotion in an hour (`rate_limited`).
+- If the promotion stops being payable during the run (a cancel, or the window passed), the function
+  does not send the invoice: it is not attached, or the pre-send check (`check_invoice_sendable`) says
+  no and the finalized invoice is voided instead.
 - In Stripe **test mode** no email is sent: open the invoice from the Stripe dashboard instead.
 
 ## Void stale invoices (admin command `void_pending`, after spec 16b PR 2)
@@ -152,8 +203,9 @@ select private.admin_review_promotion('<promotion id>', 'reject', null, 'headlin
 select private.admin_review_promotion('<promotion id>', 'cancel');
 ```
 
-- Allowed for a requested promotion, one awaiting payment, and a scheduled or running campaign.
-- An open invoice becomes `void_pending`: **run `void_pending`** afterwards.
+- Allowed for a requested promotion, one awaiting payment (also after its window passed: it reads
+  "Payment window closed." until something writes to it), and a scheduled or running campaign.
+- An open or uncollectible invoice becomes `void_pending`: **run `void_pending`** afterwards.
 - A running campaign stops at once. **A paid campaign is not refunded by a cancel: refund in Stripe
   first.** Sellers cannot cancel a paid campaign in the app ("Contact us to cancel").
 
@@ -187,8 +239,12 @@ on conflict (id) do update
 | `not_configured` | `approve_headline` with no settings row. |
 | `invalid_start` | A free `approve` without a start, or with a start more than 1 hour in the past. |
 | `overlap` | A free `approve` whose time overlaps another approved campaign of that business. Pick a start at or after the other campaign's end. |
-| `invalid_transition` | That decision is not possible in the current state: `approve_headline` and `approve` need a requested promotion; `reject` needs a requested or awaiting-payment one; `cancel` needs a requested, awaiting-payment, scheduled or active one; the decision must be `approve_headline`, `approve`, `reject` or `cancel`. |
+| `invalid_transition` | That decision is not possible in the current state: `approve_headline` and `approve` need a requested promotion; `reject` needs a requested one or one stored `payment_due` (awaiting payment, or with its window passed); `cancel` needs a requested one, one stored `payment_due`, or a scheduled or active one; the decision must be `approve_headline`, `approve`, `reject` or `cancel`. |
 | `invalid_reason` | A reject without a reason, or a reason that is not one of the four words above. |
+| `not_payable` | Admin command `invoice` for a promotion that is not awaiting payment (still requested, already paid, cancelled ...). |
+| `payment_window_closed` | Admin command `invoice` with less than 1 hour left before `pay_by`. The seller can send a new request after the window. |
+| `rate_limited` | More than 10 `invoice` calls for one promotion in an hour. Wait, then run it once. |
+| `payment_unsettled` | A delete of a business, an account or a payment row while a payment is still payable or owed a refund. Settle it first (see "Things to know"). Nothing was deleted. |
 
 ## Things to know
 

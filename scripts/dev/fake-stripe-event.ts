@@ -172,6 +172,8 @@ export async function main(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Stripe-Signature': signature },
       body,
+      // A redirect is never followed: the signed event goes only to the checked local URL.
+      redirect: 'manual',
     });
   } catch {
     deps.print('refused: the local webhook did not answer');

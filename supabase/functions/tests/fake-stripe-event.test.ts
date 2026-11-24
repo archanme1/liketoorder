@@ -102,6 +102,26 @@ Deno.test('fake event: each allowed type has the shape the webhook reads', async
   }
 });
 
+Deno.test('fake event: a redirect answer is not followed (one request, redirect manual, status printed)', async () => {
+  const inits: (RequestInit | undefined)[] = [];
+  const urls: string[] = [];
+  // Behaves like fetch: follows a 302 unless redirect is 'manual'.
+  const redirecting = ((input: RequestInfo | URL, init?: RequestInit) => {
+    urls.push(String(input));
+    inits.push(init);
+    if (init?.redirect !== 'manual' && urls.length === 1) {
+      return redirecting('http://evil.example/collect', init);
+    }
+    return Promise.resolve(new Response(null, { status: urls.length === 1 ? 302 : 200, headers: { Location: 'http://evil.example/collect' } }));
+  }) as typeof fetch;
+  const printed: string[] = [];
+  const code = await main(['--url', LOCAL, '--secret', SECRET, '--type', 'fake.unknown'], { fetch: redirecting, print: (l) => printed.push(l), nowSeconds: NOW_SECONDS });
+  assert.deepEqual(urls, [LOCAL]);
+  assert.equal(inits[0]?.redirect, 'manual');
+  assert.deepEqual(printed, ['302']);
+  assert.equal(code, 1);
+});
+
 Deno.test('fake event: --livemode and --stale-timestamp make the refusal cases', async () => {
   const live = await run(['--url', LOCAL, '--secret', SECRET, '--type', 'fake.unknown', '--livemode']);
   assert.equal(JSON.parse(live.requests[0].body ?? '').livemode, true);

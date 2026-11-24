@@ -4,41 +4,40 @@ import {
   counterLabel,
   formatChipDay,
   formatChipDayLong,
+  campaignLength,
   formatPromotionDay,
-  formatPromotionPrice,
+  invitationText,
   localToday,
-  offerLine,
   startDayOptions,
   statusText,
 } from '../format';
+import * as formatModule from '../format';
 import { REJECT_REASON_TEXT } from '../messages';
 import { promotionSchema, type Promotion } from '../schema';
 
-// Intl puts a no-break space between the code and the amount.
-const NBSP = String.fromCodePoint(0xa0);
 const TORONTO = { locale: 'en-CA', timeZone: 'America/Toronto' };
 
 function promotion(state: Parameters<typeof promotionJson>[0], overrides = {}): Promotion {
   return promotionSchema.parse(promotionJson(state, overrides));
 }
 
-describe('formatPromotionPrice and offerLine', () => {
-  it('writes the currency code and two decimals: "CAD 25.00"', () => {
-    expect(formatPromotionPrice(2500, 'CAD', 'en-CA')).toBe(`CAD${NBSP}25.00`);
-    expect(formatPromotionPrice(1999, 'CAD', 'en-US')).toBe(`CAD${NBSP}19.99`);
-  });
-
-  it("follows the phone's locale for separators and order", () => {
-    expect(formatPromotionPrice(250000, 'EUR', 'de-DE')).toBe(`2.500,00${NBSP}EUR`);
-  });
-
-  it("uses the currency's own decimals (none for JPY)", () => {
-    expect(formatPromotionPrice(3000, 'JPY', 'en-CA')).toBe(`JPY${NBSP}3,000`);
-  });
-
+describe('campaignLength and invitationText (no price, spec 16b D15)', () => {
   it('says "for 7 days", and "for 1 day" for one', () => {
-    expect(offerLine('CAD 25.00', 7)).toBe('CAD 25.00 for 7 days');
-    expect(offerLine('CAD 25.00', 1)).toBe('CAD 25.00 for 1 day');
+    expect(campaignLength(7)).toBe('for 7 days');
+    expect(campaignLength(1)).toBe('for 1 day');
+  });
+
+  it('words the invitation with the length and the Sponsored mark, and no price', () => {
+    expect(invitationText(7)).toBe(
+      'A larger flag on the map and a card in Offers for 7 days, both marked Sponsored.',
+    );
+    expect(invitationText(7)).not.toMatch(/\$|CAD|price|pay|[0-9]+[.,][0-9]{2}/i);
+  });
+
+  it('no longer exports a price formatter', () => {
+    const exported: Record<string, unknown> = { ...formatModule };
+    expect(exported.formatPromotionPrice).toBeUndefined();
+    expect(exported.offerLine).toBeUndefined();
   });
 });
 
@@ -61,11 +60,11 @@ describe('formatPromotionDay', () => {
 
 describe('statusText', () => {
   it('words every state', () => {
-    expect(statusText(promotion('requested'), TORONTO)).toBe(
-      "Waiting for review. We'll contact you about payment.",
+    expect(statusText(promotion('requested'), TORONTO)).toBe('Waiting for review.');
+    expect(statusText(promotion('scheduled'), TORONTO)).toBe(
+      'Scheduled. Starts on Nov 22, ends on Nov 29.',
     );
-    expect(statusText(promotion('scheduled'), TORONTO)).toBe('Starts on Nov 22, ends on Nov 29.');
-    expect(statusText(promotion('active'), TORONTO)).toBe('Promoted until Nov 24.');
+    expect(statusText(promotion('active'), TORONTO)).toBe('Active until Nov 24.');
     expect(statusText(promotion('ended'), TORONTO)).toBe('Ended on Nov 17.');
     expect(statusText(promotion('cancelled'), TORONTO)).toBe('Cancelled.');
   });
@@ -133,6 +132,24 @@ describe('statusText: spec 16b states', () => {
     );
     expect(statusText(promotion('payment_expired'), TORONTO)).toBe('Payment window closed.');
     expect(statusText(promotion('refunded'), TORONTO)).toBe('Refunded.');
+  });
+
+  it('says "Paid and scheduled" for a paid campaign and "Scheduled" for a free one', () => {
+    const paid = { paid: true, is_free: false };
+    expect(statusText(promotion('scheduled', paid), TORONTO)).toBe(
+      'Paid and scheduled. Starts on Nov 22, ends on Nov 29.',
+    );
+    expect(statusText(promotion('scheduled'), TORONTO)).toBe(
+      'Scheduled. Starts on Nov 22, ends on Nov 29.',
+    );
+    expect(statusText(promotion('active', paid), TORONTO)).toBe('Active until Nov 24.');
+    expect(statusText(promotion('active'), TORONTO)).toBe('Active until Nov 24.');
+  });
+
+  it('words a not_paid rejection as the closed payment window', () => {
+    expect(statusText(promotion('rejected', { reject_reason: 'not_paid' }), TORONTO)).toBe(
+      'Not approved: the payment window closed.',
+    );
   });
 
   it('never puts a price, an amount or payment instructions in the new status lines', () => {

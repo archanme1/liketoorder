@@ -164,7 +164,9 @@ describe('PromoteForm: preferred start', () => {
     expect(screen.queryByRole('radio', { name: 'Friday, November 20' })).toBeNull();
     expect(screen.queryByRole('radio', { name: 'Saturday, December 5' })).toBeNull();
     expect(screen.getByText('Sat, Nov 21')).toBeTruthy();
-    expect(screen.getByText("We'll confirm the exact dates after payment.")).toBeTruthy();
+    expect(
+      screen.getByText("We'll confirm the exact dates when your promotion is scheduled."),
+    ).toBeTruthy();
   });
 
   it('sends null for As soon as possible', async () => {

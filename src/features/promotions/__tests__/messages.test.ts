@@ -1,5 +1,15 @@
 import type { PromotionErrorCode } from '../api';
-import { CATEGORY_LABELS, promotionErrorMessage, REJECT_REASON_TEXT } from '../messages';
+import {
+  CATEGORY_LABELS,
+  CONTACT_TO_CANCEL_TEXT,
+  PAID_SCHEDULED_PREFIX,
+  promotionErrorMessage,
+  REJECT_REASON_TEXT,
+  REQUESTED_TEXT,
+  REVIEW_NOTE,
+  SCHEDULED_PREFIX,
+  START_NOTE,
+} from '../messages';
 
 const CODES: PromotionErrorCode[] = [
   'not_authenticated',
@@ -28,7 +38,16 @@ describe('promotion messages', () => {
     for (const code of CODES) expect(promotionErrorMessage(code)).not.toMatch(/_/);
   });
 
-  it('says promotions are not available yet when there is no price', () => {
+  it('words the seller status lines and notes of spec 16b PR 3 exactly (no price, no payment)', () => {
+    expect(REQUESTED_TEXT).toBe('Waiting for review.');
+    expect(START_NOTE).toBe("We'll confirm the exact dates when your promotion is scheduled.");
+    expect(REVIEW_NOTE).toBe('We review every headline before it goes live.');
+    expect(PAID_SCHEDULED_PREFIX).toBe('Paid and scheduled.');
+    expect(SCHEDULED_PREFIX).toBe('Scheduled.');
+    expect(CONTACT_TO_CANCEL_TEXT).toBe('Contact us to cancel.');
+  });
+
+  it('says promotions are not available yet when there is no settings row', () => {
     expect(promotionErrorMessage('not_configured')).toBe("Promotions aren't available yet.");
   });
 
@@ -50,7 +69,7 @@ describe('promotion messages', () => {
     const sentences = Object.values(REJECT_REASON_TEXT).map((text) => `Not approved: ${text}`);
     expect(sentences).toEqual([
       "Not approved: the headline can't be used. You can send a new request with another one.",
-      "Not approved: the invoice wasn't paid.",
+      'Not approved: the payment window closed.',
       "Not approved: this business can't be promoted right now.",
       "Not approved: the request couldn't be accepted.",
     ]);

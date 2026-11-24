@@ -114,17 +114,17 @@ describe('Promote screen accessibility', () => {
     server.rows.push(storedRow('active'));
     await renderScreen();
     const card = await screen.findByLabelText(
-      /^Promoted until .+\. Special offer\. Headline: Two bowls of pho for the price of one\.$/,
+      /^Active until .+\. Special offer\. Headline: Two bowls of pho for the price of one\.$/,
     );
     expect(card.props.accessible).toBe(true);
   });
 
-  it('reads a waiting request with its price and preferred start', async () => {
+  it('reads a waiting request with its preferred start and no price', async () => {
     server.rows.push(storedRow('requested'));
     await renderScreen();
     expect(
       await screen.findByLabelText(
-        /^Waiting for review\. We'll contact you about payment\. Special offer\. Headline: .+\. CAD.25\.00 for 7 days\. Preferred start: As soon as possible\.$/,
+        /^Waiting for review\. Special offer\. Headline: .+\. Preferred start: As soon as possible\.$/,
       ),
     ).toBeTruthy();
   });

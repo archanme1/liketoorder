@@ -18,8 +18,8 @@ import {
 } from '../__fixtures__/promotion';
 import { PromoteScreen } from '../components/PromoteScreen';
 import { myPromotionKey } from '../hooks/useMyPromotion';
-import { formatPromotionPrice, offerLine, phoneLocale, statusText } from '../format';
-import { PAYMENT_NOTE, promotionErrorMessage } from '../messages';
+import { invitationText, statusText } from '../format';
+import { promotionErrorMessage, REVIEW_NOTE } from '../messages';
 import { promotionSchema } from '../schema';
 
 const mockRouter = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
@@ -96,8 +96,9 @@ async function renderScreen() {
 
 const calls = (name: string) => rpc.mock.calls.filter(([called]) => called === name);
 // The status sentence the screen should show for a stored row.
-const status = (state: Parameters<typeof storedRow>[0]) =>
-  statusText(promotionSchema.parse(storedRowJson(state)));
+const status = (state: Parameters<typeof storedRow>[0], paid = false) =>
+  statusText(promotionSchema.parse({ ...storedRowJson(state), ...(paid ? PAID : {}) }));
+const PAID = { paid: true, is_free: false };
 
 // The answer the fake gives for one stored row, through the same schema the app uses.
 function storedRowJson(state: Parameters<typeof storedRow>[0]) {
@@ -111,8 +112,6 @@ function storedRowJson(state: Parameters<typeof storedRow>[0]) {
     starts_at: row.starts_at,
     ends_at: row.ends_at,
     reject_reason: row.reject_reason,
-    price_cents: 2500,
-    currency_code: 'CAD',
     length_days: 7,
     // Spec 16b keys, with the fake server's defaults.
     paid: row.paid ?? row.status === 'refunded',
@@ -161,19 +160,22 @@ describe('PromoteScreen: the four screen states', () => {
 });
 
 describe('PromoteScreen: no campaign yet', () => {
-  it('invites with what it does, the price and length from the server, and the form', async () => {
+  it('invites with what it does and the length from the server, the review note and the form', async () => {
     await renderScreen();
     expect(await screen.findByRole('header', { name: 'Promote your business' })).toBeTruthy();
-    expect(screen.getByText(/larger flag on the map and a card in the Offers list/)).toBeTruthy();
+    expect(screen.getByText(invitationText(7))).toBeTruthy();
     expect(
-      screen.getByText(offerLine(formatPromotionPrice(2500, 'CAD', phoneLocale()), 7)),
+      screen.getByText(
+        'A larger flag on the map and a card in Offers for 7 days, both marked Sponsored.',
+      ),
     ).toBeTruthy();
-    expect(screen.getByText(PAYMENT_NOTE)).toBeTruthy();
+    expect(screen.getByText(REVIEW_NOTE)).toBeTruthy();
+    expect(screen.queryByText(/CAD|\$|25\.00|charged|contact you about payment/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Send request' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
   });
 
-  it('says promotions are not available yet when there is no price, with no form', async () => {
+  it('says promotions are not available yet when there is no settings row, with no form', async () => {
     server.settings = null;
     await renderScreen();
     expect(await screen.findByText("Promotions aren't available yet.")).toBeTruthy();
@@ -227,13 +229,14 @@ describe('PromoteScreen: no campaign yet', () => {
 });
 
 describe('PromoteScreen: waiting, scheduled and running campaigns', () => {
-  it('shows a waiting request with its price snapshot and Cancel request', async () => {
+  it('shows a waiting request with no price and Cancel request', async () => {
     server.rows.push(storedRow('requested'));
     await renderScreen();
     expect(await screen.findByText(status('requested'))).toBeTruthy();
     expect(screen.getByText('Special offer')).toBeTruthy();
     expect(screen.getByText('Two bowls of pho for the price of one')).toBeTruthy();
     expect(screen.getByText('Preferred start: As soon as possible')).toBeTruthy();
+    expect(screen.queryByText(/CAD|\$|25\.00|for 7 days/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
   });
 
@@ -267,7 +270,7 @@ describe('PromoteScreen: waiting, scheduled and running campaigns', () => {
     server.rows.push(storedRow('scheduled'));
     await renderScreen();
     expect(await screen.findByText(status('scheduled'))).toBeTruthy();
-    expect(status('scheduled')).toMatch(/^Starts on .+, ends on .+\.$/);
+    expect(status('scheduled')).toMatch(/^Scheduled\. Starts on .+, ends on .+\.$/);
     await fireEvent.press(screen.getByRole('button', { name: 'Cancel promotion' }));
     expect(alertSpy).toHaveBeenCalledWith(
       'Cancel this promotion?',
@@ -282,7 +285,7 @@ describe('PromoteScreen: waiting, scheduled and running campaigns', () => {
     server.rows.push(storedRow('active'));
     await renderScreen();
     expect(await screen.findByText(status('active'))).toBeTruthy();
-    expect(status('active')).toMatch(/^Promoted until .+\.$/);
+    expect(status('active')).toMatch(/^Active until .+\.$/);
     await fireEvent.press(screen.getByRole('button', { name: 'Cancel promotion' }));
     expect(alertSpy).toHaveBeenCalledWith(
       'Stop your promotion now?',
@@ -409,7 +412,7 @@ describe('PromoteScreen: where messages show', () => {
     await act(async () => {
       await client.invalidateQueries({ queryKey: myPromotionKey });
     });
-    expect(await screen.findByText(/^Starts on .+, ends on .+\.$/)).toBeTruthy();
+    expect(await screen.findByText(/^Scheduled\. Starts on .+, ends on .+\.$/)).toBeTruthy();
     expect(screen.queryByText('Request sent')).toBeNull();
   });
 
@@ -490,9 +493,9 @@ describe('PromoteScreen: spec 16b states', () => {
   it.each(['scheduled', 'active'] as const)(
     'gives a paid %s campaign no cancel button and no Promote again (no dead button)',
     async (state) => {
-      server.rows.push(storedRow(state, PROMOTION_ID, { paid: true, is_free: false }));
+      server.rows.push(storedRow(state, PROMOTION_ID, PAID));
       await renderScreen();
-      expect(await screen.findByText(status(state))).toBeTruthy();
+      expect(await screen.findByText(status(state, true))).toBeTruthy();
       expect(screen.queryByRole('button', { name: /^Cancel/ })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Send request' })).toBeNull();
@@ -504,10 +507,10 @@ describe('PromoteScreen: spec 16b states', () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: 'Cancel request' }));
     // Stripe's webhook schedules the paid campaign before the seller confirms.
-    server.rows[0] = storedRow('scheduled', PROMOTION_ID, { paid: true, is_free: false });
+    server.rows[0] = storedRow('scheduled', PROMOTION_ID, PAID);
     await pressAlertButton('Cancel request');
     expect(await screen.findByText("This promotion can't be cancelled here.")).toBeTruthy();
-    expect(await screen.findByText(status('scheduled'))).toBeTruthy();
+    expect(await screen.findByText(status('scheduled', true))).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Cancel/ })).toBeNull());
     expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
   });

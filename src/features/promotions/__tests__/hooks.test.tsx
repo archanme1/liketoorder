@@ -61,11 +61,7 @@ describe('useMyPromotion', () => {
     server.rows.push(storedRow('active'));
     const { result } = await renderHook(() => useMyPromotion(), { wrapper });
     await waitFor(() => expect(result.current.data?.promotion?.state).toBe('active'));
-    expect(result.current.data?.settings).toEqual({
-      price_cents: 2500,
-      currency_code: 'CAD',
-      length_days: 7,
-    });
+    expect(result.current.data?.settings).toEqual({ length_days: 7 });
   });
 
   it('does not ask the server for a guest', async () => {

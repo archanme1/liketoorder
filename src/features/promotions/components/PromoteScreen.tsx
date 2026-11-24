@@ -9,10 +9,10 @@ import { SellerScreenGate } from '@/features/sellers/components/SellerScreenGate
 import { useTheme } from '@/theme/useTheme';
 
 import type { PromotionErrorCode } from '../api';
-import { formatPromotionPrice, offerLine, phoneLocale } from '../format';
+import { invitationText } from '../format';
 import { useCancelPromotion } from '../hooks/useCancelPromotion';
 import { useMyPromotion } from '../hooks/useMyPromotion';
-import { PAYMENT_NOTE, promotionErrorMessage } from '../messages';
+import { promotionErrorMessage, REVIEW_NOTE } from '../messages';
 import type { MyPromotion, Promotion, PromotionSettings } from '../schema';
 
 import { PromoteForm } from './PromoteForm';
@@ -199,7 +199,8 @@ type InvitationProps = {
   onClose?: () => void;
 };
 
-// What a promotion does and costs, and the form. Seller only: customers never see this.
+// What a promotion does and how long it runs, and the form. No price (spec 16b, Store rules).
+// Seller only: customers never see this.
 function Invitation({ settings, eligible, onSent, onError, onClose }: InvitationProps) {
   const { space } = useTheme();
   const router = useRouter();
@@ -224,19 +225,11 @@ function Invitation({ settings, eligible, onSent, onError, onClose }: Invitation
     );
   }
 
-  const price = offerLine(
-    formatPromotionPrice(settings.price_cents, settings.currency_code, phoneLocale()),
-    settings.length_days,
-  );
   return (
     <View style={{ gap: space.lg }}>
       <Card style={{ gap: space.sm }}>
-        <Text>
-          A promotion gives your place a larger flag on the map and a card in the Offers list, both
-          marked Sponsored.
-        </Text>
-        <Text variant="bodyLg">{price}</Text>
-        <Text color="textMuted">{PAYMENT_NOTE}</Text>
+        <Text variant="bodyLg">{invitationText(settings.length_days)}</Text>
+        <Text color="textMuted">{REVIEW_NOTE}</Text>
       </Card>
       <PromoteForm onSent={onSent} onError={onError} />
       {notNow}

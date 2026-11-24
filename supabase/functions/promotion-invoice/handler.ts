@@ -159,6 +159,8 @@ async function sendInvoice(deps: Deps, stripe: StripeClient, promotionId: string
     invoice = Invoice.parse(await stripe.post(`/v1/invoices/${invoice.id}/finalize`, {}, `finalize-${paymentId}`));
   }
   if (invoice.status !== 'open') throw new Stop('stripe_error');
+  // Never send an invoice whose amount is not the locked price (for example changed in the dashboard).
+  if (invoice.total !== begin.amount_cents) throw new Stop('stripe_error');
 
   // PR 1 review S3: a cancel or the end of the window during the run means no send.
   if (!(await deps.db.checkSendable(paymentId))) {

@@ -513,6 +513,19 @@ Deno.test('invoice: a resumed draft with another total, or a void or paid invoic
   }
 });
 
+Deno.test('invoice: an open invoice with another total is never sent (stripe_error)', async () => {
+  const s = setup({
+    db: { row: { exists: true, customer_id: 'cus_Old1', invoice_id: 'in_Old1' } },
+    stripe: { invoices: [{ id: 'in_Old1', status: 'open', total: 1000, livemode: false }] },
+  });
+  const res = await s.invoice();
+  assert.equal(res.status, 502);
+  assert.deepEqual(await res.json(), { ok: false, error: 'stripe_error' });
+  assert.deepEqual(routes(s.stripe.requests), ['GET /v1/invoices/in_Old1']);
+  assert.equal(s.stripe.created.sent, 0);
+  assert.equal(s.db.calls.filter((c) => c.fn === 'check_invoice_sendable' || c.fn === 'mark_invoice_sent').length, 0);
+});
+
 Deno.test('invoice: a failed mark_invoice_sent is 500; the rerun sends with the same key and succeeds', async () => {
   const s = setup({ db: { fail: { mark_invoice_sent: { message: 'connection lost' } } } });
   const first = await s.invoice();

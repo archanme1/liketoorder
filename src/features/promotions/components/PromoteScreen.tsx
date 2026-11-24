@@ -12,7 +12,7 @@ import type { PromotionErrorCode } from '../api';
 import { invitationText } from '../format';
 import { useCancelPromotion } from '../hooks/useCancelPromotion';
 import { useMyPromotion } from '../hooks/useMyPromotion';
-import { promotionErrorMessage, REVIEW_NOTE } from '../messages';
+import { CONTACT_TO_CANCEL_TEXT, promotionErrorMessage, REVIEW_NOTE } from '../messages';
 import type { MyPromotion, Promotion, PromotionSettings } from '../schema';
 
 import { PromoteForm } from './PromoteForm';
@@ -29,12 +29,21 @@ const OPEN_STATES: readonly Promotion['state'][] = [
 const REQUEST_STATES: readonly Promotion['state'][] = ['requested', 'awaiting_payment'];
 
 // A paid campaign cannot be ended from the app (the server answers contact_support), so it gets no
-// cancel button; spec 16b PR 3 adds "Contact us to cancel". A free campaign keeps spec 16 behaviour.
+// cancel button, only the plain "Contact us to cancel." line (text, not a button: the app has no
+// support contact until spec 18). A free campaign keeps spec 16 behaviour.
+function isRunningOrScheduled(promotion: Promotion): boolean {
+  return promotion.state === 'scheduled' || promotion.state === 'active';
+}
+
 function canCancel(promotion: Promotion): boolean {
   return (
     REQUEST_STATES.includes(promotion.state) ||
-    ((promotion.state === 'scheduled' || promotion.state === 'active') && promotion.is_free)
+    (isRunningOrScheduled(promotion) && promotion.is_free)
   );
+}
+
+function mustContactToCancel(promotion: Promotion): boolean {
+  return isRunningOrScheduled(promotion) && !promotion.is_free;
 }
 
 // A success notice belongs to the state it reports (`signature`): once the screen shows another
@@ -124,7 +133,7 @@ function PromoteBody({ data, notice, setNotice }: PromoteBodyProps) {
         ]
       : current.state === 'scheduled'
         ? ['Cancel this promotion?', "It won't start."]
-        : ['Stop your promotion now?', 'It ends at once. Refunds are handled outside the app.'];
+        : ['Stop your promotion now?', 'It ends at once.'];
     const keep = request ? 'Keep request' : 'Keep promotion';
     const confirm = request ? 'Cancel request' : 'Cancel promotion';
     Alert.alert(title, message, [
@@ -152,6 +161,9 @@ function PromoteBody({ data, notice, setNotice }: PromoteBodyProps) {
         Promote your business
       </Text>
       {promotion ? <PromotionStatusCard promotion={promotion} /> : null}
+      {promotion && mustContactToCancel(promotion) ? (
+        <Text color="textMuted">{CONTACT_TO_CANCEL_TEXT}</Text>
+      ) : null}
       {shown ? <Banner tone={shown.tone} message={shown.message} /> : null}
       {promotion && open && canCancel(promotion) ? (
         <Button

@@ -16,10 +16,16 @@ import {
   storedRow,
   type FakeServer,
 } from '../__fixtures__/promotion';
+import {
+  buttonLabels,
+  FORBIDDEN_BUTTON,
+  paymentWording,
+  renderedStrings,
+} from '../__fixtures__/noPayment';
 import { PromoteScreen } from '../components/PromoteScreen';
 import { myPromotionKey } from '../hooks/useMyPromotion';
 import { invitationText, statusText } from '../format';
-import { promotionErrorMessage, REVIEW_NOTE } from '../messages';
+import { CONTACT_TO_CANCEL_TEXT, promotionErrorMessage, REVIEW_NOTE } from '../messages';
 import { promotionSchema } from '../schema';
 
 const mockRouter = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
@@ -289,7 +295,7 @@ describe('PromoteScreen: waiting, scheduled and running campaigns', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Cancel promotion' }));
     expect(alertSpy).toHaveBeenCalledWith(
       'Stop your promotion now?',
-      'It ends at once. Refunds are handled outside the app.',
+      'It ends at once.',
       expect.any(Array),
     );
     await pressAlertButton('Cancel promotion');
@@ -519,5 +525,132 @@ describe('PromoteScreen: spec 16b states', () => {
     server.rows.push(storedRow('active', PROMOTION_ID, { is_free: true }));
     await renderScreen();
     expect(await screen.findByRole('button', { name: 'Cancel promotion' })).toBeTruthy();
+  });
+});
+
+// Spec 16b PR 3: every state of "What people see", with its action, and status only. The scan reads
+// every text, accessibility label and hint (the seller's headline taken out) and every button label.
+describe('PromoteScreen: spec 16b PR 3 states, status only', () => {
+  const HEADLINE = 'Two bowls of pho for the price of one';
+  type Case = {
+    state: Parameters<typeof storedRow>[0];
+    paid?: boolean;
+    reason?: string;
+    text: RegExp;
+    buttons: string[];
+    contact: boolean;
+  };
+  const CASES: Case[] = [
+    {
+      state: 'requested',
+      text: /^Waiting for review\.$/,
+      buttons: ['Cancel request'],
+      contact: false,
+    },
+    {
+      state: 'awaiting_payment',
+      text: /^Your headline was approved\. We'll be in touch with next steps\.$/,
+      buttons: ['Cancel request'],
+      contact: false,
+    },
+    {
+      state: 'scheduled',
+      paid: true,
+      text: /^Paid and scheduled\. Starts on .+, ends on .+\.$/,
+      buttons: [],
+      contact: true,
+    },
+    { state: 'active', paid: true, text: /^Active until .+\.$/, buttons: [], contact: true },
+    {
+      state: 'scheduled',
+      text: /^Scheduled\. Starts on .+, ends on .+\.$/,
+      buttons: ['Cancel promotion'],
+      contact: false,
+    },
+    { state: 'active', text: /^Active until .+\.$/, buttons: ['Cancel promotion'], contact: false },
+    { state: 'ended', text: /^Ended on .+\.$/, buttons: ['Promote again'], contact: false },
+    {
+      state: 'payment_expired',
+      text: /^Payment window closed\.$/,
+      buttons: ['Promote again'],
+      contact: false,
+    },
+    { state: 'refunded', text: /^Refunded\.$/, buttons: ['Promote again'], contact: false },
+    {
+      state: 'rejected',
+      reason: 'not_paid',
+      text: /^Not approved: the payment window closed\.$/,
+      buttons: ['Promote again'],
+      contact: false,
+    },
+    { state: 'cancelled', text: /^Cancelled\.$/, buttons: ['Promote again'], contact: false },
+  ];
+  const ACTIONS = ['Cancel request', 'Cancel promotion', 'Promote again', 'Send request'];
+
+  it.each(CASES.map((c) => [`${c.state}${c.paid ? ' (paid)' : ''}`, c] as const))(
+    '%s: the status line, exactly its action, and no price or payment wording',
+    async (_name, c) => {
+      const extra = {
+        ...(c.paid ? PAID : {}),
+        ...(c.reason ? { reject_reason: c.reason } : {}),
+      };
+      server.rows.push(storedRow(c.state, PROMOTION_ID, extra));
+      await renderScreen();
+      expect(await screen.findByText(c.text)).toBeTruthy();
+      for (const action of ACTIONS) {
+        const present = screen.queryByRole('button', { name: action }) !== null;
+        expect([action, present]).toEqual([action, c.buttons.includes(action)]);
+      }
+      if (c.contact) {
+        const line = screen.getByText(CONTACT_TO_CANCEL_TEXT);
+        expect(line.props.accessibilityRole).toBeUndefined();
+        expect(line.props.onPress).toBeUndefined();
+        expect(screen.queryByRole('button', { name: /contact/i })).toBeNull();
+      } else {
+        expect(screen.queryByText(CONTACT_TO_CANCEL_TEXT)).toBeNull();
+      }
+      expect(paymentWording(renderedStrings(), HEADLINE)).toEqual([]);
+      expect(buttonLabels().filter((label) => FORBIDDEN_BUTTON.test(label))).toEqual([]);
+
+      // The cancel confirmation, where there is one, is status only too.
+      const cancel = c.buttons.find((label) => label.startsWith('Cancel'));
+      if (cancel) {
+        await fireEvent.press(screen.getByRole('button', { name: cancel }));
+        const [title, message, buttons] = alertSpy.mock.calls[0] as [
+          string,
+          string,
+          { text: string }[],
+        ];
+        const alertText = [title, message, ...buttons.map((b) => b.text)];
+        expect(paymentWording(alertText, HEADLINE)).toEqual([]);
+      }
+    },
+  );
+
+  it('invitation: the length line, the review note and the form, and no price or payment wording', async () => {
+    await renderScreen();
+    await screen.findByRole('button', { name: 'Send request' });
+    expect(screen.getByText(invitationText(7))).toBeTruthy();
+    expect(screen.getByText(REVIEW_NOTE)).toBeTruthy();
+    expect(
+      screen.getByText("We'll confirm the exact dates when your promotion is scheduled."),
+    ).toBeTruthy();
+    expect(paymentWording(renderedStrings(), HEADLINE)).toEqual([]);
+    expect(buttonLabels().filter((label) => FORBIDDEN_BUTTON.test(label))).toEqual([]);
+  });
+
+  it('an old server that still sends the price keys: the screen works and shows no price', async () => {
+    rpc.mockImplementationOnce(async () => ({
+      data: {
+        promotion: { ...storedRowJson('requested'), price_cents: 2500, currency_code: 'CAD' },
+        settings: { length_days: 7, price_cents: 2500, currency_code: 'CAD' },
+        eligible: true,
+      },
+      error: null,
+    }));
+    await renderScreen();
+    expect(await screen.findByText('Waiting for review.')).toBeTruthy();
+    expect(paymentWording(renderedStrings(), HEADLINE)).toEqual([]);
+    expect(renderedStrings().join(' ')).not.toMatch(/2500|25\.00|CAD/);
   });
 });

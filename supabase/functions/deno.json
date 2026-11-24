@@ -10,6 +10,7 @@
     "check": "deno check places-autocomplete/index.ts places-resolve/index.ts places-refresh/index.ts push-sender/index.ts promotion-invoice/index.ts stripe-webhook/index.ts ../../scripts/dev/fake-stripe-event.ts tests/"
   },
   "lint": {
+    "include": ["./", "../../scripts/dev/fake-stripe-event.ts"],
     "rules": { "tags": ["recommended"] }
   }
 }

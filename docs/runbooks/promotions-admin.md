@@ -155,11 +155,17 @@ Setting it on the hosted project is a setup step you do yourself (spec 16b, "Wha
 or in your shell history:
 
 ```sh
-read -rs PROMOTION_ADMIN_SECRET && export PROMOTION_ADMIN_SECRET
+read -rs PROMOTION_ADMIN_SECRET
 ```
 
-Paste the secret from your password manager and press Enter (nothing is shown). The variable is gone
-when you close the terminal. The commands below read it from there; you never type it into a command.
+Paste the secret from your password manager and press Enter (nothing is shown). The variable stays in
+this shell only (it is not exported, so programs you start from this terminal do not get it). The
+commands below read it from there; you never type it into a command. **When you are done**, remove it:
+
+```sh
+unset PROMOTION_ADMIN_SECRET
+```
+
 In the commands, replace `<project-ref>` with your Supabase project reference (Project Settings in the
 Supabase dashboard).
 
@@ -181,12 +187,12 @@ printf 'x-admin-secret: %s\n' "$PROMOTION_ADMIN_SECRET" | curl -sS -X POST "http
 | no text | 401 | The admin secret is missing or wrong. | Run the `read -rs` line again and paste the right secret. |
 | `"error":"invalid_input"` | 400 | The command text is wrong (for example the promotion id is not a full id). | Check the id and the quotes, then run it again. |
 | `"error":"not_found"` | 404 | No promotion has this id. | Check the id. |
-| `"error":"not_payable"` | 409 | The promotion is not awaiting payment (not approved yet, cancelled, already paid), or it was cancelled while the command ran. | Check its status. Nothing was sent; if a draft or invoice was made, it was deleted or voided. |
+| `"error":"not_payable"` | 409 | The promotion is not awaiting payment (not approved yet, cancelled, already paid), or it was cancelled while the command ran. | Check its status. Nothing was sent; if a draft or invoice was made, it was deleted or voided (if that failed, see "Leftovers at Stripe" below). |
 | `"error":"payment_window_closed"` | 409 | Less than 1 hour is left before `pay_by`. | Too late to invoice; the seller can promote again. |
 | `"error":"already_sent"` | 409 | This promotion's invoice was already sent. | Nothing. It never sends a second one. |
 | `"error":"no_email"` | 409 | The owner's account has no email address. | Nothing was created at Stripe. Contact the seller another way. |
 | `"error":"rate_limited"` | 429 | More than 10 tries for this promotion in this hour. | Wait for the next hour. |
-| `"error":"stripe_error"` | 502 | Stripe refused or did not answer. | **Run the same command again.** It continues where it stopped and never makes a second invoice. If it keeps failing, check the Stripe dashboard and tell Claude. |
+| `"error":"stripe_error"` | 502 | Stripe refused or did not answer. | **Run the same command again.** It continues where it stopped and never makes a second invoice. If it keeps failing, check the Stripe dashboard and tell Claude. (If the owner changed their email since the first try, Stripe refuses the repeat for about a day; run it again the next day.) |
 | `"error":"payments_unavailable"` | 503 | The Stripe key is not set on the server. | Set it (setup step), then run again. |
 | `"error":"not_configured"` | 503 | The admin secret on the server is missing or too short, or the promotion's currency is not CAD. | Set a proper secret (setup step); for a currency problem, tell Claude. |
 | `"error":"internal_error"` | 500 | Something else failed (for example the database). | Run it again later; if it repeats, tell Claude. |
@@ -195,6 +201,9 @@ printf 'x-admin-secret: %s\n' "$PROMOTION_ADMIN_SECRET" | curl -sS -X POST "http
   goes only to Stripe and is never shown, logged or stored by us.
 - If the promotion stops being payable during the run (a cancel, or the window passed), the invoice is
   not sent: an unattached draft is deleted, or a finalized invoice is voided.
+- **Never run `invoice` twice at the same time for one promotion** (two terminals, or a double paste).
+  Wait for the first answer. Two runs at once can make the second delete the draft the first just
+  attached, and the promotion then needs fixing by hand (tell Claude).
 
 ## Void stale invoices (admin command `void_pending`)
 
@@ -228,6 +237,10 @@ promotions (`void_pending`) and those whose payment window has passed (at most 1
   Stripe dashboard (Invoices, filter Draft, open it, Delete draft; Customers, open it, Delete). Check
   first that it is not the one in use: compare its id with `invoice_id` and `customer_id` in the
   "See promotions awaiting payment" query above.
+- **A lost draft after a cancel:** if a promotion was cancelled (or its window passed) while an
+  `invoice` run was in progress, the run deletes the draft it had just made; if that delete failed, the
+  draft stays at Stripe with no row of ours pointing to it. It carries `metadata[payment_id]`, was never
+  finalized or sent, cannot be paid, and is safe to delete (Invoices, filter Draft, open it, Delete draft).
 - **Never mark one of our invoices "paid out of band"** in the Stripe dashboard. It has no card payment
   behind it, so the webhook cannot match a payment and Stripe keeps retrying the event for 3 days with
   errors. Money received another way is a free campaign (`approve`, below) after voiding the invoice.

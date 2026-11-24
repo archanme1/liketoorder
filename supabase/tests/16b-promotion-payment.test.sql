@@ -1,8 +1,9 @@
 -- Spec 16b (PR 1): promotion payment database - new states, closed payment tables, the seven
 -- service_role functions, the Stripe event rules (D2, D3, D5, D6, D11, D12) and migration safety.
+-- PR 3 (D15): section 15, no price, Stripe id or email in any seller answer.
 -- now() is fixed for the whole transaction. All Stripe ids are obvious fakes that match the checks.
 begin;
-select plan(211);
+select plan(221);
 
 -- -- Ids ----------------------------------------------------------------------
 -- Users ...-1b16-<n>, businesses ...-1b17-<n>, promotions ...-1b18-<n>, payments ...-1b19-<n>.
@@ -609,9 +610,9 @@ select is((select count(*)::int from public.promotion_payments where promotion_i
 -- -- 13. The seller's view carries no payment detail (3) ------------------------------------------
 select pg_temp.as_user(2);
 select is(pg_temp.keys(public.get_my_promotion() -> 'promotion'),
-  array['category', 'created_at', 'currency_code', 'ends_at', 'headline', 'id', 'is_free', 'length_days', 'paid',
-        'preferred_start', 'price_cents', 'reject_reason', 'starts_at', 'state'],
-  'the promotion object has exactly the documented keys (price keys until PR 3, D15)');
+  array['category', 'created_at', 'ends_at', 'headline', 'id', 'is_free', 'length_days', 'paid',
+        'preferred_start', 'reject_reason', 'starts_at', 'state'],
+  'the promotion object has exactly the documented keys (no price keys, D15)');
 select ok((select bool_and(position(s in j::text) = 0)
              from (select public.get_my_promotion() as j) x,
                   unnest(array['in_', 'cus_', 'pi_', 'evt_', 'http', 'stripe']) s),
@@ -639,6 +640,68 @@ select results_eq(
             (select count(*)::int from public.promotions where id = pg_temp.p(50)),
             (select count(*)::int from public.promotion_payments where id = pg_temp.pay(50)) $$,
   $$ values (0, 0, 0) $$, 'the business, its promotion and its void payment row are gone (cascade)');
+
+-- -- 15. D15: no price, Stripe id or email in any seller answer; privileges unchanged (10) ------
+-- Every fixture owner's get_my_promotion, in whatever state the sections above left it.
+create function pg_temp.seller_answers() returns table (n int, email text, j jsonb) language plpgsql as $$
+declare i int;
+begin
+  for i in select g from generate_series(1, 54) g loop
+    perform pg_temp.as_user(i);
+    n := i;
+    email := 'pay' || i || '@example.test';
+    j := public.get_my_promotion();
+    return next;
+  end loop;
+end $$;
+create temp table d15 as select * from pg_temp.seller_answers();
+create function pg_temp.no_payment_detail(j jsonb, email text default null) returns boolean language sql immutable as $$
+  select bool_and(position(s in j::text) = 0)
+    from unnest(array['"price_cents"', '"currency_code"', '"amount_cents"', 'in_', 'cus_', 'pi_', 'evt_', 'http',
+                      'stripe', coalesce(email, '"price_cents"')]) s $$;
+
+select ok((select array_agg(distinct d15.j -> 'promotion' ->> 'state') from d15)
+            @> array['requested', 'awaiting_payment', 'payment_expired', 'scheduled', 'active', 'ended',
+                     'refunded', 'rejected', 'cancelled'],
+  'D15: the seller answers checked below cover every derived state');
+select ok((select bool_and(position('"price_cents"' in d15.j::text) = 0 and position('"currency_code"' in d15.j::text) = 0
+                           and position('"amount_cents"' in d15.j::text) = 0) from d15),
+  'D15: no seller answer of get_my_promotion carries a price key, in any state');
+select ok((select bool_and(pg_temp.no_payment_detail(d15.j)) from d15),
+  'D15: no seller answer of get_my_promotion carries an invoice id, Stripe id or link, in any state');
+select ok((select bool_and(position(d15.email in d15.j::text) = 0 and position('@' in d15.j::text) = 0) from d15),
+  'D15: no seller answer of get_my_promotion carries an email');
+select pg_temp.as_user(29);
+select is(pg_temp.keys(public.get_my_promotion() -> 'settings'), array['length_days'],
+  'D15: the settings object carries the length only');
+
+delete from public.map_rate_limits;
+select pg_temp.mkb(60);
+select pg_temp.as_user(60);
+create temp table d15req as select public.request_promotion('new_dish', 'Fresh rolls all week', null) as j;
+select ok((select (j -> 'promotion' ->> 'state') = 'requested' and pg_temp.no_payment_detail(j, 'pay60@example.test')
+             from d15req),
+  'D15: the answer of request_promotion carries no price key, Stripe id, link or email');
+select ok(pg_temp.no_payment_detail(public.cancel_my_promotion((select (j -> 'promotion' ->> 'id')::uuid from d15req)),
+                                    'pay60@example.test'),
+  'D15: the answer of cancel_my_promotion carries no price key, Stripe id, link or email');
+select ok((select position('"price_cents"' in o::text) = 0 and position('"currency_code"' in o::text) = 0
+             from (select public.list_offers_near(-30, -100, 5, null, null, null, null) as o) x),
+  'D15: the Offers page carries no price key');
+
+-- The privileges of both replaced functions are what PR 1 left: promotion_json for its owner only,
+-- get_my_promotion for its owner, authenticated and service_role (never PUBLIC or anon).
+select ok((select p.proacl is not null
+                  and not exists (select 1 from aclexplode(p.proacl) a where a.grantee <> p.proowner)
+             from pg_proc p where p.oid = 'private.promotion_json(uuid)'::regprocedure),
+  'D15: private.promotion_json is still executable by its owner only');
+select is(
+  (select array_agg(coalesce(r.rolname::text, 'PUBLIC') order by coalesce(r.rolname::text, 'PUBLIC') collate "C")
+     from pg_proc p, aclexplode(p.proacl) a left join pg_roles r on r.oid = a.grantee
+    where p.oid = 'public.get_my_promotion()'::regprocedure and a.privilege_type = 'EXECUTE'
+      and a.grantee <> p.proowner),
+  array['authenticated', 'service_role'],
+  'D15: public.get_my_promotion is still executable by authenticated and service_role only (not PUBLIC, not anon)');
 
 select * from finish();
 rollback;

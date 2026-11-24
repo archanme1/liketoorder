@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createStripeClient, STRIPE_VERSION } from '../_shared/stripe.ts';
 import { createHandler, MAX_BODY_BYTES, PAID_AT_FLOOR } from '../stripe-webhook/handler.ts';
 import { createDatabase, type Rpc } from '../stripe-webhook/rpc.ts';
-import { blockNetwork, fakeGoogleFetch, type RecordedRequest } from './helpers.ts';
+import { blockNetwork, fakeFetch, type RecordedRequest } from './helpers.ts';
 import {
   captureConsole,
   event,
@@ -58,7 +58,7 @@ function setup(o: Options = {}) {
     if (fn === 'mark_refund_requested') return Promise.resolve(o.mark?.() ?? { data: true, error: null });
     throw new Error(`unexpected rpc ${fn}`);
   };
-  const fake = fakeGoogleFetch(o.stripe ?? stripeDefault);
+  const fake = fakeFetch(o.stripe ?? stripeDefault);
   const handler = createHandler({
     webhookSecret: 'webhookSecret' in o ? o.webhookSecret : WEBHOOK_SECRET,
     expectLivemode: 'expectLivemode' in o ? o.expectLivemode : 'false',

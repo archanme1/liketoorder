@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { verifyStripeSignature } from '../_shared/stripe.ts';
 import { ALLOWED_TYPES, localUrl, main, Refused } from '../../../scripts/dev/fake-stripe-event.ts';
-import { blockNetwork, fakeGoogleFetch } from './helpers.ts';
+import { blockNetwork, fakeFetch } from './helpers.ts';
 import { captureConsole, NOW_SECONDS } from './fixtures/stripeEvents.ts';
 
 const network = blockNetwork();
@@ -13,7 +13,7 @@ const SECRET = 'made-up-local-secret-for-tests';
 const LOCAL = 'http://127.0.0.1:54321/functions/v1/stripe-webhook';
 
 function run(argv: string[], status = 200) {
-  const fake = fakeGoogleFetch(() => new Response('{"received":true}', { status }));
+  const fake = fakeFetch(() => new Response('{"received":true}', { status }));
   const printed: string[] = [];
   return main(argv, { fetch: fake.fn, print: (l) => printed.push(l), nowSeconds: NOW_SECONDS })
     .then((code) => ({ code, printed, requests: fake.requests }));

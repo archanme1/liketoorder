@@ -13,7 +13,7 @@ import {
   StripeError,
   verifyStripeSignature,
 } from '../_shared/stripe.ts';
-import { blockNetwork, fakeGoogleFetch } from './helpers.ts';
+import { blockNetwork, fakeFetch } from './helpers.ts';
 import { captureConsole, NOW_SECONDS, OWNER_EMAIL, STRIPE_KEY, WEBHOOK_SECRET } from './fixtures/stripeEvents.ts';
 
 const network = blockNetwork();
@@ -104,7 +104,7 @@ Deno.test('formEncode: nested metadata, booleans, whole numbers; fractions refus
 });
 
 Deno.test('client POST: version, key, form type and idempotency headers, body, URL', async () => {
-  const fake = fakeGoogleFetch(() => Response.json({ id: 'cus_FakeTest0001' }));
+  const fake = fakeFetch(() => Response.json({ id: 'cus_FakeTest0001' }));
   const stripe = createStripeClient({ fetch: fake.fn, key: STRIPE_KEY });
   const out = await stripe.post('/v1/customers', { email: OWNER_EMAIL, metadata: { payment_id: 'p1' } }, 'customer-p1');
   assert.deepEqual(out, { id: 'cus_FakeTest0001' });
@@ -120,7 +120,7 @@ Deno.test('client POST: version, key, form type and idempotency headers, body, U
 });
 
 Deno.test('client POST without an idempotency key is refused before any request', async () => {
-  const fake = fakeGoogleFetch(() => Response.json({}));
+  const fake = fakeFetch(() => Response.json({}));
   const stripe = createStripeClient({ fetch: fake.fn, key: STRIPE_KEY });
   await assert.rejects(stripe.post('/v1/refunds', {}, ''), (e) => e instanceof StripeError && e.code === 'missing_idempotency_key');
   // @ts-expect-error: the key is required by the type
@@ -129,7 +129,7 @@ Deno.test('client POST without an idempotency key is refused before any request'
 });
 
 Deno.test('client GET and DELETE: version header, no idempotency key, query string', async () => {
-  const fake = fakeGoogleFetch(() => Response.json({ data: [] }));
+  const fake = fakeFetch(() => Response.json({ data: [] }));
   const stripe = createStripeClient({ fetch: fake.fn, key: STRIPE_KEY });
   await stripe.get('/v1/invoice_payments', { invoice: 'in_FakeTest0001', status: 'paid' });
   await stripe.del('/v1/invoices/in_FakeTest0001');
@@ -143,7 +143,7 @@ Deno.test('client GET and DELETE: version header, no idempotency key, query stri
 });
 
 Deno.test('client: a path that is not /v1/... is refused before any request', async () => {
-  const fake = fakeGoogleFetch(() => Response.json({}));
+  const fake = fakeFetch(() => Response.json({}));
   const stripe = createStripeClient({ fetch: fake.fn, key: STRIPE_KEY });
   for (const p of ['https://evil.test/v1/x', '//evil.test/v1/x', '/v1/../x', '/v2/x', '/v1/x y']) {
     await assert.rejects(stripe.get(p), (e) => e instanceof StripeError && e.code === 'invalid_path', p);
@@ -153,7 +153,7 @@ Deno.test('client: a path that is not /v1/... is refused before any request', as
 
 Deno.test('client errors carry only the Stripe code and status, never the body', async () => {
   const leaky = { error: { code: 'charge_already_refunded', message: `refund for ${OWNER_EMAIL} with ${STRIPE_KEY}`, param: OWNER_EMAIL } };
-  const stripe = createStripeClient({ fetch: fakeGoogleFetch(() => Response.json(leaky, { status: 400 })).fn, key: STRIPE_KEY });
+  const stripe = createStripeClient({ fetch: fakeFetch(() => Response.json(leaky, { status: 400 })).fn, key: STRIPE_KEY });
   const err = await stripe.post('/v1/refunds', { payment_intent: 'pi_X' }, 'refund-1').catch((e) => e);
   assert.ok(err instanceof StripeError);
   assert.equal(err.code, 'charge_already_refunded');
@@ -163,11 +163,11 @@ Deno.test('client errors carry only the Stripe code and status, never the body',
 });
 
 Deno.test('client errors: an odd code becomes unknown; no JSON; network failure', async () => {
-  const odd = createStripeClient({ fetch: fakeGoogleFetch(() => Response.json({ error: { code: `x ${OWNER_EMAIL}` } }, { status: 402 })).fn, key: STRIPE_KEY });
+  const odd = createStripeClient({ fetch: fakeFetch(() => Response.json({ error: { code: `x ${OWNER_EMAIL}` } }, { status: 402 })).fn, key: STRIPE_KEY });
   await assert.rejects(odd.get('/v1/invoices/in_1'), (e) => e instanceof StripeError && e.code === 'unknown' && e.status === 402);
-  const html = createStripeClient({ fetch: fakeGoogleFetch(() => new Response('<html>', { status: 502 })).fn, key: STRIPE_KEY });
+  const html = createStripeClient({ fetch: fakeFetch(() => new Response('<html>', { status: 502 })).fn, key: STRIPE_KEY });
   await assert.rejects(html.get('/v1/invoices/in_1'), (e) => e instanceof StripeError && e.code === 'unknown' && e.status === 502);
-  const ok = createStripeClient({ fetch: fakeGoogleFetch(() => new Response('not json', { status: 200 })).fn, key: STRIPE_KEY });
+  const ok = createStripeClient({ fetch: fakeFetch(() => new Response('not json', { status: 200 })).fn, key: STRIPE_KEY });
   await assert.rejects(ok.get('/v1/invoices/in_1'), (e) => e instanceof StripeError && e.code === 'invalid_response');
   const down = createStripeClient({ fetch: (() => Promise.reject(new Error(`boom ${STRIPE_KEY}`))) as typeof fetch, key: STRIPE_KEY });
   await assert.rejects(down.get('/v1/invoices/in_1'), (e) => e instanceof StripeError && e.code === 'network_error' && !e.message.includes(STRIPE_KEY));

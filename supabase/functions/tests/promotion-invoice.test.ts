@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createStripeClient, STRIPE_VERSION } from '../_shared/stripe.ts';
 import { createHandler, MIN_ADMIN_SECRET_LENGTH } from '../promotion-invoice/handler.ts';
 import { createDatabase, type Rpc } from '../promotion-invoice/rpc.ts';
-import { blockNetwork, fakeGoogleFetch, type RecordedRequest, USER_JWT } from './helpers.ts';
+import { blockNetwork, fakeFetch, type RecordedRequest, USER_JWT } from './helpers.ts';
 import {
   ADMIN_SECRET,
   captureConsole,
@@ -29,7 +29,8 @@ const LEAK = { error: { code: 'api_error', message: `customer ${OWNER_EMAIL} key
 
 type StripeInvoice = { id: string; status: string; total: number; livemode: boolean };
 type StripeOptions = {
-  failOnce?: string[]; // "METHOD /path" routes that answer 500 once (with a leaky body)
+  failOnce?: string[]; // "METHOD /path" routes that answer 500 once, before acting (with a leaky body)
+  failAfter?: string[]; // routes that act, remember the key, then answer 500 once (the answer is lost)
   failAlways?: string[];
   livemode?: boolean;
   invoices?: StripeInvoice[]; // invoices that already exist at Stripe
@@ -38,8 +39,11 @@ type StripeOptions = {
 function fakeStripe(o: StripeOptions = {}) {
   const invoices = new Map<string, StripeInvoice>((o.invoices ?? []).map((i) => [i.id, { ...i }]));
   const created = { customers: 0, invoices: 0, items: 0, finalized: 0, sent: 0, voided: 0, deleted: 0 };
-  const seen = new Map<string, unknown>();
+  // Like Stripe: a replayed key returns the first answer as it was then; a replayed key with other
+  // parameters is refused (idempotency_error).
+  const seen = new Map<string, { params: string; body: unknown }>();
   const failOnce = new Set(o.failOnce ?? []);
+  const failAfter = new Set(o.failAfter ?? []);
 
   function route(req: RecordedRequest): string {
     return `${req.method} ${req.url.pathname.replace(/in_[A-Za-z0-9]+/, ':id')}`;
@@ -52,11 +56,17 @@ function fakeStripe(o: StripeOptions = {}) {
     return { status: 400, body: { error: { code, message: `refused for ${OWNER_EMAIL}` } } };
   }
 
-  const fake = fakeGoogleFetch((req) => {
+  const fake = fakeFetch((req) => {
     const r = route(req);
     if ((o.failAlways ?? []).includes(r) || failOnce.delete(r)) return Response.json(LEAK, { status: 500 });
     const key = req.headers.get('Idempotency-Key');
-    if (key && seen.has(key)) return Response.json(seen.get(key));
+    const prior = key ? seen.get(key) : undefined;
+    if (prior) {
+      if (prior.params !== (req.body ?? '')) {
+        return Response.json({ error: { type: 'idempotency_error', message: `key reused for ${OWNER_EMAIL}` } }, { status: 400 });
+      }
+      return Response.json(prior.body);
+    }
     const params = new URLSearchParams(req.body ?? '');
     const inv = invoiceOf(req);
     let out: { status: number; body: unknown } = { status: 200, body: {} };
@@ -67,7 +77,7 @@ function fakeStripe(o: StripeOptions = {}) {
       case 'POST /v1/invoices': {
         const id = `in_Fake${++created.invoices}`;
         invoices.set(id, { id, status: 'draft', total: 0, livemode: o.livemode ?? false });
-        out.body = invoices.get(id);
+        out.body = { ...invoices.get(id) }; // a snapshot: a replay returns the invoice as it was then
         break;
       }
       case 'POST /v1/invoiceitems': {
@@ -117,7 +127,8 @@ function fakeStripe(o: StripeOptions = {}) {
       default:
         out = refuse('unexpected_route');
     }
-    if (key && out.status === 200) seen.set(key, out.body);
+    if (key && out.status === 200) seen.set(key, { params: req.body ?? '', body: out.body });
+    if (out.status === 200 && failAfter.delete(r)) return Response.json(LEAK, { status: 500 });
     return Response.json(out.body, { status: out.status });
   });
   return { fn: fake.fn, requests: fake.requests, created, invoices };
@@ -167,7 +178,10 @@ function fakeDb(o: DbOptions = {}) {
         });
       }
       case 'attach_invoice':
-        if (o.attachRefused) return Promise.resolve({ data: null, error: { message: 'not_attachable' } });
+        // As the SQL: only a reserved row can be attached (one already attached is not_attachable).
+        if (o.attachRefused || row.invoice_id !== null) {
+          return Promise.resolve({ data: null, error: { message: 'not_attachable' } });
+        }
         row.customer_id = args.p_customer_id as string;
         row.invoice_id = args.p_invoice_id as string;
         row.livemode = args.p_livemode as boolean;
@@ -201,16 +215,17 @@ function setup(o: Setup = {}) {
   const stripe = fakeStripe(o.stripe);
   const db = fakeDb(o.db);
   const emailLookups: string[] = [];
+  let email = o.email === undefined ? OWNER_EMAIL : o.email;
   const handler = createHandler({
     adminSecret: 'adminSecret' in o ? o.adminSecret : ADMIN_SECRET,
     stripe: o.noStripe ? undefined : createStripeClient({ fetch: stripe.fn, key: STRIPE_KEY }),
     db: createDatabase(db.rpc),
     getOwnerEmail: (id) => {
       emailLookups.push(id);
-      const e = o.email === undefined ? OWNER_EMAIL : o.email;
-      return e instanceof Error ? Promise.reject(e) : Promise.resolve(e);
+      return email instanceof Error ? Promise.reject(email) : Promise.resolve(email);
     },
   });
+  const setEmail = (next: string) => (email = next);
   const send = async (body: unknown, headers: Record<string, string> = { 'x-admin-secret': ADMIN_SECRET }, method = 'POST') => {
     const res = await handler(new Request('http://localhost/promotion-invoice', {
       method,
@@ -221,7 +236,7 @@ function setup(o: Setup = {}) {
     return res;
   };
   const invoice = () => send({ action: 'invoice', promotion_id: PROMOTION_ID });
-  return { send, invoice, stripe, db, emailLookups };
+  return { send, invoice, stripe, db, emailLookups, setEmail };
 }
 
 const routes = (reqs: RecordedRequest[]) => reqs.map((r) => `${r.method} ${r.url.pathname}`);
@@ -427,6 +442,39 @@ Deno.test('invoice: a failure at each step resumes on the next run with one of e
     assert.deepEqual(await third.json(), { ok: false, error: 'already_sent' });
     assert.equal(s.db.calls.filter((c) => c.fn === 'attach_invoice').length, 1, step);
   }
+});
+
+Deno.test('invoice: Stripe acts but the answer is lost at each step; the rerun makes no second object', async () => {
+  for (const step of [
+    'POST /v1/customers',
+    'POST /v1/invoices',
+    'POST /v1/invoiceitems',
+    'POST /v1/invoices/:id/finalize',
+    'POST /v1/invoices/:id/send',
+  ]) {
+    const s = setup({ stripe: { failAfter: [step] } });
+    const first = await s.invoice();
+    assert.equal(first.status, 502, step);
+    const second = await s.invoice();
+    assert.equal(second.status, 200, step);
+    assert.deepEqual(await second.json(), { ok: true, invoice_status: 'sent' });
+    assert.deepEqual(s.stripe.created, { customers: 1, invoices: 1, items: 1, finalized: 1, sent: 1, voided: 0, deleted: 0 }, step);
+    assert.equal(s.stripe.invoices.size, 1, step);
+    assert.equal([...s.stripe.invoices.values()][0].total, 2500, step);
+    assert.equal(s.db.row.invoice_id, 'in_Fake1', step);
+    assert.equal(s.db.row.sent, true, step);
+  }
+});
+
+Deno.test('invoice: a resumed run whose owner email changed is refused by Stripe (key reuse), nothing new made', async () => {
+  const s = setup({ stripe: { failAfter: ['POST /v1/customers'] } });
+  assert.equal((await s.invoice()).status, 502);
+  s.setEmail('owner-new@example.test');
+  const second = await s.invoice();
+  assert.equal(second.status, 502);
+  assert.deepEqual(await second.json(), { ok: false, error: 'stripe_error' });
+  assert.equal(s.stripe.created.customers, 1);
+  assert.equal(s.stripe.created.invoices, 0);
 });
 
 Deno.test('invoice: a resumed run with an attached invoice reads its state and never posts a second item', async () => {

@@ -3,7 +3,7 @@
 **Branch:** `feature/promotion-payment` (spec commits only, shipped as a docs-only PR). Then four PRs, each cut from `main` after the previous one is merged: `feature/promotion-payment-db` (PR 1), `feature/promotion-payment-functions` (PR 2), `feature/promotion-payment-app` (PR 3), `feature/promotion-payment-launch-docs` (PR 4).
 **Product spec:** `docs/product/v1.md` §7 (Ads: payment and activation), §3 (out of scope), §13 (Legal), §14 row 16b, §15 Q1, §16 (the five spec 16b items)
 **Plan mode:** required: it changes the schema and RLS, adds two Edge Functions with server secrets and touches more than 5 files.
-**Status:** 🚧 In progress: spec PR #39 (990edd2), PR 1 #40 (ef847fe) shipped 2026-11-23, PR 2 next. Amended 2026-11-21 after gate S (sellers pay **outside the app**) and after Q13 / Q15 (Stripe Invoicing; no price or payment wording in the app). Amended 2026-11-22 with the PR 1 build decisions (see "PR 1 as built" under Database changes, and D18). Amended 2026-11-23 at PR 2 gate D0 (Stripe research, Archan's answers to the PR 2 plan questions; see "PR 2 research (D0)" under Edge Functions).
+**Status:** 🚧 In progress: spec PR #39 (990edd2), PR 1 #40 (ef847fe) shipped 2026-11-23, PR 2 #41 (3e22ccb) shipped 2026-11-24 (nothing deployed, no secret set, no Stripe call), PR 3 next. Amended 2026-11-21 after gate S (sellers pay **outside the app**) and after Q13 / Q15 (Stripe Invoicing; no price or payment wording in the app). Amended 2026-11-22 with the PR 1 build decisions (see "PR 1 as built" under Database changes, and D18). Amended 2026-11-23 at PR 2 gate D0 (Stripe research, Archan's answers to the PR 2 plan questions; see "PR 2 research (D0)" under Edge Functions).
 
 ## Overview
 Today a seller asks for a promotion, Archan reads the headline, sends an invoice outside the app and switches the campaign on with one SQL call. After this spec, Stripe sends the invoice and the campaign switches on by itself, and **all payment happens outside the app** (Store rules):
@@ -642,7 +642,7 @@ Resolved by Archan on 2026-11-21.
 - **Q15 (2026-11-21)** Remove the price and payment wording from the app. The app shows status only. Price, deadline and receipt appear only in the Stripe invoice email and its hosted page (table under Screens & routes; D15 for the data).
 
 ## Follow-ups (not in this spec)
-- OffersPrivacy.test.tsx flaked once under full-suite load, passes alone and on rerun; timing, spec 16 PR 4 test. (Recorded 2026-11-23 at PR 2 gate D3; not touched in PR 2.)
+- OffersPrivacy.test.tsx flaked once under full-suite load, passes alone and on rerun; timing, spec 16 PR 4 test. (Recorded 2026-11-23 at PR 2 gate D3; it flaked the same way once more in the PR 2 final verification and passed alone and on the rerun; not touched in PR 2.)
 
 ## Open questions
 1. **Q11 Tax:** the accountant's view on Ontario HST, a tax-inclusive or tax-exclusive price, registration, what the invoice must show, and refunds versus credit notes. Blocks live mode, not building.

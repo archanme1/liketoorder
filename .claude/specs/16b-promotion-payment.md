@@ -548,7 +548,7 @@ First search (spec draft, 2026-11-21):
   - a failed refund call answers 500 and does not call `mark_refund_requested`;
   - a retried duplicate with a refund target repeats the refund call with the same key;
   - the `p_data` shapes of `invoice.voided`, `invoice.marked_uncollectible`, `charge.refunded` and `charge.dispute.created`.
-- [ ] Deliberate breaks (labelled W1 to W10 so they do not collide with PR 1's letters), each run in a scratch copy, red on its named test, then restored and proven with `cmp`:
+- [x] Deliberate breaks (labelled W1 to W10 so they do not collide with PR 1's letters), each run in a scratch copy, red on its named test, then restored and proven with `cmp` (done 2026-11-23 at gate D4: all ten red on their named tests, each restore `cmp`-equal to HEAD, tree clean, full Deno suite green after the last restore):
   - W1 skip the signature check;
   - W2 skip the `STRIPE_EXPECT_LIVEMODE` check;
   - W3 answer 200 when the refund call fails;

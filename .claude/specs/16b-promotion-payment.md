@@ -3,7 +3,7 @@
 **Branch:** `feature/promotion-payment` (spec commits only, shipped as a docs-only PR). Then four PRs, each cut from `main` after the previous one is merged: `feature/promotion-payment-db` (PR 1), `feature/promotion-payment-functions` (PR 2), `feature/promotion-payment-app` (PR 3), `feature/promotion-payment-launch-docs` (PR 4).
 **Product spec:** `docs/product/v1.md` §7 (Ads: payment and activation), §3 (out of scope), §13 (Legal), §14 row 16b, §15 Q1, §16 (the five spec 16b items)
 **Plan mode:** required: it changes the schema and RLS, adds two Edge Functions with server secrets and touches more than 5 files.
-**Status:** 🚧 In progress: spec PR #39 (990edd2), PR 1 in progress. Amended 2026-11-21 after gate S (sellers pay **outside the app**) and after Q13 / Q15 (Stripe Invoicing; no price or payment wording in the app). Amended 2026-11-22 with the PR 1 build decisions (see "PR 1 as built" under Database changes, and D18).
+**Status:** 🚧 In progress: spec PR #39 (990edd2), PR 1 #40 (ef847fe) shipped 2026-11-23, PR 2 next. Amended 2026-11-21 after gate S (sellers pay **outside the app**) and after Q13 / Q15 (Stripe Invoicing; no price or payment wording in the app). Amended 2026-11-22 with the PR 1 build decisions (see "PR 1 as built" under Database changes, and D18). Amended 2026-11-23 at PR 2 gate D0 (Stripe research, Archan's answers to the PR 2 plan questions; see "PR 2 research (D0)" under Edge Functions).
 
 ## Overview
 Today a seller asks for a promotion, Archan reads the headline, sends an invoice outside the app and switches the campaign on with one SQL call. After this spec, Stripe sends the invoice and the campaign switches on by itself, and **all payment happens outside the app** (Store rules):
@@ -276,6 +276,7 @@ Both live in `supabase/functions/` in the existing `index.ts` (wiring) + `handle
 
 **`promotion-invoice`** (admin only; was `promotion-checkout`; `verify_jwt = false`, protected by a server secret header like `push-sender`'s `x-cron-secret`)
 - Auth: header `x-admin-secret` compared in constant time with `PROMOTION_ADMIN_SECRET`. Missing or wrong -> 401, no body detail, no database call. The secret is never in the app.
+- `PROMOTION_ADMIN_SECRET` unset or shorter than 32 characters -> 503 `not_configured`, before the header is even compared (a short secret is treated as no secret).
 - Input: `POST { action: 'invoice', promotion_id: uuid }` or `POST { action: 'void_pending' }`. The function looks up the owner and business itself; the caller never names an owner or an email.
 - **`invoice`: the Stripe calls, in order.** Each call sends `Idempotency-Key: <step>-<payment id>` ("all POST requests accept idempotency keys", [idempotent requests](https://docs.stripe.com/api/idempotent_requests)). A resumed run skips the steps already recorded.
   1. `POST /v1/customers` with `email` (the owner's email, read server side, never logged), `name` (business name) and `metadata[payment_id]`. Key: `customer-<payment id>`.
@@ -290,33 +291,71 @@ Both live in `supabase/functions/` in the existing `index.ts` (wiring) + `handle
   4. `POST /v1/invoices/<id>/finalize` (the invoice becomes `open`). Key: `finalize-<payment id>`.
   5. **Before sending (PR 1 review S3):** call `check_invoice_sendable(payment id)`. If it is false (a cancel or the window passed during the run), do not send: void the finalized invoice (`POST /v1/invoices/<id>/void`, key `void-<payment id>`, then `mark_invoice_void`) and answer `not_payable`.
   6. `POST /v1/invoices/<id>/send` (Stripe emails the invoice). Key: `send-<payment id>`. Then `mark_invoice_sent`.
-  - Returns `{ ok: true, invoice_status: 'sent' }`, or `{ ok: false, error }` with `not_found`, `not_payable`, `payment_window_closed`, `not_configured`, `already_sent`, `rate_limited`, `payments_unavailable`, `stripe_error`. It never returns the hosted URL, the email or a Stripe id. In test mode Archan opens the invoice from the Stripe dashboard instead.
-- **`void_pending`:** `public.list_invoices_to_void()`, then for each `POST /v1/invoices/<id>/void` (allowed on `open` or `uncollectible` invoices; "This cannot be undone"; voided invoices "aren't payable"). Key: `void-<payment id>`. Then `mark_invoice_void`. Returns `{ ok, voided: n, failed: n }`.
+  - **Before step 1:** the owner's email is read; an owner with no email -> 409 `no_email`, and nothing is created at Stripe.
+  - **Resume (PR 2 plan):** a resumed run with an invoice id first reads the invoice (`GET /v1/invoices/<id>`) and continues from its real state (`draft` with total 0 -> add the item; `draft` with the locked total -> finalize; `open` -> the pre-send check), so nothing is posted twice after Stripe has pruned an idempotency key (keys may be removed "after they're at least 24 hours old"). A draft with another total, or a `void`, `paid` or `uncollectible` invoice -> `stripe_error`, nothing finalized or sent. A resumed reserved row (no ids yet) repeats steps 1 and 2 with the same keys.
+  - Returns 200 `{ ok: true, invoice_status: 'sent' }`, or `{ ok: false, error }` with an HTTP status: `invalid_input` 400; `not_found` 404; `not_payable`, `payment_window_closed`, `already_sent`, `no_email` 409; `rate_limited` 429; `stripe_error` 502 (run again: it resumes); `not_configured`, `payments_unavailable` 503; `internal_error` 500. A missing or wrong admin secret is 401 with no body. It never returns the hosted URL, the email or a Stripe id. In test mode Archan opens the invoice from the Stripe dashboard instead.
+- **`void_pending`:** `public.list_invoices_to_void()`, then for each, in order, never stopping at a failure: `POST /v1/invoices/<id>/void` (voiding "only applies to finalized invoices"; "This cannot be undone"; voided invoices "aren't payable"). Key: `void-<payment id>`. Then `mark_invoice_void`. When Stripe refuses the void, the handler reads the invoice: a `draft` is deleted (`DELETE /v1/invoices/<id>`; "Attempts to delete invoices that are no longer in a draft state will fail") and then marked void; an invoice already `void` at Stripe is marked void; a `paid` one is skipped (the webhook owns it); anything else counts as failed. Every listed row has an invoice id (`promotion_payments_attached`), so the handler requires one. Returns 200 `{ ok: true, voided: n, failed: n, skipped: n }`.
 - Sources for the calls and parameters, read 2026-11-21: [Invoicing integration](https://docs.stripe.com/invoicing/integration), [Create invoice](https://docs.stripe.com/api/invoices/create), [Create invoice item](https://docs.stripe.com/api/invoiceitems/create), [Finalize](https://docs.stripe.com/api/invoices/finalize), [Send](https://docs.stripe.com/api/invoices/send), [Void](https://docs.stripe.com/api/invoices/void), [Invoicing overview](https://docs.stripe.com/invoicing/overview), [Create customer](https://docs.stripe.com/api/customers/create).
-- **Must be confirmed in PR 2 planning against the API reference**, because the pages read disagree or are silent:
-  - **The pending-items parameter name:** the invoice-items page says `pending_invoice_item_behavior`, the invoices page says `pending_invoice_items_behavior`.
-  - **Finalize and the email:** whether finalize alone emails the customer is not confirmed. A dashboard setting ("Send finalized invoices to customers") controls this. Archan must check it in his setup step 7, so the seller does not get two emails.
-  - **The `auto_advance` default:** the create page says it "Defaults to false", while the automatic-collection page tells API users to set it to true. We set it explicitly to false.
+- **The three points that had to be confirmed** (pending-items parameter, finalize and the email, the `auto_advance` default) are answered in "PR 2 research (D0)" below.
 - Rate limit: 10 calls per promotion per hour, so a leaked admin secret or a looping caller cannot create invoices without bound. **As built in PR 1:** `public.begin_promotion_invoice` counts the calls itself in `map_rate_limits` (kind `promotion_invoice`, key `promo:<promotion id>`, an hourly window) and raises `rate_limited`. PR 2 maps that error; it needs no `_shared/rateLimit.ts` change.
 - **If `attach_invoice` refuses (`not_attachable`, for example after a cancel during the run) after Stripe already created the draft invoice, PR 2 deletes that draft best-effort** (`DELETE /v1/invoices/<id>`; a draft can be deleted, not voided) and never finalizes or sends it. If that call fails, the runbook's "delete an unsent draft by hand" step covers it.
-- Secrets: `PROMOTION_ADMIN_SECRET`, `STRIPE_SECRET_KEY` (a restricted key, D10). Missing Stripe key -> `503 payments_unavailable` (the local default).
+- Secrets: `PROMOTION_ADMIN_SECRET` (at least 32 characters), `STRIPE_SECRET_KEY` (a restricted key, D10). Missing Stripe key -> `503 payments_unavailable` (the local default). Neither function has any setting that changes the Stripe host: the key is only ever sent to `https://api.stripe.com` (Archan, PR 2 plan answer 4).
 - Logs: event codes only; never a key, a secret, an email, a URL or full ids.
 - **Database errors (PR 1 review S7):** map every RPC error to a code. Never log or return the raw Postgres error: a unique violation's DETAIL contains the full Stripe id.
-- **Drafts in `void_pending` (PR 1 review Q-S9):** `list_invoices_to_void` can list an `open` row whose invoice was never finalized (a draft), which Stripe cannot void. The handler skips or deletes drafts (`DELETE /v1/invoices/<id>`), and must not let a few permanently failing rows at the head of the oldest-first list (limit 100) starve newer ones (for example: count failures and continue, and report them).
+- **Drafts in `void_pending` (PR 1 review Q-S9):** `list_invoices_to_void` can list an `open` row whose invoice was never finalized (a draft), which Stripe cannot void. The handler deletes drafts (`DELETE /v1/invoices/<id>`) and marks them void, marks invoices already void at Stripe, and counts failures and continues.
+  - **Known limit (accepted by Archan, 2026-11-23):** the list is the 100 oldest rows. Rows that Stripe keeps refusing stay at its head; if 100 of them pile up, newer rows are never reached. The signal is the `failed` count in the command's answer and the runbook query for rows waiting to be voided. A real fix (a cursor past failed rows) needs a migration and is left for later.
+- **Orphans after a late resume (accepted by Archan, 2026-11-23):** a reserved row resumed more than 24 hours after its first run may create a second Customer or draft invoice at Stripe (the first key may be pruned). The orphan is never finalized or sent; the runbook says to delete it by hand.
+- **Built in PR 2 after the review (2026-11-23):**
+  - An `open` invoice (after finalize, or found on a resume) is sent only if its `total` equals the locked amount; otherwise `stripe_error` and nothing is sent (review S2). The matching livemode check was **not built**: `begin_promotion_invoice` does not return the row's `livemode`, so the handler has nothing to compare with without a database change. The database already refuses a mismatched event (D11 (b)).
+  - **Two `invoice` runs at the same time (review S1, known limit, accepted by Archan):** the second run's `attach_invoice` is refused and it deletes the draft the first run just attached. `attach_invoice` raises the same `not_attachable` for "already attached" and "no longer payable" (one combined check in the PR 1 SQL), so the handler cannot tell them apart without a database change. The runbook says never to run `invoice` twice at the same time for one promotion.
+  - Not in the text above but built: both functions answer 405 to anything but POST; the webhook answers 400 (`bad_event`) to a correctly signed body that is not JSON or not an event; and it answers 503 for a missing `STRIPE_WEBHOOK_SECRET` or a `STRIPE_EXPECT_LIVEMODE` other than `true` / `false` before reading the body (approved at D3).
 - **`record_stripe_event` may raise `invalid_event_data`** (PR 1 review S2): the webhook then answers 500 so Stripe retries.
 
 **`stripe-webhook`** (`verify_jwt = false`: Stripe sends no JWT; the signature is the auth)
-- Reads the raw body (max 64 KB, else 413) before parsing. Verifies `Stripe-Signature`: `t=` within 300 s of now, and any `v1=` equal (constant-time) to HMAC-SHA256(`STRIPE_WEBHOOK_SECRET`, `t + "." + body`). Failure -> 400, no detail, nothing written.
-- Only then parses JSON (zod). **Checks the event's `livemode` equals `STRIPE_EXPECT_LIVEMODE`** before any database call; a mismatch -> 200 with nothing written (D11).
-- **`invoice.paid`:** the invoice in the event does not carry its PaymentIntent. In the pinned API version, the invoice has no `payment_intent` field; its `payments` are "not returned by default" ([Invoice object](https://docs.stripe.com/api/invoices/object), [Invoice Payment](https://docs.stripe.com/api/invoice-payment)). So the webhook calls `GET /v1/invoice_payments?invoice=<id>&status=paid`, takes `payment.payment_intent`, and passes it with `amount_paid` and `currency` to `record_stripe_event`. If that lookup fails, the webhook answers 500 (Stripe retries).
-- **Refunds for an invoice payment:** `POST /v1/refunds` with `payment_intent=<pi id>` ("you must specify a Charge or a PaymentIntent", [Create refund](https://docs.stripe.com/api/refunds/create)), `reason=duplicate`, `Idempotency-Key: refund-<payment id>`, then `mark_refund_requested`.
+- Reads the raw body (max **256 KB**, else 413) before anything else. The cap was 64 KB; it was raised at D0 (Archan, 2026-11-23) because Stripe states no event size limit and the account may carry other activity (for example welcometohvac's other business) whose larger events must not fail forever: a 413 makes Stripe retry for up to three days. The endpoint is subscribed to the five event types below only.
+- Verifies `Stripe-Signature`: `t=` within 300 s of now, and at least one `v1=` equal (constant-time) to HMAC-SHA256(`STRIPE_WEBHOOK_SECRET`, `t + "." + body`). Other schemes (`v0`, only on test events) are ignored. Failure (missing or malformed header, stale `t`, no matching `v1`) -> 400, no detail, nothing written. A missing `STRIPE_WEBHOOK_SECRET` -> 503 (Stripe retries).
+- Only then parses JSON (zod). **Checks the event's `livemode` equals `STRIPE_EXPECT_LIVEMODE`** (exactly `true` or `false`; anything else -> 503) before any database call; a mismatch -> 200 with nothing written (D11).
+- **`invoice.paid`:** the invoice in the event does not carry its PaymentIntent. In the pinned API version, the invoice has no `payment_intent` field; its `payments` are "not returned by default" ([Invoice object](https://docs.stripe.com/api/invoices/object), [Invoice Payment](https://docs.stripe.com/api/invoice-payment)).
+  - The webhook first reads `amount_paid`, `currency` and `paid_at` (`status_transitions.paid_at`, Unix seconds) from the event. If any is missing or malformed, it answers 500 itself, before any Stripe or database call.
+  - Then it calls `GET /v1/invoice_payments?invoice=<id>&status=paid` and takes `payment.payment_intent` of the paid payment. If that lookup fails, the webhook answers 500 (Stripe retries).
+  - If the lookup finds no paid payment (for example an invoice "marked as paid out-of-band"), it passes `payment_intent_id: null`: the database answers `mismatch` for an invoice that is not ours (200, no loop) and raises `invalid_event_data` for ours (500, retry). The runbook says never to mark one of our invoices paid out of band.
+  - It passes `invoice_id`, `payment_intent_id`, `amount_paid`, `currency` and `paid_at` to `record_stripe_event`.
+- **Refunds for an invoice payment:** `POST /v1/refunds` with `payment_intent=<pi id>` ("you must specify a Charge or a PaymentIntent", [Create refund](https://docs.stripe.com/api/refunds/create); a PaymentIntent refund "is the same as refunding the underlying charge", [Refunds](https://docs.stripe.com/refunds)), `reason=duplicate`, `Idempotency-Key: refund-<payment id>`, then `mark_refund_requested`.
   - **If the refund call fails, the webhook answers 500**, so Stripe retries the event; the retry (a duplicate) returns the same refund target, and the same idempotency key keeps it to one refund (D12).
+  - Stripe's error `charge_already_refunded` counts as success (then `mark_refund_requested`): it covers a retry that arrives after the idempotency key was pruned.
   - Stripe's invoice-specific alternative is a credit note with `refund_amount`. It is not used in v1, and the accountant may prefer it (Q11).
   - Whether a plain refund changes the invoice's status at Stripe: not confirmed. We do not rely on it, because our own row is updated from `charge.refunded`.
 - Other events: `invoice.voided` and `invoice.marked_uncollectible` (data is the invoice); `charge.refunded` and `charge.dispute.created` (data is a charge or a dispute, both carrying `payment_intent`). All confirmed on [event types](https://docs.stripe.com/api/events/types), read 2026-11-21.
 - Returns 200 for applied, duplicate (with no refund pending), ignored and mismatched events, so Stripe stops retrying; 500 on our own database error, a failed invoice-payment lookup or a failed refund call, so Stripe retries, which is safe by D3 and D12.
 - Secrets: `STRIPE_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY` (lookups and refunds), `STRIPE_EXPECT_LIVEMODE` (`false` until launch).
-- Subscribed events: `invoice.paid`, `invoice.voided`, `invoice.marked_uncollectible`, `charge.refunded`, `charge.dispute.created`. (The two `checkout.session.*` events are gone.)
+- Subscribed events: `invoice.paid`, `invoice.voided`, `invoice.marked_uncollectible`, `charge.refunded`, `charge.dispute.created`, and no others. (The two `checkout.session.*` events are gone.) Any other type that still arrives is passed with empty data and stored as `ignored`.
+- Logs: event type and outcome or error code only; never an id, a secret, the body or an email.
+
+### PR 2 research (D0)
+Read 2026-11-23 on public docs.stripe.com pages only (no account, no key, no API call). "Not confirmed" means the docs read do not say it; the safe default is stated.
+
+| # | Question | Answer | Source |
+|---|---|---|---|
+| 1 | Pending-items parameter on invoice create | `pending_invoice_items_behavior` (plural), values `exclude` / `include`, "Defaults to `exclude` if the parameter is omitted." The invoice-item page spells it `pending_invoice_item_behavior` in prose only; the create-invoice spelling is used. We send `exclude` explicitly. | [Create invoice](https://docs.stripe.com/api/invoices/create), [Create invoice item](https://docs.stripe.com/api/invoiceitems/create) |
+| 2 | Does finalize alone email the seller | With `auto_advance=false`, "Emailing invoices" is "Not enabled" (the automatic-advancement table), so only our `/send` call emails. The dashboard setting is "Send finalized invoices to customers" (under "Manage invoices sent to customers"). The finalize page itself says nothing. Archan still checks the setting at setup step 7. | [Automatic advancement](https://docs.stripe.com/invoicing/integration/automatic-advancement-collection), [Send email](https://docs.stripe.com/invoicing/send-email), [Finalize](https://docs.stripe.com/api/invoices/finalize) |
+| 3 | `auto_advance` default | "Defaults to false." We send `false` explicitly. | [Create invoice](https://docs.stripe.com/api/invoices/create) |
+| 4 | Invoice email reply-to | **Not confirmed.** The pages say invoices show the support email from Public business information and that a verified custom domain is the sender domain; no reply-to is stated. Safe default: Archan checks it in the real-money test (Before launch 4). | [Customize](https://docs.stripe.com/invoicing/customize), [Send email](https://docs.stripe.com/invoicing/send-email) |
+| 5 | Restricted key permission labels | **Not confirmed.** The page shows the form "Resource: Permission" (for example "Customers: Read", "Payment Intents: Write") and "Write permissions include Read permissions", but lists no labels for invoices, invoice items, invoice payments, refunds or charges. Safe default: Archan matches the D10 list at setup step 8 and gives nothing broader. | [Restricted keys](https://docs.stripe.com/keys/restricted-api-keys) |
+| 6 | Payable after `due_date` | **Not confirmed** in words. An `open` invoice past its due date shows a "Past due" badge, and "Invoice URLs expire 30 days after the due date." Safe default: treat it as payable until voided (as the spec already does: `void_pending` and D5). | [Invoicing overview](https://docs.stripe.com/invoicing/overview), [Hosted invoice page](https://docs.stripe.com/invoicing/hosted-invoice-page) |
+| 7 | Does a refund change the invoice status | **Not confirmed.** `paid` is "terminal"; no page says a refund changes it. We rely only on `charge.refunded`. | [Invoicing overview](https://docs.stripe.com/invoicing/overview), [Refunds](https://docs.stripe.com/refunds) |
+| 8 | API version | "The current version is 2026-11-18.endive." Sent as the `Stripe-Version` header on every request. The webhook endpoint takes an `api_version` parameter: "Events sent to this endpoint will be generated with this Stripe Version". | [Versioning](https://docs.stripe.com/api/versioning), [Upgrades](https://docs.stripe.com/upgrades), [Create webhook endpoint](https://docs.stripe.com/api/webhook_endpoints/create) |
+| 9 | `invoice.paid` shape | `data.object` is the invoice: top-level `amount_paid` ("in the smallest currency unit"), `currency` ("in lowercase"), `livemode`, `metadata`; no `payment_intent` field. `status_transitions.paid_at` appears in the object (described as "The timestamps at which the invoice status was updated"); its unit is not stated in prose (Stripe timestamps are Unix seconds). Safe default: require an integer, else 500. | [Invoice object](https://docs.stripe.com/api/invoices/object), [Event types](https://docs.stripe.com/api/events/types) |
+| 10 | Invoice payments lookup | `GET /v1/invoice_payments` with filters `invoice`, `status` (`canceled`, `open`, `paid`), `payment`. The example shows `"payment": {"type": "payment_intent", "payment_intent": "pi_..."}`. | [Invoice Payment](https://docs.stripe.com/api/invoice-payment), [List invoice payments](https://docs.stripe.com/api/invoice-payment/list) |
+| 11 | `charge.refunded`, `charge.dispute.created` | Charge: `payment_intent` (nullable), `amount_refunded`, `refunded` ("Whether the charge has been fully refunded"). Dispute: `payment_intent` ("ID of the PaymentIntent that's disputed"). Both events, plus `invoice.voided` and `invoice.marked_uncollectible` (invoice objects), are listed. | [Charge](https://docs.stripe.com/api/charges/object), [Dispute](https://docs.stripe.com/api/disputes/object), [Event types](https://docs.stripe.com/api/events/types) |
+| 12 | Test-mode email | "Requests made in test-mode result in no emails being sent, despite sending an `invoice.sent` event." | [Send invoice](https://docs.stripe.com/api/invoices/send) |
+| 13a | Idempotency | Keys may be removed "after they're at least 24 hours old"; a reused key with different parameters errors; GET and DELETE are "idempotent by definition" (no key sent). | [Idempotent requests](https://docs.stripe.com/api/idempotent_requests) |
+| 13b | Void and delete | Void "only applies to finalized invoices"; delete fails for invoices "no longer in a draft state". | [Void](https://docs.stripe.com/api/invoices/void), [Delete](https://docs.stripe.com/api/invoices/delete) |
+| 13c | Already refunded | Error code `charge_already_refunded`: "The charge you're attempting to refund has already been refunded." Refund `reason=duplicate` is a valid value. | [Error codes](https://docs.stripe.com/error-codes), [Create refund](https://docs.stripe.com/api/refunds/create) |
+| 13d | `due_date` in the future | "Valid only for invoices where `collection_method=send_invoice`." A future-date rule is **not confirmed**; ours is always at least 1 hour ahead (`payment_window_closed` below that). | [Create invoice](https://docs.stripe.com/api/invoices/create) |
+| 13e | Signature scheme | `Stripe-Signature` header; signed payload = timestamp, `.`, raw body; HMAC with SHA-256 keyed by the endpoint secret; "at least one `v1` entry" must match; ignore other schemes; libraries default to a 5 minute tolerance. Read through a page reader whose fetch was cut before this section (summarised, not word for word); it matches the scheme in this spec. | [Webhooks](https://docs.stripe.com/webhooks) |
+| 13f | Event size and retries | No event size limit stated. Live retries "for up to three days"; sandbox retries "three times over the course of a few hours". | [Webhooks](https://docs.stripe.com/webhooks) |
+
+Nothing found makes the plan unworkable: every call exists in the API reference of the pinned version, and refunding an invoice payment by its PaymentIntent is documented.
 
 **Deployment:** Archan deploys with `npx supabase functions deploy promotion-invoice stripe-webhook` at release (never from a session), after setting the secrets himself with `npx supabase secrets set`.
 
@@ -337,8 +376,9 @@ Both live in `supabase/functions/` in the existing `index.ts` (wiring) + `handle
   - `supabase/functions/promotion-invoice/{index.ts,handler.ts}`
   - `supabase/functions/stripe-webhook/{index.ts,handler.ts}`
   - `supabase/functions/_shared/stripe.ts` (form encoding, the pinned version header, signature verify, the REST calls; pure where possible)
-  - `supabase/functions/tests/{stripe-signature.test.ts,stripe-webhook.test.ts,promotion-invoice.test.ts}` and `supabase/functions/tests/fixtures/stripeEvents.ts` (fake events signed inside the test with an obviously fake secret such as `whsec_test_fake_only`)
-  - `scripts/dev/fake-stripe-event.ts` (local only: signs a fake event with a secret passed on the command line and posts it to the local webhook; refuses any non-localhost URL)
+  - `supabase/functions/{promotion-invoice,stripe-webhook}/rpc.ts` (zod-checked database calls, the `push-sender` pattern; raw Postgres errors mapped to codes)
+  - `supabase/functions/tests/{stripe-signature.test.ts,stripe-webhook.test.ts,promotion-invoice.test.ts,fake-stripe-event.test.ts}` and `supabase/functions/tests/fixtures/stripeEvents.ts` (fake events signed inside the test with an obviously fake secret such as `whsec_test_fake_only`)
+  - `scripts/dev/fake-stripe-event.ts` (local only, a Deno script run with `--allow-net=127.0.0.1,localhost`: signs a fake event with a secret passed on the command line and posts it to the local webhook; refuses any non-localhost URL; for the event types that need no Stripe call, see Test plan)
 - PR 3 (app):
   - `supabase/migrations/<ts>_promotion_price_out_of_app.sql` (D15: replaces `get_my_promotion` without the price fields)
 - PR 4 (launch docs):
@@ -346,7 +386,7 @@ Both live in `supabase/functions/` in the existing `index.ts` (wiring) + `handle
 
 ## Files to change
 - PR 1: `supabase/tests/05-seller-onboarding.test.sql` (allowlists), `supabase/tests/16-promotions.test.sql` (only the assertions on the old status list and the old `request` / `cancel` behaviour; listed exactly at gate B, stop and ask for any other), `supabase/seed.sql` and `scripts/seed/promotions.ts` (one row in each new state), `src/types/database.ts` (regenerated), `src/features/promotions/schema.ts` (new keys accepted), `docs/runbooks/promotions-admin.md` (`approve_headline`, the `invoice` and `void_pending` admin commands, refunds in Stripe), `docs/product/v1.md` §7, §15, §16.
-- PR 2: `supabase/config.toml` (two function blocks), `supabase/functions/deno.json` (check task), (no `_shared/rateLimit.ts` change: the per-promotion limit is inside `begin_promotion_invoice`, PR 1), `.env.example` (names of the four function secrets, no values).
+- PR 2: `supabase/config.toml` (two function blocks), `supabase/functions/deno.json` (check task), `supabase/functions/_shared/http.ts` (export a raw-body reader built on the existing capped reader), (no `_shared/rateLimit.ts` change: the per-promotion limit is inside `begin_promotion_invoice`, PR 1), `.env.example` (names of the four function secrets, no values), `docs/runbooks/promotions-admin.md` (the two admin commands as one copy-paste terminal command each, the answers and error codes in plain words, how to make the admin secret).
 - PR 3: `PromoteScreen.tsx`, `PromotionStatusCard.tsx`, `schema.ts`, `format.ts`, `messages.ts`, `src/types/database.ts` (regenerated), and the existing tests that assert the removed price or payment wording (listed exactly at the PR 3 plan; expected: `PromoteScreen.test.tsx`, `format` tests, `schema.test.ts`, `a11y.test.tsx`), plus `supabase/tests/16b-promotion-payment.test.sql` (key set of `get_my_promotion`).
 - PR 4: `docs/product/v1.md` §16 (before-launch list; **PR 1 already wrote it**, review Q-S8: PR 4 only checks and updates it), CLAUDE.md row.
 
@@ -366,22 +406,25 @@ No new dependencies. No Stripe SDK in the app or the Edge Functions (D7), no new
 - **D8 Receipts and invoices from Stripe.** The Stripe invoice and its receipt are the seller's record. The app shows none. Whether the invoice needs tax lines or an HST number is Q11.
 - **D9 Opening and returning: superseded** while the pay-outside plan stands. The app opens no payment page and has no return link. Revisit only if Q14 allows a link-out.
 - **D10 Restricted key.** `STRIPE_SECRET_KEY` is a restricted key with only:
-  - Customers write, Invoices write (create, finalize, send, void), Invoice Items write, Refunds write;
-  - Invoice Payments read, Charges read.
-  Nothing broader. Stripe's restricted-key page says "Write permissions include Read permissions" and maps POST to write and GET to read ([restricted keys](https://docs.stripe.com/keys/restricted-api-keys), read 2026-11-21). The exact dashboard labels for Invoices, Invoice Items, Invoice Payments and Refunds are **not confirmed** on that page; Archan matches them at setup step 8.
+  - Customers write, Invoices write (create, read, finalize, send, void, and delete drafts), Invoice Items write, Refunds write;
+  - Invoice Payments read.
+  - No Charges permission: the code makes no charge call (`charge.*` events carry what the webhook needs). Removed at the PR 2 review (S4, 2026-11-23).
+  Nothing broader. Stripe's restricted-key page says "Write permissions include Read permissions" and maps POST to write and GET to read ([restricted keys](https://docs.stripe.com/keys/restricted-api-keys), read 2026-11-21). The exact dashboard labels for Customers, Invoices, Invoice Items, Invoice Payments and Refunds are **not confirmed** on that page (re-read 2026-11-23 at D0: it shows only the form "Resource: Permission", for example "Customers: Read"); Archan matches them at setup step 8.
 - **D11 Test events never touch live, two separate checks.** (a) The webhook function refuses an event whose `livemode` differs from `STRIPE_EXPECT_LIVEMODE`, before any database call. (b) The admin function records the invoice's `livemode` on the payment row at creation (`attach_invoice`), and `record_stripe_event` answers `mismatch` with nothing changed when an event's `livemode` differs from that row's. Each check has its own test.
 - **D12 No lost refunds.** A payment that needs a refund stays `needs_refund` until `mark_refund_requested` runs after Stripe accepted the refund call. A duplicate event, and any later event for that payment, returns the refund target again while it is `needs_refund`. If the refund call fails, the webhook answers 500 so Stripe retries; the same `Idempotency-Key: refund-<payment id>` keeps it to one refund. After `mark_refund_requested`, a duplicate returns no refund target.
 - **D13 Admin-only invoicing.** `promotion-invoice` takes no user JWT and is never called by the app. It is protected by `PROMOTION_ADMIN_SECRET` in the `x-admin-secret` header (constant-time compare, the `push-sender` pattern), looks up the owner itself, and is rate-limited per promotion.
 - **D14 Stripe Invoicing (Resolved Q13 (b)).**
   - **The invoice:** `collection_method=send_invoice`, due date equal to `pay_by`, one invoice item for the locked amount in `cad`. The admin function finalizes and sends it, and Stripe emails the seller a hosted pay page.
   - **Test mode:** "Requests made in test-mode result in no emails being sent, despite sending an invoice.sent event" ([Send invoice](https://docs.stripe.com/api/invoices/send), read 2026-11-21). In test mode Archan opens the hosted invoice from the Stripe dashboard and pays it with a test card.
-  - **The seller's email:** read server side from auth, sent only to Stripe, never returned, logged or stored in our tables.
+  - **The seller's email:** read server side from auth, sent only to Stripe, never returned, logged or stored in our tables. An owner with no email gets `no_email` and nothing at Stripe.
+  - **One email, from our send call (D0, 2026-11-23):** with `auto_advance=false`, Stripe's automatic emailing is "Not enabled" ([automatic advancement](https://docs.stripe.com/invoicing/integration/automatic-advancement-collection)), so finalize sends nothing and the `/send` call sends the one invoice email. Archan still checks "Send finalized invoices to customers" at setup step 7. The reply-to address stays not confirmed (D0 row 4).
 - **D15 Price out of the app's data (recommended; Archan confirms at the PR 3 plan).** `get_my_promotion` should stop returning `price_cents` and `currency_code` (for the promotion and the settings), because the app no longer shows them. Leaving them in the answer invites them to reappear in the UI, and a store reviewer reading network traffic would see a price for an in-app feature.
   - **Order matters:** PR 1 keeps the fields, so the app on main still works. PR 3 removes their use and adds one small replacing migration that drops them, then regenerates types.
   - The length (`length_days`) stays, for "for 7 days".
 - **D16 Voiding stale invoices (consequence of "no job").** A seller cancel, an admin reject or cancel, or a lapsed window does not reach Stripe by itself. The documented admin command `void_pending` voids those invoices at Stripe. Until it runs, a stale invoice stays payable, and a payment on it is refunded by D5 (a small fee). A small worker that voids automatically is a possible later improvement, not built now.
 - **D18 Promote screen in PR 1 (gate C, approved; `contact_support` mapped after the PR 1 review, Q3):** the app accepts the new states with the three final status lines ("Your headline was approved. We'll be in touch with next steps.", "Payment window closed.", "Refunded.") and no dead buttons: `awaiting_payment` counts as open and is cancelled like a request ("Cancel request"); a **paid** scheduled or active campaign shows no cancel button and no "Promote again" (the server answers `contact_support`; PR 3 adds "Contact us to cancel"); `payment_expired` and `refunded` offer "Promote again". No price or payment wording was added.
 - **D17 Pinned Stripe API version.** Every Stripe request sends `Stripe-Version: 2026-11-18.endive` ("The current version is 2026-11-18.endive", [versioning](https://docs.stripe.com/api/versioning), read 2026-11-21). The webhook endpoint is created with the same API version (setup step 10), so event payloads match. Changing it is a reviewed code change.
+  - Re-checked 2026-11-23 at D0: still "The current version is 2026-11-18.endive"; the header is `Stripe-Version`; the webhook endpoint's `api_version` decides the event payload version ([create webhook endpoint](https://docs.stripe.com/api/webhook_endpoints/create)).
 
 ## Rules for implementation
 - RLS on every new table, plus pgTAP proving outsiders are refused.
@@ -430,11 +473,12 @@ First search (spec draft, 2026-11-21):
 6. Add the bank account for payouts and complete the identity checks Stripe asks for (needed before live mode; can be done now).
 7. In the invoice settings: allow cards on the hosted invoice page (turn on Apple Pay and Google Pay; leave bank debits and other delayed methods off); check the "Send finalized invoices to customers" setting so the seller gets one email, not two (D14); note which address the invoice email shows as sender and reply-to; and check the Invoicing plan and fee (Starter or Plus).
 8. In Test mode, create a **restricted key** with only the permissions in D10.
-9. Make a long random **admin secret** yourself (for example with a password manager) for `PROMOTION_ADMIN_SECRET`. Keep it in your password manager; it is what lets you send and void invoices.
+9. Make a long random **admin secret** yourself (for example with a password manager, or `openssl rand -hex 32` in your own terminal, never saved to a file in the repo) for `PROMOTION_ADMIN_SECRET`. It must be at least 32 characters, or the function refuses to work (`not_configured`). Keep it in your password manager; it is what lets you send and void invoices.
 10. After PR 2 is merged and you have deployed the functions, add a test-mode webhook endpoint pointing to the hosted `stripe-webhook` URL, with the five events listed under Edge Functions and API version `2026-11-18.endive` (D17). Copy its signing secret.
 11. Set the four secrets yourself in a terminal (never in chat, never in a file in the repo): `npx supabase secrets set STRIPE_SECRET_KEY=... STRIPE_WEBHOOK_SECRET=... STRIPE_EXPECT_LIVEMODE=false PROMOTION_ADMIN_SECRET=...`.
 12. Tell Claude only "test secrets are set". Never paste a key, a secret or a screenshot showing one into chat. If one is ever pasted, roll it at once (in Stripe, or make a new admin secret).
 13. No Expo rebuild is needed for this spec (unless Q14 changes the plan).
+14. **End-to-end `invoice.paid` check in Test mode** (after step 11; the local script cannot do it): approve a seeded headline, run the `invoice` admin command, open the invoice from the Stripe dashboard (test mode sends no email), pay it with a Stripe test card, then check that the webhook delivery succeeded in the dashboard and the Promote screen shows "Paid and scheduled" after pull to refresh. Then refund it in full in the dashboard and check "Refunded.". Tell Claude only the outcome.
 
 ## Out of scope
 - **In-app payment of any kind** (Apple In-App Purchase, Google Play Billing, an in-app browser sheet, a Pay button)
@@ -488,32 +532,44 @@ First search (spec draft, 2026-11-21):
 - [x] Seed has one row in each new state (as approved at the plan: `payment_due` and a paid campaign); `db:types` regenerated; the zod schema accepts the new keys with no behaviour change; jest, lint, typecheck and `npx supabase test db` green; runbook (with the `invoice` and `void_pending` commands) and v1 §7, §15, §16 updated.
 
 **PR 2 (Edge Functions, `feature/promotion-payment-functions`)**
-- [ ] Admin function (Deno tests, fake `fetch`):
-  - **refused without the admin secret** (missing header, wrong secret, a user JWT instead: all 401 with no database call); the compare is constant-time;
-  - the per-promotion rate limit; a missing Stripe key -> 503 `payments_unavailable`;
+- [x] Admin function (Deno tests, fake `fetch`, fake database calls, fake email lookup):
+  - **refused without the admin secret** (missing header, wrong secret, a user JWT instead: all 401 with no body, no database call and no Stripe call); the compare is constant-time;
+  - `PROMOTION_ADMIN_SECRET` unset or shorter than 32 characters -> 503 `not_configured`;
+  - the per-promotion rate limit (429 `rate_limited`); a missing Stripe key -> 503 `payments_unavailable`; each database error mapped to its code, never the raw text;
+  - an owner with no email -> 409 `no_email` and no Stripe call;
   - `invoice` makes the five calls in order, each with its idempotency key and `Stripe-Version: 2026-11-18.endive`;
-  - the invoice has `collection_method=send_invoice`, `due_date` equal to `pay_by`, `auto_advance=false`, `currency=cad` and metadata; the item has the locked amount and "LikeToOrder promotion, 7 days";
+  - the invoice has `collection_method=send_invoice`, `due_date` equal to `pay_by`, `auto_advance=false`, `currency=cad`, `pending_invoice_items_behavior=exclude` and metadata; the item has the locked amount and "LikeToOrder promotion, 7 days";
   - the customer gets the owner's email, and the email appears in no log line and no response;
-  - a failure after step 2 resumes at the next step on a second call;
-  - `already_sent` on a third call; the response holds only `{ ok, invoice_status }`;
-  - `void_pending` voids each listed invoice and marks it.
-- [ ] Webhook (Deno tests, fake signed events, fake `fetch`):
-  - bad signature, old timestamp, missing header and a body over 64 KB are refused with no database call;
-  - a valid `invoice.paid` triggers the invoice-payments lookup, passes `payment_intent_id`, `amount_paid` and `currency` on, and activates; a failed lookup answers 500;
+  - a failure at each step resumes at the right step on a second call (driven by the invoice's state at Stripe), with no second Customer, invoice or item;
+  - `attach_invoice` refused -> the draft is deleted, nothing finalized or sent; `check_invoice_sendable` false -> the invoice is voided and marked, not sent;
+  - `already_sent` -> 409 `{ ok: false, error: 'already_sent' }`; success -> exactly `{ ok: true, invoice_status: 'sent' }`;
+  - `void_pending` voids each listed invoice and marks it; deletes drafts; marks invoices already void; skips paid ones; one failure does not stop the rest; answers the counts.
+- [x] Webhook (Deno tests, fake signed events, fake `fetch`):
+  - bad signature, old timestamp, missing header and a body over 256 KB (413) are refused with no database call and no Stripe call;
+  - a valid `invoice.paid` triggers the invoice-payments lookup, passes `invoice_id`, `payment_intent_id`, `amount_paid`, `currency` and `paid_at` (from `status_transitions.paid_at`) on, and activates; a failed lookup answers 500; an event missing `paid_at`, `currency` or `amount_paid` answers 500 with no call; no paid payment found -> `payment_intent_id` null is passed;
   - an event whose livemode differs from `STRIPE_EXPECT_LIVEMODE` is refused before any database call (tested separately from the row check);
-  - a refund target leads to one `POST /v1/refunds` with `payment_intent` and `Idempotency-Key: refund-<id>`, then `mark_refund_requested`;
+  - a database error or `invalid_event_data` answers 500; applied, duplicate without a target, ignored and mismatch answer 200;
+  - a refund target leads to one `POST /v1/refunds` with `payment_intent` and `Idempotency-Key: refund-<id>`, then `mark_refund_requested`; `charge_already_refunded` counts as done;
   - a failed refund call answers 500 and does not call `mark_refund_requested`;
-  - a retried duplicate with a refund target repeats the refund call with the same key.
-- [ ] Deliberate breaks, each red on its named test, then reverted and `cmp`-checked:
-  - (h) skip the signature check;
-  - (i) skip the `STRIPE_EXPECT_LIVEMODE` check;
-  - (j) answer 200 when the refund call fails;
-  - (k) not repeat the refund on a duplicate that carries a refund target;
-  - (l) skip the admin secret check;
-  - (m) let an `invoice.paid` with a wrong amount reach activation (the handler drops the amount it passes);
-  - (n) log the customer email.
-- [ ] `grep` proves no `sk_`, `rk_` or `whsec_` value outside the tests' obvious fakes, and no `EXPO_PUBLIC_STRIPE` anywhere.
-- [ ] `scripts/dev/fake-stripe-event.ts` refuses a non-localhost URL (unit test). `deno lint`, `deno task check`, `deno task test` green; `config.toml`, `deno.json` and `.env.example` (names only) updated.
+  - a retried duplicate with a refund target repeats the refund call with the same key;
+  - the `p_data` shapes of `invoice.voided`, `invoice.marked_uncollectible`, `charge.refunded` and `charge.dispute.created`.
+- [x] Deliberate breaks (labelled W1 to W10 so they do not collide with PR 1's letters), each run in a scratch copy, red on its named test, then restored and proven with `cmp` (done 2026-11-23 at gate D4: all ten red on their named tests, each restore `cmp`-equal to HEAD, tree clean, full Deno suite green after the last restore; all thirteen re-run after the review fixes, same result):
+  - W1 skip the signature check;
+  - W2 skip the `STRIPE_EXPECT_LIVEMODE` check;
+  - W3 answer 200 when the refund call fails;
+  - W4 not repeat the refund on a duplicate that carries a refund target;
+  - W5 skip the admin secret check;
+  - W6 let an `invoice.paid` with a wrong amount reach activation (the handler drops the amount it passes);
+  - W7 log the customer email;
+  - W8 skip `check_invoice_sendable` before send;
+  - W9 skip the draft delete when `attach_invoice` refuses;
+  - W10 drop the `Idempotency-Key` on one Stripe POST;
+  - W11 create again on a retry instead of reading the invoice state (review Q1);
+  - W12 send an open invoice whose total differs from the locked amount (review S2);
+  - W13 let the fake-event script follow redirects (review S5).
+- [x] `grep` proves no `sk_`, `rk_` or `whsec_` value outside the tests' obvious fakes, and no `EXPO_PUBLIC_STRIPE` anywhere.
+- [x] `git diff --stat main -- supabase/migrations` is empty (no migration in PR 2).
+- [x] `scripts/dev/fake-stripe-event.ts` refuses a non-localhost URL, and the signature it makes verifies (Deno test). `deno lint`, `deno task check`, `deno task test` green; `config.toml`, `deno.json`, `.env.example` (names only) and the runbook updated. Nothing deployed; no secret set.
 
 **PR 3 (app, `feature/promotion-payment-app`; status wording and price removal)**
 - [ ] The Promote screen shows every state in "What people see" with its action, plus loading, error and Retry; pull to refresh updates it.
@@ -524,7 +580,7 @@ First search (spec draft, 2026-11-21):
 - [ ] Archan's Simulator run with seed rows for each state:
   - the invitation shows no price;
   - awaiting approval, headline approved, paid and scheduled, active, ended, payment window closed, refunded, rejected with the "payment window closed" reason;
-  - the fake-event script for the webhook path: a `payment_due` row becomes "Paid and scheduled" after pull to refresh.
+  - the webhook path end to end: after Archan's deploy and test-mode setup, a test-mode invoice paid with a Stripe test card turns a `payment_due` row into "Paid and scheduled" after pull to refresh (the local fake-event script cannot do `invoice.paid`, see Test plan).
 - [ ] If Q14 later allows a link-out, PR 3's scope grows again (button, browser sheet, return handling) through a short amendment approved by Archan.
 
 **PR 4 (launch docs, `feature/promotion-payment-launch-docs`)**
@@ -542,7 +598,8 @@ First search (spec draft, 2026-11-21):
 - **pgTAP** `supabase/tests/16b-promotion-payment.test.sql` (PR 1): everything under PR 1, calling the private functions as the database owner with fake event payloads; plus the approved 05 and 16 edits. Run with `npx supabase test db` after `npx supabase db reset` (local only). PR 3 extends it with the D15 key set.
 - **Deno** `supabase/functions/tests/` (PR 2): signature verify (known-answer vectors computed in the test from a fake secret), the admin secret check, the five-call invoice sequence and its resume, `void_pending`, the webhook with the invoice-payments lookup and refunds, all with an injected fake RPC and a fake `fetch`. No network.
 - **jest** (PR 1 and PR 3): the schema keys (PR 1); the status wording, the removed price, `PromoteScreen` states and the updated existing tests (PR 3).
-- **Local manual without Stripe** (after PR 2): `npx supabase db reset`, then `scripts/dev/fake-stripe-event.ts` signs a fake `invoice.paid` for a seeded `payment_due` row with a made-up local secret and posts it to the local webhook. With a faked invoice-payments answer, after pull to refresh the Promote screen shows "Paid and scheduled". Archan runs it; the local function reads the made-up secret from his local function env, which Claude does not read.
+- **Local manual without Stripe** (after PR 2): `npx supabase db reset`, then `scripts/dev/fake-stripe-event.ts` signs a fake event with a made-up local secret and posts it to the local webhook. It covers only the paths that need no Stripe call: `invoice.voided`, `invoice.marked_uncollectible`, the `charge.refunded` and `charge.dispute.created` shapes, and the signature and livemode refusals. Archan runs it; the local function reads the made-up secret from his local function env, which Claude does not read.
+  - **No `invoice.paid` locally (Archan, 2026-11-23):** that path needs the invoice-payments lookup at Stripe, and the functions have no setting that could point the Stripe key at another host. `invoice.paid` is covered by the Deno tests (fake `fetch`) and checked end to end by Archan in Stripe test mode after his deploy (What Archan does himself, step 14).
 - **Manual in Stripe test mode** (Archan, after his setup steps): run the `invoice` admin command, open the invoice from the Stripe dashboard (test mode sends no email), pay with a Stripe test card, then check the app; cancel another one and run `void_pending`.
 
 ## Delivery: PRs and gates
@@ -553,8 +610,8 @@ I stop and commit at every gate (named files, a conventional message, no push) a
 | spec | `feature/promotion-payment` | **A** spec + CLAUDE.md row + spec 16 status line. **A2** gate S amendment (pay outside the app). **A3** Q13 / Q15 amendment (Stripe Invoicing, no price in the app). Shipped as a docs-only PR. | No |
 | 0 store check | none (docs) | **S** done 2026-11-21: pay outside the app. Q14 stays open and does not block building. | No |
 | 1 database | `feature/promotion-payment-db` | **B** migration + pgTAP (new + 05/16 edits), `test db` green, breaks (a) to (g). **C** seed, `db:types`, zod keys, runbook, v1 §7/§15/§16. Review, ship. | **Yes** (one) |
-| 2 functions | `feature/promotion-payment-functions` | **D0** confirm the three "must be confirmed" points against the API reference. **D1** `_shared/stripe.ts` + signature tests. **D2** both functions, Deno tests with fake signed events and a fake admin secret, breaks (h) to (n). **D3** fake-event script, `config.toml`, `deno.json`, `.env.example` names. Review, ship. | No |
-| 3 app | `feature/promotion-payment-app` | **E1** schema, format, messages, `PromoteScreen` and `PromotionStatusCard`: status wording and price removal, updated tests. **E2** D15 replacing migration + pgTAP + `db:types` (if confirmed). **F** Archan's Simulator run with seed rows and the fake-event script. No dependency, no native rebuild. Review, ship. | Yes (D15, small) |
+| 2 functions | `feature/promotion-payment-functions` | **D0** Stripe research on public docs + spec edits (done 2026-11-23, "PR 2 research (D0)"). **D1** `_shared/stripe.ts` + signature tests. **D2** `stripe-webhook` + Deno tests with fake signed events. **D3** `promotion-invoice` + Deno tests with a fake admin secret. **D4** breaks W1 to W10. **D5** fake-event script, `config.toml`, `deno.json`, `.env.example` names, runbook. Review, ship. Nothing deployed. | No |
+| 3 app | `feature/promotion-payment-app` | **E1** schema, format, messages, `PromoteScreen` and `PromotionStatusCard`: status wording and price removal, updated tests. **E2** D15 replacing migration + pgTAP + `db:types` (if confirmed). **F** Archan's Simulator run with seed rows, plus the `invoice.paid` end to end in Stripe test mode (Archan's step 14). No dependency, no native rebuild. Review, ship. | Yes (D15, small) |
 | 4 launch docs | `feature/promotion-payment-launch-docs` | **G** `stripe-setup.md`, v1 §16. Ship. | No |
 
 ## Privacy and security position
@@ -583,6 +640,9 @@ Resolved by Archan on 2026-11-21.
 - **Q12** Existing `requested` rows stay as they are; existing `approved` rows are marked `is_free` by the migration.
 - **Q13 (2026-11-21)** (b) Stripe Invoicing: the admin function creates a Stripe Customer and an invoice with `collection_method=send_invoice` and a 7-day due date, and Stripe emails the seller a hosted pay page (D14). Options (a) manual email and (c) our own email worker were not chosen.
 - **Q15 (2026-11-21)** Remove the price and payment wording from the app. The app shows status only. Price, deadline and receipt appear only in the Stripe invoice email and its hosted page (table under Screens & routes; D15 for the data).
+
+## Follow-ups (not in this spec)
+- OffersPrivacy.test.tsx flaked once under full-suite load, passes alone and on rerun; timing, spec 16 PR 4 test. (Recorded 2026-11-23 at PR 2 gate D3; not touched in PR 2.)
 
 ## Open questions
 1. **Q11 Tax:** the accountant's view on Ontario HST, a tax-inclusive or tax-exclusive price, registration, what the invoice must show, and refunds versus credit notes. Blocks live mode, not building.

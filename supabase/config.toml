@@ -424,6 +424,21 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/deno.json"
 
+# Spec 16b: admin commands (invoice, void_pending), called only by Archan, never by the app. The
+# secret is the auth: the handler rejects any request without the matching x-admin-secret header
+# (401, no body) before reading the body or calling the database or Stripe.
+[functions.promotion-invoice]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deno.json"
+
+# Spec 16b: called only by Stripe, which sends no JWT. The signature is the auth: the handler checks
+# the Stripe-Signature header (HMAC, 300 s) before parsing the body or calling the database or Stripe.
+[functions.stripe-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deno.json"
+
 [analytics]
 enabled = true
 port = 54327

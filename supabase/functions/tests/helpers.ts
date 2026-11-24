@@ -80,6 +80,9 @@ export function fakeGoogleFetch(
   return { fn, requests };
 }
 
+// The same fake under a neutral name (the spec 16b tests use it for Stripe).
+export const fakeFetch = fakeGoogleFetch;
+
 // A Google response that never arrives until the request is aborted.
 export function hangUntilAborted(signal: AbortSignal | undefined): Promise<Response> {
   return new Promise((_, reject) => {

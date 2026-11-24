@@ -9,6 +9,7 @@ import { blockNetwork, fakeFetch, type RecordedRequest, USER_JWT } from './helpe
 import {
   ADMIN_SECRET,
   captureConsole,
+  guardedTest,
   OWNER_EMAIL,
   OWNER_ID,
   PAYMENT_ID,
@@ -24,6 +25,10 @@ const BUSINESS_NAME = 'Pasta Place Business Name';
 const PAY_BY = '2026-11-30T12:00:00.123456+00:00';
 const DUE_DATE = 1796040000;
 const LEAK = { error: { code: 'api_error', message: `customer ${OWNER_EMAIL} key ${STRIPE_KEY}`, param: OWNER_EMAIL } };
+
+// Every test is leak-checked on its own (log lines and answers), whatever order or filter it runs with.
+const FORBIDDEN = [OWNER_EMAIL, ADMIN_SECRET, STRIPE_KEY, BUSINESS_NAME, PAYMENT_ID, PROMOTION_ID, OWNER_ID, 'cus_', 'in_', 'ii_', 'rk_', 'Key (', 'duplicate key', 'refused for', 'example.test'];
+const test = guardedTest(output, FORBIDDEN, bodies);
 
 // --- fake Stripe -----------------------------------------------------------------------------------
 
@@ -243,7 +248,7 @@ const routes = (reqs: RecordedRequest[]) => reqs.map((r) => `${r.method} ${r.url
 
 // --- the admin secret ------------------------------------------------------------------------------
 
-Deno.test('admin: an unset or short PROMOTION_ADMIN_SECRET is 503 not_configured with no calls', async () => {
+test('admin: an unset or short PROMOTION_ADMIN_SECRET is 503 not_configured with no calls', async () => {
   for (const adminSecret of [undefined, '', ADMIN_SECRET.slice(0, MIN_ADMIN_SECRET_LENGTH - 1)]) {
     const s = setup({ adminSecret });
     const res = await s.send({ action: 'invoice', promotion_id: PROMOTION_ID }, { 'x-admin-secret': adminSecret ?? '' });
@@ -254,14 +259,14 @@ Deno.test('admin: an unset or short PROMOTION_ADMIN_SECRET is 503 not_configured
   }
 });
 
-Deno.test('admin: a secret of exactly 32 characters works', async () => {
+test('admin: a secret of exactly 32 characters works', async () => {
   const secret = 'x'.repeat(MIN_ADMIN_SECRET_LENGTH);
   const s = setup({ adminSecret: secret });
   const res = await s.send({ action: 'void_pending' }, { 'x-admin-secret': secret });
   assert.equal(res.status, 200);
 });
 
-Deno.test('admin: missing, wrong (equal or other length) or JWT-only is 401 with no body and no calls', async () => {
+test('admin: missing, wrong (equal or other length) or JWT-only is 401 with no body and no calls', async () => {
   const wrongSameLength = ADMIN_SECRET.slice(0, -1) + (ADMIN_SECRET.endsWith('f') ? 'e' : 'f');
   assert.equal(wrongSameLength.length, ADMIN_SECRET.length);
   const cases: Record<string, string>[] = [
@@ -284,7 +289,7 @@ Deno.test('admin: missing, wrong (equal or other length) or JWT-only is 401 with
   }
 });
 
-Deno.test('admin: not POST is 405; a bad body is 400 invalid_input with no calls', async () => {
+test('admin: not POST is 405; a bad body is 400 invalid_input with no calls', async () => {
   const s = setup();
   assert.equal((await s.send(null, { 'x-admin-secret': ADMIN_SECRET }, 'GET')).status, 405);
   for (const body of ['not json', {}, { action: 'refund' }, { action: 'invoice' }, { action: 'invoice', promotion_id: 'abc' }]) {
@@ -296,7 +301,7 @@ Deno.test('admin: not POST is 405; a bad body is 400 invalid_input with no calls
   assert.equal(s.stripe.requests.length, 0);
 });
 
-Deno.test('admin: no Stripe key is 503 payments_unavailable with no calls', async () => {
+test('admin: no Stripe key is 503 payments_unavailable with no calls', async () => {
   const s = setup({ noStripe: true });
   const res = await s.invoice();
   assert.equal(res.status, 503);
@@ -306,7 +311,7 @@ Deno.test('admin: no Stripe key is 503 payments_unavailable with no calls', asyn
 
 // --- invoice: answers from begin_promotion_invoice ------------------------------------------------
 
-Deno.test('invoice: begin errors map to codes and statuses; raw database text never leaves', async () => {
+test('invoice: begin errors map to codes and statuses; raw database text never leaves', async () => {
   const cases: [{ message: string; details?: string }, number, string][] = [
     [{ message: 'not_found' }, 404, 'not_found'],
     [{ message: 'not_payable' }, 409, 'not_payable'],
@@ -324,14 +329,14 @@ Deno.test('invoice: begin errors map to codes and statuses; raw database text ne
   }
 });
 
-Deno.test('invoice: begin is called with the promotion id only', async () => {
+test('invoice: begin is called with the promotion id only', async () => {
   const s = setup();
   await s.invoice();
   assert.deepEqual(s.db.calls[0], { fn: 'begin_promotion_invoice', args: { p_promotion_id: PROMOTION_ID } });
   assert.deepEqual(s.emailLookups, [OWNER_ID]);
 });
 
-Deno.test('invoice: an owner with no email is 409 no_email and nothing at Stripe', async () => {
+test('invoice: an owner with no email is 409 no_email and nothing at Stripe', async () => {
   for (const email of [null, '', 'not-an-email']) {
     const s = setup({ email });
     const res = await s.invoice();
@@ -347,7 +352,7 @@ Deno.test('invoice: an owner with no email is 409 no_email and nothing at Stripe
 
 // --- invoice: the happy path ----------------------------------------------------------------------
 
-Deno.test('invoice: the calls in order, each body, key and version; answer is { ok, invoice_status }', async () => {
+test('invoice: the calls in order, each body, key and version; answer is { ok, invoice_status }', async () => {
   const s = setup();
   const res = await s.invoice();
   assert.equal(res.status, 200);
@@ -403,13 +408,13 @@ Deno.test('invoice: the calls in order, each body, key and version; answer is { 
   assert.deepEqual(s.db.calls[1].args, { p_payment_id: PAYMENT_ID, p_customer_id: 'cus_Fake1', p_invoice_id: 'in_Fake1', p_livemode: false });
 });
 
-Deno.test('invoice: the livemode recorded by attach_invoice is the one Stripe answered', async () => {
+test('invoice: the livemode recorded by attach_invoice is the one Stripe answered', async () => {
   const s = setup({ stripe: { livemode: true } });
   await s.invoice();
   assert.equal(s.db.row.livemode, true);
 });
 
-Deno.test('invoice: the email goes only to the customer call, never to another request or the answer', async () => {
+test('invoice: the email goes only to the customer call, never to another request or the answer', async () => {
   const s = setup();
   const res = await s.invoice();
   const text = await res.text();
@@ -421,7 +426,7 @@ Deno.test('invoice: the email goes only to the customer call, never to another r
 
 // --- invoice: failures, resume and no double invoice ----------------------------------------------
 
-Deno.test('invoice: a failure at each step resumes on the next run with one of each object', async () => {
+test('invoice: a failure at each step resumes on the next run with one of each object', async () => {
   for (const step of [
     'POST /v1/customers',
     'POST /v1/invoices',
@@ -444,7 +449,7 @@ Deno.test('invoice: a failure at each step resumes on the next run with one of e
   }
 });
 
-Deno.test('invoice: Stripe acts but the answer is lost at each step; the rerun makes no second object', async () => {
+test('invoice: Stripe acts but the answer is lost at each step; the rerun makes no second object', async () => {
   for (const step of [
     'POST /v1/customers',
     'POST /v1/invoices',
@@ -466,7 +471,7 @@ Deno.test('invoice: Stripe acts but the answer is lost at each step; the rerun m
   }
 });
 
-Deno.test('invoice: a resumed run whose owner email changed is refused by Stripe (key reuse), nothing new made', async () => {
+test('invoice: a resumed run whose owner email changed is refused by Stripe (key reuse), nothing new made', async () => {
   const s = setup({ stripe: { failAfter: ['POST /v1/customers'] } });
   assert.equal((await s.invoice()).status, 502);
   s.setEmail('owner-new@example.test');
@@ -477,7 +482,7 @@ Deno.test('invoice: a resumed run whose owner email changed is refused by Stripe
   assert.equal(s.stripe.created.invoices, 0);
 });
 
-Deno.test('invoice: a resumed run with an attached invoice reads its state and never posts a second item', async () => {
+test('invoice: a resumed run with an attached invoice reads its state and never posts a second item', async () => {
   const s = setup({ stripe: { failOnce: ['POST /v1/invoices/:id/finalize'] } });
   await s.invoice();
   const before = s.stripe.requests.length;
@@ -486,7 +491,7 @@ Deno.test('invoice: a resumed run with an attached invoice reads its state and n
   assert.deepEqual(resumed, ['GET /v1/invoices/in_Fake1', 'POST /v1/invoices/in_Fake1/finalize', 'POST /v1/invoices/in_Fake1/send']);
 });
 
-Deno.test('invoice: resume after the idempotency window still adds no second item (state from Stripe)', async () => {
+test('invoice: resume after the idempotency window still adds no second item (state from Stripe)', async () => {
   // The row is attached and the draft already has its item, as after a run that stopped before
   // finalize more than 24 h ago (no remembered keys at the fake).
   const s = setup({
@@ -499,7 +504,7 @@ Deno.test('invoice: resume after the idempotency window still adds no second ite
   assert.deepEqual(routes(s.stripe.requests), ['GET /v1/invoices/in_Old1', 'POST /v1/invoices/in_Old1/finalize', 'POST /v1/invoices/in_Old1/send']);
 });
 
-Deno.test('invoice: a resumed draft with another total, or a void or paid invoice, is stripe_error with no send', async () => {
+test('invoice: a resumed draft with another total, or a void or paid invoice, is stripe_error with no send', async () => {
   for (const inv of [
     { id: 'in_Old1', status: 'draft', total: 1000, livemode: false },
     { id: 'in_Old1', status: 'void', total: 2500, livemode: false },
@@ -513,7 +518,7 @@ Deno.test('invoice: a resumed draft with another total, or a void or paid invoic
   }
 });
 
-Deno.test('invoice: an open invoice with another total is never sent (stripe_error)', async () => {
+test('invoice: an open invoice with another total is never sent (stripe_error)', async () => {
   const s = setup({
     db: { row: { exists: true, customer_id: 'cus_Old1', invoice_id: 'in_Old1' } },
     stripe: { invoices: [{ id: 'in_Old1', status: 'open', total: 1000, livemode: false }] },
@@ -526,7 +531,7 @@ Deno.test('invoice: an open invoice with another total is never sent (stripe_err
   assert.equal(s.db.calls.filter((c) => c.fn === 'check_invoice_sendable' || c.fn === 'mark_invoice_sent').length, 0);
 });
 
-Deno.test('invoice: a failed mark_invoice_sent is 500; the rerun sends with the same key and succeeds', async () => {
+test('invoice: a failed mark_invoice_sent is 500; the rerun sends with the same key and succeeds', async () => {
   const s = setup({ db: { fail: { mark_invoice_sent: { message: 'connection lost' } } } });
   const first = await s.invoice();
   assert.equal(first.status, 500);
@@ -537,7 +542,7 @@ Deno.test('invoice: a failed mark_invoice_sent is 500; the rerun sends with the 
   assert.deepEqual(sendKeys, [`send-${PAYMENT_ID}`, `send-${PAYMENT_ID}`]);
 });
 
-Deno.test('invoice: attach_invoice refused deletes the draft; nothing is finalized or sent', async () => {
+test('invoice: attach_invoice refused deletes the draft; nothing is finalized or sent', async () => {
   const s = setup({ db: { attachRefused: true } });
   const res = await s.invoice();
   assert.equal(res.status, 409);
@@ -547,7 +552,7 @@ Deno.test('invoice: attach_invoice refused deletes the draft; nothing is finaliz
   assert.equal(s.stripe.requests[2].headers.get('Stripe-Version'), STRIPE_VERSION);
 });
 
-Deno.test('invoice: attach refused and the delete fails is still not_payable, never finalized', async () => {
+test('invoice: attach refused and the delete fails is still not_payable, never finalized', async () => {
   const s = setup({ db: { attachRefused: true }, stripe: { failAlways: ['DELETE /v1/invoices/:id'] } });
   const res = await s.invoice();
   assert.equal(res.status, 409);
@@ -555,7 +560,7 @@ Deno.test('invoice: attach refused and the delete fails is still not_payable, ne
   assert.equal(s.stripe.created.sent, 0);
 });
 
-Deno.test('invoice: check_invoice_sendable false voids the finalized invoice and does not send', async () => {
+test('invoice: check_invoice_sendable false voids the finalized invoice and does not send', async () => {
   const s = setup({ db: { sendable: false } });
   const res = await s.invoice();
   assert.equal(res.status, 409);
@@ -568,7 +573,7 @@ Deno.test('invoice: check_invoice_sendable false voids the finalized invoice and
   assert.deepEqual(s.db.calls[3].args, { p_payment_id: PAYMENT_ID });
 });
 
-Deno.test('invoice: sendable false and the void fails is still not_payable, not marked void, not sent', async () => {
+test('invoice: sendable false and the void fails is still not_payable, not marked void, not sent', async () => {
   const s = setup({ db: { sendable: false }, stripe: { failAlways: ['POST /v1/invoices/:id/void'] } });
   const res = await s.invoice();
   assert.equal(res.status, 409);
@@ -576,7 +581,7 @@ Deno.test('invoice: sendable false and the void fails is still not_payable, not 
   assert.equal(s.db.calls.filter((c) => c.fn === 'mark_invoice_void').length, 0);
 });
 
-Deno.test('invoice: rate limited is 429 with no Stripe call', async () => {
+test('invoice: rate limited is 429 with no Stripe call', async () => {
   const s = setup({ db: { beginError: { message: 'rate_limited' } } });
   const res = await s.invoice();
   assert.equal(res.status, 429);
@@ -588,7 +593,7 @@ Deno.test('invoice: rate limited is 429 with no Stripe call', async () => {
 
 const P = (n: number) => `3c1d7e52-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`;
 
-Deno.test('void_pending: voids, deletes drafts, marks already void, skips paid, counts failures, goes on', async () => {
+test('void_pending: voids, deletes drafts, marks already void, skips paid, counts failures, goes on', async () => {
   const s = setup({
     db: {
       toVoid: [
@@ -621,7 +626,7 @@ Deno.test('void_pending: voids, deletes drafts, marks already void, skips paid, 
   assert.ok(s.stripe.requests.every((r) => r.headers.get('Stripe-Version') === STRIPE_VERSION));
 });
 
-Deno.test('void_pending: an empty list is { ok, 0, 0, 0 }; a database error is 500', async () => {
+test('void_pending: an empty list is { ok, 0, 0, 0 }; a database error is 500', async () => {
   const empty = setup();
   assert.deepEqual(await (await empty.send({ action: 'void_pending' })).json(), { ok: true, voided: 0, failed: 0, skipped: 0 });
   const broken = setup({ db: { fail: { list_invoices_to_void: { message: 'boom', details: OWNER_EMAIL } } } });
@@ -632,14 +637,18 @@ Deno.test('void_pending: an empty list is { ok, 0, 0, 0 }; a database error is 5
 
 // --- what leaves the function -------------------------------------------------------------------
 
-Deno.test('admin: logs and answers never carry the email, a secret, a name or an id', () => {
-  output.restore();
-  assert.ok(output.lines.some((l) => l.includes('"outcome":"sent"')));
-  assert.ok(output.lines.some((l) => l.includes('"code":"unauthorized"')));
-  const forbidden = [OWNER_EMAIL, ADMIN_SECRET, STRIPE_KEY, BUSINESS_NAME, PAYMENT_ID, PROMOTION_ID, OWNER_ID, 'cus_', 'in_', 'ii_', 'rk_', 'Key (', 'duplicate key', 'refused for', 'example.test'];
-  for (const text of [...output.lines, ...bodies]) {
-    for (const f of forbidden) assert.ok(!text.includes(f), `leaked ${f} in ${text}`);
-  }
+test('admin: a sent invoice and a refused secret each log their code, and nothing private', async () => {
+  const start = output.lines.length;
+  await setup().invoice();
+  await setup().send({ action: 'void_pending' }, { 'x-admin-secret': 'wrong' });
+  const lines = output.lines.slice(start);
+  assert.ok(lines.some((l) => l.includes('"outcome":"sent"')));
+  assert.ok(lines.some((l) => l.includes('"code":"unauthorized"')));
+});
+
+// Must stay last in this file, so that it sees every answer of the whole run. It is order-safe all the
+// same: it does not restore the console (that happens on unload), and each test is also leak-checked.
+test('admin: every answer has an allowed shape; no real network call', () => {
   const allowed = /^(|\{"ok":true,"invoice_status":"sent"\}|\{"ok":false,"error":"[a-z_]+"\}|\{"ok":true,"voided":\d+,"failed":\d+,"skipped":\d+\})$/;
   for (const b of bodies) assert.match(b, allowed);
   assert.equal(network.unexpectedCalls(), 0);

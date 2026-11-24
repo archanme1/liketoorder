@@ -29,7 +29,27 @@ export function captureConsole(): { lines: string[]; restore: () => void } {
       lines.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a) ?? String(a))).join(' '));
     };
   }
-  return { lines, restore: () => methods.forEach((m, i) => (console[m] = saved[i])) };
+  const restore = () => methods.forEach((m, i) => (console[m] = saved[i]));
+  // Teardown: the console comes back when the test module unloads, whatever tests ran.
+  globalThis.addEventListener('unload', restore);
+  return { lines, restore };
+}
+
+// Deno.test plus a leak check: after each test, every console line it produced and every text it added
+// to `texts` (response bodies) is searched for the forbidden strings. A leak fails the test that made
+// it, whatever the order or filter the tests run with.
+export function guardedTest(output: { lines: string[] }, forbidden: string[], texts: string[] = []) {
+  return (name: string, fn: () => void | Promise<void>) =>
+    Deno.test(name, async () => {
+      const lineStart = output.lines.length;
+      const textStart = texts.length;
+      await fn();
+      for (const text of [...output.lines.slice(lineStart), ...texts.slice(textStart)]) {
+        for (const f of forbidden) {
+          if (text.includes(f)) throw new Error(`leaked ${f} in: ${text}`);
+        }
+      }
+    });
 }
 
 export type FakeEvent = { id: string; type: string; livemode: boolean; data: { object: Record<string, unknown> } };

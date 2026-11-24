@@ -9,6 +9,7 @@ import { blockNetwork, fakeFetch, type RecordedRequest } from './helpers.ts';
 import {
   captureConsole,
   event,
+  guardedTest,
   EVENT_ID,
   INVOICE_ID,
   NOW_MS,
@@ -26,6 +27,10 @@ const network = blockNetwork();
 const output = captureConsole();
 const bodies: string[] = [];
 const headersSent: string[] = [];
+// Every test is leak-checked on its own (log lines and response bodies), whatever order or filter it
+// runs with.
+const FORBIDDEN = [EVENT_ID, INVOICE_ID, PAYMENT_INTENT_ID, PAYMENT_ID, OWNER_EMAIL, WEBHOOK_SECRET, STRIPE_KEY, 'whsec_', 'rk_', 'evt_', 'in_Fake', 'pi_', 'cus_', 'v1=', 'duplicate key', 'Key (', 'customer.created'];
+const test = guardedTest(output, FORBIDDEN, bodies);
 
 type RpcAnswer = { data: unknown; error: unknown };
 type Options = {
@@ -91,7 +96,7 @@ const PAID = event('invoice.paid', paidInvoice());
 
 // --- refusals before anything else --------------------------------------------------------------
 
-Deno.test('webhook: a missing Stripe-Signature header is 400 with no database or Stripe call', async () => {
+test('webhook: a missing Stripe-Signature header is 400 with no database or Stripe call', async () => {
   const r = await post({}, PAID, { header: null });
   assert.equal(r.res.status, 400);
   assert.equal(await r.res.text(), '');
@@ -99,21 +104,28 @@ Deno.test('webhook: a missing Stripe-Signature header is 400 with no database or
   assert.equal(r.stripe.length, 0);
 });
 
-Deno.test('webhook: a bad signature (other secret) is 400 with no database or Stripe call', async () => {
+test('webhook: a bad signature (other secret) is 400 with no database or Stripe call', async () => {
   const r = await post({}, PAID, { secret: 'whsec_test_fake_other' });
   assert.equal(r.res.status, 400);
   assert.equal(r.rpcCalls.length, 0);
   assert.equal(r.stripe.length, 0);
 });
 
-Deno.test('webhook: a timestamp 301 s old is 400 with no database or Stripe call', async () => {
+test('webhook: a timestamp 301 s old is 400 with no database or Stripe call', async () => {
   const r = await post({}, PAID, { t: NOW_SECONDS - 301 });
   assert.equal(r.res.status, 400);
   assert.equal(r.rpcCalls.length, 0);
   assert.equal(r.stripe.length, 0);
 });
 
-Deno.test('webhook: a body over 256 KB is 413 with no database or Stripe call', async () => {
+test('webhook: a timestamp 301 s in the future is 400 with no database or Stripe call', async () => {
+  const r = await post({}, PAID, { t: NOW_SECONDS + 301 });
+  assert.equal(r.res.status, 400);
+  assert.equal(r.rpcCalls.length, 0);
+  assert.equal(r.stripe.length, 0);
+});
+
+test('webhook: a body over 256 KB is 413 with no database or Stripe call', async () => {
   const s = setup();
   const big = 'x'.repeat(MAX_BODY_BYTES + 1);
   const res = await s.send(await signedRequest(big));
@@ -128,7 +140,7 @@ Deno.test('webhook: a body over 256 KB is 413 with no database or Stripe call', 
   assert.equal(s.stripe.length, 0);
 });
 
-Deno.test('webhook: a signed body of exactly 256 KB is read and handled', async () => {
+test('webhook: a signed body of exactly 256 KB is read and handled', async () => {
   const shell = JSON.stringify(event('customer.updated', { pad: '' }));
   const ev = JSON.stringify(event('customer.updated', { pad: 'p'.repeat(MAX_BODY_BYTES - shell.length) }));
   assert.equal(new TextEncoder().encode(ev).length, MAX_BODY_BYTES);
@@ -138,7 +150,7 @@ Deno.test('webhook: a signed body of exactly 256 KB is read and handled', async 
   assert.deepEqual(recordArgs(s.rpcCalls)[0].p_data, {});
 });
 
-Deno.test('webhook: not POST is 405; secret or livemode setting missing or invalid is 503; no calls', async () => {
+test('webhook: not POST is 405; secret or livemode setting missing or invalid is 503; no calls', async () => {
   const s = setup();
   assert.equal((await s.send(new Request('http://localhost/x', { method: 'GET' }))).status, 405);
   for (const o of [{ webhookSecret: undefined }, { webhookSecret: '' }, { expectLivemode: undefined }, { expectLivemode: 'yes' }, { expectLivemode: 'FALSE' }]) {
@@ -150,7 +162,7 @@ Deno.test('webhook: not POST is 405; secret or livemode setting missing or inval
   assert.equal(s.rpcCalls.length, 0);
 });
 
-Deno.test('webhook: valid signature but not JSON, or not an event, is 400 with no calls', async () => {
+test('webhook: valid signature but not JSON, or not an event, is 400 with no calls', async () => {
   for (const body of ['not json', '{}', JSON.stringify({ ...PAID, id: 'nope' }), JSON.stringify({ ...PAID, livemode: 'false' })]) {
     const s = setup();
     const res = await s.send(await signedRequest(body));
@@ -160,15 +172,15 @@ Deno.test('webhook: valid signature but not JSON, or not an event, is 400 with n
   }
 });
 
-Deno.test('webhook: livemode different from STRIPE_EXPECT_LIVEMODE is 200 before any database or Stripe call', async () => {
+test('webhook: livemode different from STRIPE_EXPECT_LIVEMODE is 200 before any database or Stripe call', async () => {
   const live = await post({ expectLivemode: 'false' }, { ...PAID, livemode: true });
   assert.equal(live.res.status, 200);
   assert.equal(live.rpcCalls.length, 0);
   assert.equal(live.stripe.length, 0);
-  const test = await post({ expectLivemode: 'true' }, PAID);
-  assert.equal(test.res.status, 200);
-  assert.equal(test.rpcCalls.length, 0);
-  assert.equal(test.stripe.length, 0);
+  const testMode = await post({ expectLivemode: 'true' }, PAID);
+  assert.equal(testMode.res.status, 200);
+  assert.equal(testMode.rpcCalls.length, 0);
+  assert.equal(testMode.stripe.length, 0);
   const match = await post({ expectLivemode: 'true' }, { ...PAID, livemode: true });
   assert.equal(match.rpcCalls.length, 1);
   assert.equal(recordArgs(match.rpcCalls)[0].p_livemode, true);
@@ -176,7 +188,7 @@ Deno.test('webhook: livemode different from STRIPE_EXPECT_LIVEMODE is 200 before
 
 // --- invoice.paid -------------------------------------------------------------------------------
 
-Deno.test('webhook: a valid invoice.paid looks up the PaymentIntent and records the event', async () => {
+test('webhook: a valid invoice.paid looks up the PaymentIntent and records the event', async () => {
   const r = await post({}, PAID);
   assert.equal(r.res.status, 200);
   assert.deepEqual(await r.res.json(), { received: true });
@@ -201,14 +213,14 @@ Deno.test('webhook: a valid invoice.paid looks up the PaymentIntent and records 
   }]);
 });
 
-Deno.test('webhook: the amount and currency are passed exactly as Stripe sent them', async () => {
+test('webhook: the amount and currency are passed exactly as Stripe sent them', async () => {
   const r = await post({}, event('invoice.paid', paidInvoice({ amount_paid: 1999, currency: 'usd' })));
   const data = recordArgs(r.rpcCalls)[0].p_data as Record<string, unknown>;
   assert.equal(data.amount_paid, 1999);
   assert.equal(data.currency, 'usd');
 });
 
-Deno.test('webhook: paid_at bounds (after 2020-01-01, at most now + 300 s, whole seconds)', async () => {
+test('webhook: paid_at bounds (after 2020-01-01, at most now + 300 s, whole seconds)', async () => {
   const cases: [unknown, number][] = [
     [PAID_AT_FLOOR, 500],
     [PAID_AT_FLOOR + 1, 200],
@@ -225,11 +237,14 @@ Deno.test('webhook: paid_at bounds (after 2020-01-01, at most now + 300 s, whole
     if (status === 500) {
       assert.equal(r.rpcCalls.length, 0, String(paidAt));
       assert.equal(r.stripe.length, 0, String(paidAt));
+    } else {
+      assert.equal(recordArgs(r.rpcCalls).length, 1, String(paidAt));
+      assert.equal((recordArgs(r.rpcCalls)[0].p_data as Record<string, unknown>).paid_at, paidAt);
     }
   }
 });
 
-Deno.test('webhook: invoice.paid missing paid_at, currency or amount_paid is 500 with no calls', async () => {
+test('webhook: invoice.paid missing paid_at, currency or amount_paid is 500 with no calls', async () => {
   const noTransitions = paidInvoice();
   delete noTransitions.status_transitions;
   for (const inv of [noTransitions, paidInvoice({ currency: undefined }), paidInvoice({ amount_paid: undefined }), paidInvoice({ amount_paid: -1 }), paidInvoice({ currency: 'ca' }), paidInvoice({ id: 'x' })]) {
@@ -240,7 +255,7 @@ Deno.test('webhook: invoice.paid missing paid_at, currency or amount_paid is 500
   }
 });
 
-Deno.test('webhook: a failed invoice-payments lookup is 500 with no database call', async () => {
+test('webhook: a failed invoice-payments lookup is 500 with no database call', async () => {
   for (const respond of [
     () => Response.json({ error: { code: 'api_error' } }, { status: 500 }),
     () => Response.json({ unexpected: true }),
@@ -252,19 +267,19 @@ Deno.test('webhook: a failed invoice-payments lookup is 500 with no database cal
   }
 });
 
-Deno.test('webhook: no paid payment found passes payment_intent_id null (the database decides)', async () => {
+test('webhook: no paid payment found passes payment_intent_id null (the database decides)', async () => {
   const r = await post({ stripe: () => Response.json({ data: [] }), record: () => ({ data: { outcome: 'mismatch' }, error: null }) }, PAID);
   assert.equal(r.res.status, 200);
   assert.equal((recordArgs(r.rpcCalls)[0].p_data as Record<string, unknown>).payment_intent_id, null);
 });
 
-Deno.test('webhook: invoice.paid with no Stripe key is 503 with no database call', async () => {
+test('webhook: invoice.paid with no Stripe key is 503 with no database call', async () => {
   const r = await post({ noStripe: true }, PAID);
   assert.equal(r.res.status, 503);
   assert.equal(r.rpcCalls.length, 0);
 });
 
-Deno.test('webhook: a database error or invalid_event_data is 500; a bad answer shape is 500', async () => {
+test('webhook: a database error or invalid_event_data is 500; a bad answer shape is 500', async () => {
   const leaky = { message: 'duplicate key value', details: `Key (invoice_id)=(${INVOICE_ID}) ${OWNER_EMAIL}` };
   for (const record of [
     () => ({ data: null, error: leaky }),
@@ -277,7 +292,7 @@ Deno.test('webhook: a database error or invalid_event_data is 500; a bad answer 
   }
 });
 
-Deno.test('webhook: applied, duplicate without a target, ignored and mismatch are 200 with no refund', async () => {
+test('webhook: applied, duplicate without a target, ignored and mismatch are 200 with no refund', async () => {
   for (const outcome of ['applied', 'duplicate', 'ignored', 'mismatch']) {
     const r = await post({ record: () => ({ data: { outcome }, error: null }) }, PAID);
     assert.equal(r.res.status, 200, outcome);
@@ -288,7 +303,7 @@ Deno.test('webhook: applied, duplicate without a target, ignored and mismatch ar
 
 // --- refunds (D5, D12) ----------------------------------------------------------------------------
 
-Deno.test('webhook: a refund target makes one refund call, then mark_refund_requested', async () => {
+test('webhook: a refund target makes one refund call, then mark_refund_requested', async () => {
   const r = await post({ record: () => ({ data: { outcome: 'refund_requested', refund: REFUND_TARGET }, error: null }) }, PAID);
   assert.equal(r.res.status, 200);
   const refunds = r.stripe.filter((q) => q.url.pathname === '/v1/refunds');
@@ -301,7 +316,7 @@ Deno.test('webhook: a refund target makes one refund call, then mark_refund_requ
   assert.deepEqual(r.rpcCalls[1].args, { p_payment_id: PAYMENT_ID });
 });
 
-Deno.test('webhook: a failed refund call is 500 and does not call mark_refund_requested', async () => {
+test('webhook: a failed refund call is 500 and does not call mark_refund_requested', async () => {
   const r = await post({
     record: () => ({ data: { outcome: 'refund_requested', refund: REFUND_TARGET }, error: null }),
     stripe: (q) => q.url.pathname === '/v1/refunds'
@@ -313,7 +328,7 @@ Deno.test('webhook: a failed refund call is 500 and does not call mark_refund_re
   assert.equal(r.rpcCalls.filter((c) => c.fn === 'mark_refund_requested').length, 0);
 });
 
-Deno.test('webhook: a retried duplicate with a refund target repeats the refund with the same key', async () => {
+test('webhook: a retried duplicate with a refund target repeats the refund with the same key', async () => {
   let refundCalls = 0;
   const s = setup({
     record: (_args, n) => ({ data: { outcome: n === 0 ? 'refund_requested' : 'duplicate', refund: REFUND_TARGET }, error: null }),
@@ -332,7 +347,7 @@ Deno.test('webhook: a retried duplicate with a refund target repeats the refund 
   assert.equal(s.rpcCalls.filter((c) => c.fn === 'mark_refund_requested').length, 1);
 });
 
-Deno.test('webhook: charge_already_refunded counts as done and marks the refund requested', async () => {
+test('webhook: charge_already_refunded counts as done and marks the refund requested', async () => {
   const r = await post({
     record: () => ({ data: { outcome: 'duplicate', refund: REFUND_TARGET }, error: null }),
     stripe: (q) => q.url.pathname === '/v1/refunds' ? Response.json({ error: { code: 'charge_already_refunded' } }, { status: 400 }) : stripeDefault(q),
@@ -341,7 +356,7 @@ Deno.test('webhook: charge_already_refunded counts as done and marks the refund 
   assert.equal(r.rpcCalls.filter((c) => c.fn === 'mark_refund_requested').length, 1);
 });
 
-Deno.test('webhook: a failed mark_refund_requested is 500 (Stripe retries; the key keeps one refund)', async () => {
+test('webhook: a failed mark_refund_requested is 500 (Stripe retries; the key keeps one refund)', async () => {
   const r = await post({
     record: () => ({ data: { outcome: 'refund_requested', refund: REFUND_TARGET }, error: null }),
     mark: () => ({ data: null, error: { message: 'connection lost' } }),
@@ -349,7 +364,7 @@ Deno.test('webhook: a failed mark_refund_requested is 500 (Stripe retries; the k
   assert.equal(r.res.status, 500);
 });
 
-Deno.test('webhook: a refund target with no Stripe key is 503 (retried later)', async () => {
+test('webhook: a refund target with no Stripe key is 503 (retried later)', async () => {
   const r = await post({ noStripe: true, record: () => ({ data: { outcome: 'duplicate', refund: REFUND_TARGET }, error: null }) }, event('invoice.voided', { id: INVOICE_ID }));
   assert.equal(r.res.status, 503);
   assert.equal(r.rpcCalls.filter((c) => c.fn === 'mark_refund_requested').length, 0);
@@ -357,7 +372,7 @@ Deno.test('webhook: a refund target with no Stripe key is 503 (retried later)', 
 
 // --- the other event types ----------------------------------------------------------------------
 
-Deno.test('webhook: p_data for voided, uncollectible, refunded, dispute and other types; no Stripe call', async () => {
+test('webhook: p_data for voided, uncollectible, refunded, dispute and other types; no Stripe call', async () => {
   const cases: [string, Record<string, unknown>, Record<string, unknown>][] = [
     ['invoice.voided', { id: INVOICE_ID, customer_email: OWNER_EMAIL }, { invoice_id: INVOICE_ID }],
     ['invoice.marked_uncollectible', { id: INVOICE_ID }, { invoice_id: INVOICE_ID }],
@@ -379,14 +394,20 @@ Deno.test('webhook: p_data for voided, uncollectible, refunded, dispute and othe
 
 // --- what leaves the function -------------------------------------------------------------------
 
-Deno.test('webhook: logs and responses never carry ids, the body, the signature, an email or a secret', () => {
-  output.restore();
-  assert.ok(output.lines.length > 0);
-  assert.ok(output.lines.some((l) => l.includes('"code":"bad_signature"')));
-  assert.ok(output.lines.some((l) => l.includes('"outcome":"applied"')));
-  const forbidden = [EVENT_ID, INVOICE_ID, PAYMENT_INTENT_ID, PAYMENT_ID, OWNER_EMAIL, WEBHOOK_SECRET, STRIPE_KEY, 'whsec_', 'rk_', 'evt_', 'in_Fake', 'pi_', 'cus_', 'v1=', 'duplicate key', 'Key (', 'customer.created'];
+test('webhook: a rejected and an applied event each log their code, and nothing private', async () => {
+  const start = output.lines.length;
+  await post({}, PAID, { secret: 'whsec_test_fake_other' });
+  await post({}, PAID);
+  const lines = output.lines.slice(start);
+  assert.ok(lines.some((l) => l.includes('"code":"bad_signature"')));
+  assert.ok(lines.some((l) => l.includes('"outcome":"applied"')));
+});
+
+// Must stay last in this file, so that it sees every response body and signature of the whole run. It is
+// order-safe all the same: it does not restore the console (that happens on unload), and each test is
+// also leak-checked on its own.
+test('webhook: responses are only empty or { received }, and no signature value was ever echoed', () => {
   for (const text of [...output.lines, ...bodies]) {
-    for (const f of forbidden) assert.ok(!text.includes(f), `leaked ${f} in ${text}`);
     for (const h of headersSent) assert.ok(!text.includes(h.slice(-64)));
   }
   for (const b of bodies) assert.ok(b === '' || b === '{"received":true}', b);

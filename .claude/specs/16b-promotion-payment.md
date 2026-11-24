@@ -633,6 +633,9 @@ Resolved by Archan on 2026-11-21.
 - **Q13 (2026-11-21)** (b) Stripe Invoicing: the admin function creates a Stripe Customer and an invoice with `collection_method=send_invoice` and a 7-day due date, and Stripe emails the seller a hosted pay page (D14). Options (a) manual email and (c) our own email worker were not chosen.
 - **Q15 (2026-11-21)** Remove the price and payment wording from the app. The app shows status only. Price, deadline and receipt appear only in the Stripe invoice email and its hosted page (table under Screens & routes; D15 for the data).
 
+## Follow-ups (not in this spec)
+- OffersPrivacy.test.tsx flaked once under full-suite load, passes alone and on rerun; timing, spec 16 PR 4 test. (Recorded 2026-11-23 at PR 2 gate D3; not touched in PR 2.)
+
 ## Open questions
 1. **Q11 Tax:** the accountant's view on Ontario HST, a tax-inclusive or tax-exclusive price, registration, what the invoice must show, and refunds versus credit notes. Blocks live mode, not building.
 

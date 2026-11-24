@@ -133,6 +133,8 @@ select private.admin_review_promotion('<promotion id>', 'approve_headline');
 - It copies the price, currency and length from today's settings onto the promotion (the **price
   lock**); a later settings change never changes it. It needs a settings row (`not_configured`).
 - It sets `pay_by` to now plus 7 days. The answer shows the state `awaiting_payment`.
+- The answer of `admin_review_promotion` carries no price (spec 16b D15: the seller's view has none).
+  To see the locked price, use the query under "See every campaign, its state and its payment".
 - Then send the invoice (next section). Nothing is charged until the seller pays Stripe's invoice.
 
 ## Your admin secret (once, then at the start of each terminal session)
@@ -354,3 +356,12 @@ on conflict (id) do update
 - **Hosted rollout:** each hosted migration must ship together with an app update, never before one.
   The app checks the server's answers strictly: an older app build refuses new keys or states (spec 16's
   `promoted` and `sponsored`; spec 16b's `paid`, `is_free` and the new states).
+  - **Spec 16b:** release the spec 16b PR 3 app first (or at the same time), then apply ALL spec 16b
+    migrations together (PR 1 `20261122022052_promotion_payment.sql` and PR 3
+    `20261124145046_promotion_price_out_of_app.sql`). Never a migration before the app: the app on
+    main before PR 3 requires the price keys that the PR 3 migration removes, and would show an error
+    on the Promote screen. The PR 3 app works with and without that migration (it drops the old price
+    keys).
+- **The app shows status only** (spec 16b, store rules): no price, no Pay button, no payment link and
+  no payment wording. A seller with a paid campaign sees "Contact us to cancel." as plain text; spec 18
+  adds the real support contact. The price, due date and receipt are only in Stripe's invoice email.

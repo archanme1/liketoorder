@@ -3,7 +3,7 @@
 **Branch:** `feature/promotion-payment` (spec commits only, shipped as a docs-only PR). Then four PRs, each cut from `main` after the previous one is merged: `feature/promotion-payment-db` (PR 1), `feature/promotion-payment-functions` (PR 2), `feature/promotion-payment-app` (PR 3), `feature/promotion-payment-launch-docs` (PR 4).
 **Product spec:** `docs/product/v1.md` §7 (Ads: payment and activation), §3 (out of scope), §13 (Legal), §14 row 16b, §15 Q1, §16 (the five spec 16b items)
 **Plan mode:** required: it changes the schema and RLS, adds two Edge Functions with server secrets and touches more than 5 files.
-**Status:** 🚧 In progress: spec PR #39 (990edd2), PR 1 #40 (ef847fe) shipped 2026-11-23, PR 2 #41 (3e22ccb) shipped 2026-11-24 (nothing deployed, no secret set, no Stripe call), PR 3 next. Amended 2026-11-21 after gate S (sellers pay **outside the app**) and after Q13 / Q15 (Stripe Invoicing; no price or payment wording in the app). Amended 2026-11-22 with the PR 1 build decisions (see "PR 1 as built" under Database changes, and D18). Amended 2026-11-23 at PR 2 gate D0 (Stripe research, Archan's answers to the PR 2 plan questions; see "PR 2 research (D0)" under Edge Functions).
+**Status:** 🚧 In progress: spec PR #39 (990edd2), PR 1 #40 (ef847fe) shipped 2026-11-23, PR 2 #41 (3e22ccb) shipped 2026-11-24 (nothing deployed, no secret set, no Stripe call). PR 3 (app) built 2026-11-24 on `feature/promotion-payment-app` (gates E1 to E4); Archan's Simulator rounds, review and ship next. Amended 2026-11-21 after gate S (sellers pay **outside the app**) and after Q13 / Q15 (Stripe Invoicing; no price or payment wording in the app). Amended 2026-11-22 with the PR 1 build decisions (see "PR 1 as built" under Database changes, and D18). Amended 2026-11-23 at PR 2 gate D0 (Stripe research, Archan's answers to the PR 2 plan questions; see "PR 2 research (D0)" under Edge Functions).
 
 ## Overview
 Today a seller asks for a promotion, Archan reads the headline, sends an invoice outside the app and switches the campaign on with one SQL call. After this spec, Stripe sends the invoice and the campaign switches on by itself, and **all payment happens outside the app** (Store rules):
@@ -20,11 +20,13 @@ The invoice, its email and the hosted page show the public business name **"welc
 ### What people see, in plain words
 
 **Seller, Promote screen (Manage Business, seller mode on).** Status only: no price, no Pay button, no payment link, and no wording that points to paying somewhere else (Resolved Q15).
-- **Invitation (no campaign yet):** what a promotion does and how long it runs ("A larger flag on the map and a card in Offers for 7 days."), the form, and "We review every headline before it goes live." No price.
+- **Invitation (no campaign yet):** what a promotion does and how long it runs ("A larger flag on the map and a card in Offers for 7 days, both marked Sponsored."; PR 3 plan answer 9 keeps the Sponsored disclosure), the form, and "We review every headline before it goes live." No price.
 - **Awaiting approval:** "Waiting for review." with **Cancel request**.
 - **Headline approved, not paid yet:** "Your headline was approved. We'll be in touch with next steps." with **Cancel request**.
 - **Paid and scheduled:** "Paid and scheduled. Starts on 2 Dec, ends on 9 Dec." with **Contact us to cancel** (no button that ends a paid campaign by itself).
 - **Active:** "Active until 9 Dec." with **Contact us to cancel**.
+- **Contact us to cancel (PR 3 plan answer 1):** the plain text line "Contact us to cancel.", not a button: the app has no support contact yet. **Spec 18 adds the real support contact; this line stays text until then.**
+- **A free campaign** (approved by hand, `is_free`): "Scheduled. Starts on 2 Dec, ends on 9 Dec." and "Active until 9 Dec." (also replacing spec 16's "Promoted until"), with spec 16's **Cancel promotion** (its stop confirmation reads "It ends at once.").
 - **Ended:** "Ended on 9 Dec." with **Promote again** (spec 16).
 - **Payment window closed:** "Payment window closed." with **Promote again**.
 - **Refunded:** "Refunded." with **Promote again**. The campaign is not shown on the maps or in Offers.
@@ -68,7 +70,7 @@ The invoice, its email and the hosted page show the public business name **"welc
 ### Price and payment wording removed from the app in PR 3 (Resolved Q15)
 | Place | Today | After PR 3 |
 |---|---|---|
-| `src/features/promotions/components/PromoteScreen.tsx`, invitation price line | "CAD 25.00 for 7 days" | "A larger flag on the map and a card in Offers for 7 days." (length only) |
+| `src/features/promotions/components/PromoteScreen.tsx`, invitation price line | "CAD 25.00 for 7 days" | "A larger flag on the map and a card in Offers for 7 days, both marked Sponsored." (length only; replaces the old intro sentence too) |
 | `PromoteScreen.tsx`, invitation payment note (`PAYMENT_NOTE`) | "Nothing is charged in the app. We'll contact you about payment." | "We review every headline before it goes live." |
 | `src/features/promotions/components/PromotionStatusCard.tsx`, requested card price | the price line | removed (no replacement) |
 | `src/features/promotions/format.ts` `formatPromotionPrice` | price formatting | deleted |
@@ -83,7 +85,9 @@ The invoice, its email and the hosted page show the public business name **"welc
 | `PromotionStatusCard.tsx:8-9`, `:31-34` | imports and the requested-card price line | removed (row above) |
 | `PromoteForm.tsx:21`, `:150` | `START_NOTE` as the start-day field note | the new `START_NOTE` wording above |
 | `format.ts:34` (comment), `:37`, `:58` | "an invoice is in that currency" comment; `formatPromotionPrice`; `offerLine` | deleted with the functions above |
-| `schema.ts:43-44`, `:61-62` | `price_cents`, `currency_code` in the settings and promotion schemas | D15 |
+| `schema.ts:43-44`, `:61-62` | `price_cents`, `currency_code` in the settings and promotion schemas | D15; as built: removed, and the two legacy keys are **dropped before the strict parse** (not refused), so an older server does not break the new app; any other extra key still fails |
+| `format.ts` `statusText` (as built) | scheduled "Starts on X, ends on Y."; active "Promoted until X." | paid: "Paid and scheduled. Starts on X, ends on Y."; free: "Scheduled. Starts on X, ends on Y."; active: "Active until X." |
+| `PromoteScreen.tsx`, paid scheduled or active (as built) | nothing (PR 1: no dead button) | the plain text "Contact us to cancel." (no button) |
 | Tests that assert the old wording (PR 1 grep, 2026-11-22) | `messages.test.ts`, `format.test.ts`, `PromoteForm.test.tsx`, `PromoteScreen.test.tsx`, `a11y.test.tsx` | updated in PR 3 |
 
 Not related and unchanged: menu food prices (`src/features/menu/`, `src/features/map/components/SheetMenu.tsx`, `src/features/requests/`) are a seller's own prices, not a purchase in the app. The `pricetag` icon name of the Offers tab is an icon only.
@@ -363,7 +367,7 @@ Nothing found makes the plan unworkable: every call exists in the API reference 
 **PR 1 (app side, no behaviour change):** `src/features/promotions/schema.ts` accepts the new keys and states of `get_my_promotion` (like spec 16 D11), so the app on main keeps working. Nothing reads them yet.
 
 **PR 3 (app, status wording and price removal):**
-- `src/features/promotions/schema.ts`: the new states; `price_cents` and `currency_code` no longer read, then no longer accepted once the D15 migration lands in the same PR.
+- `src/features/promotions/schema.ts`: the new states; `price_cents` and `currency_code` no longer read. **As built (PR 3 plan answer 2):** the two legacy keys are dropped before the strict parse instead of refused, so the parsed data has no price field at all and an older server does not break the new app.
 - `src/features/promotions/messages.ts` and `format.ts`: the replacements in the table under Screens & routes, and the status lines in "What people see".
 - `src/features/promotions/components/PromoteScreen.tsx`, `PromotionStatusCard.tsx`: the new states with their actions (Cancel request, Contact us to cancel, Promote again); no price.
 - No new hook, no new component, no browser, no polling (the existing query and pull to refresh are enough).
@@ -380,14 +384,16 @@ Nothing found makes the plan unworkable: every call exists in the API reference 
   - `supabase/functions/tests/{stripe-signature.test.ts,stripe-webhook.test.ts,promotion-invoice.test.ts,fake-stripe-event.test.ts}` and `supabase/functions/tests/fixtures/stripeEvents.ts` (fake events signed inside the test with an obviously fake secret such as `whsec_test_fake_only`)
   - `scripts/dev/fake-stripe-event.ts` (local only, a Deno script run with `--allow-net=127.0.0.1,localhost`: signs a fake event with a secret passed on the command line and posts it to the local webhook; refuses any non-localhost URL; for the event types that need no Stripe call, see Test plan)
 - PR 3 (app):
-  - `supabase/migrations/<ts>_promotion_price_out_of_app.sql` (D15: replaces `get_my_promotion` without the price fields)
+  - `supabase/migrations/20261124145046_promotion_price_out_of_app.sql` (D15: replaces `private.promotion_json` and `get_my_promotion` without the price fields; same signatures and grants; no table or row touched)
+  - `src/features/promotions/__fixtures__/noPayment.ts` (the forbidden rendered-text and button patterns, the allowed status words, the scan helpers)
+  - `src/features/promotions/__tests__/noPaymentInApp.test.ts` (the source scan of `src/` and `app/`)
 - PR 4 (launch docs):
   - `docs/runbooks/stripe-setup.md` (Archan's steps below, test then live)
 
 ## Files to change
 - PR 1: `supabase/tests/05-seller-onboarding.test.sql` (allowlists), `supabase/tests/16-promotions.test.sql` (only the assertions on the old status list and the old `request` / `cancel` behaviour; listed exactly at gate B, stop and ask for any other), `supabase/seed.sql` and `scripts/seed/promotions.ts` (one row in each new state), `src/types/database.ts` (regenerated), `src/features/promotions/schema.ts` (new keys accepted), `docs/runbooks/promotions-admin.md` (`approve_headline`, the `invoice` and `void_pending` admin commands, refunds in Stripe), `docs/product/v1.md` §7, §15, §16.
 - PR 2: `supabase/config.toml` (two function blocks), `supabase/functions/deno.json` (check task), `supabase/functions/_shared/http.ts` (export a raw-body reader built on the existing capped reader), (no `_shared/rateLimit.ts` change: the per-promotion limit is inside `begin_promotion_invoice`, PR 1), `.env.example` (names of the four function secrets, no values), `docs/runbooks/promotions-admin.md` (the two admin commands as one copy-paste terminal command each, the answers and error codes in plain words, how to make the admin secret).
-- PR 3: `PromoteScreen.tsx`, `PromotionStatusCard.tsx`, `schema.ts`, `format.ts`, `messages.ts`, `src/types/database.ts` (regenerated), and the existing tests that assert the removed price or payment wording (listed exactly at the PR 3 plan; expected: `PromoteScreen.test.tsx`, `format` tests, `schema.test.ts`, `a11y.test.tsx`), plus `supabase/tests/16b-promotion-payment.test.sql` (key set of `get_my_promotion`).
+- PR 3 (as built, corrected at E4): `PromoteScreen.tsx`, `PromotionStatusCard.tsx`, `schema.ts`, `format.ts`, `messages.ts` (`PromoteForm.tsx` unchanged: it reads the new `START_NOTE`), `src/types/database.ts` (regenerated: no diff, the functions return `jsonb`), `__fixtures__/promotion.ts`, the tests `format.test.ts`, `messages.test.ts`, `schema.test.ts`, `hooks.test.tsx`, `PromoteForm.test.tsx`, `PromoteScreen.test.tsx`, `a11y.test.tsx`, plus `supabase/tests/16-promotions.test.sql` (four key-set assertions) and `supabase/tests/16b-promotion-payment.test.sql` (one key-set assertion and section 15), `docs/runbooks/promotions-admin.md`, `docs/product/v1.md`.
 - PR 4: `docs/product/v1.md` §16 (before-launch list; **PR 1 already wrote it**, review Q-S8: PR 4 only checks and updates it), CLAUDE.md row.
 
 ## New dependencies
@@ -572,16 +578,20 @@ First search (spec draft, 2026-11-21):
 - [x] `scripts/dev/fake-stripe-event.ts` refuses a non-localhost URL, and the signature it makes verifies (Deno test). `deno lint`, `deno task check`, `deno task test` green; `config.toml`, `deno.json`, `.env.example` (names only) and the runbook updated. Nothing deployed; no secret set.
 
 **PR 3 (app, `feature/promotion-payment-app`; status wording and price removal)**
-- [ ] The Promote screen shows every state in "What people see" with its action, plus loading, error and Retry; pull to refresh updates it.
-- [ ] Every replacement in the table under Screens & routes is made; the matching existing tests are updated (listed exactly at the PR 3 plan).
-- [ ] **The app contains no price, Pay button, payment link or payment wording for promotions**: `grep` proves no `checkout.stripe.com`, `invoice.stripe.com` or other Stripe URL, no "stripe", and no promotion price or payment wording (`formatPromotionPrice`, `price_cents`, "We'll contact you about payment", "invoice") in `src/features/promotions/`, `src/` and `app/`.
-- [ ] D15 (if Archan confirms at the plan): the replacing migration drops the price fields from `get_my_promotion`, pgTAP checks the new key set, types are regenerated, and the zod schema refuses a price key.
-- [ ] Screen-reader labels on Contact us to cancel and Promote again; the largest text size fits.
-- [ ] Archan's Simulator run with seed rows for each state:
-  - the invitation shows no price;
-  - awaiting approval, headline approved, paid and scheduled, active, ended, payment window closed, refunded, rejected with the "payment window closed" reason;
-  - the webhook path end to end: after Archan's deploy and test-mode setup, a test-mode invoice paid with a Stripe test card turns a `payment_due` row into "Paid and scheduled" after pull to refresh (the local fake-event script cannot do `invoice.paid`, see Test plan).
+- [x] The Promote screen shows every state in "What people see" with its action, plus loading, error and Retry; pull to refresh updates it (jest: one test per state in `PromoteScreen.test.tsx`).
+- [x] Every replacement in the table under Screens & routes is made; the matching existing tests are updated (listed under Files to change, PR 3).
+- [x] **The app contains no price, Pay button, payment link or payment wording for promotions.** Proven by `src/features/promotions/__tests__/noPaymentInApp.test.ts` (source scan; its pattern lists are pinned by count and one sample each, so they cannot shrink) and by the rendered scan in `PromoteScreen.test.tsx` (every text, accessibility label and hint, every button label and every cancel confirmation, in every state, with the seller's headline taken out). The same as a documented command (expected output: nothing from the first command; only the `LEGACY_PRICE_KEYS` line of `schema.ts` from the second):
+  ```bash
+  grep -rniE "stripe|EXPO_PUBLIC_STRIPE|(sk|rk|pk)_(test|live)_|expo-web-browser|WebBrowser" src app --exclude-dir=__tests__ --exclude-dir=__fixtures__ --exclude=database.ts
+  grep -rnE "price_cents|currency_code|amount_cents|formatPromotionPrice|offerLine|PAYMENT_NOTE|openURL|contact you about payment|nothing is charged|[Rr]efunds are handled|[Ii]nvoice|style: 'currency'|currencyDisplay" src/features/promotions app/seller/promote.tsx --exclude-dir=__tests__ --exclude-dir=__fixtures__
+  ```
+- [x] D15 (confirmed by Archan at the PR 3 plan): the replacing migration drops the price fields from `get_my_promotion` (and `private.promotion_json`, so also from `request_promotion`, `cancel_my_promotion` and the admin answer); pgTAP checks the new key sets, that no seller answer in any state carries a price key, a Stripe id, a link or an email, and that both functions' privileges are unchanged; types regenerated. **Amended (PR 3 plan answer 2):** the zod schema **drops** a legacy price key instead of refusing it (an older server must not break the new app; the parsed data has no price field); any other extra key is still refused.
+- [x] Screen-reader labels: the paid card reads as one element in words; "Contact us to cancel." is plain text (no button role) with nothing capping the text size; Promote again and Cancel promotion keep their labels and 44 pt targets. Reduce Motion: nothing new animates.
+- [x] Deliberate breaks, each red on its named test, restored and proven with `cmp`: D15-1 price key back in `promotion_json` (pgTAP, rolled-back docker exec run); J1 payment wording back in `REQUESTED_TEXT` (also red on the source scan); J1b the same wording in `REVIEW_NOTE` (red on the rendered scan); J2 the schema keeps `price_cents` and the card shows it; J3 a cancel button on a paid campaign.
+- [ ] Archan's Simulator run with seed rows, one round at a time (R1 to R8): the invitation shows no price; requested, headline approved, paid and scheduled, free scheduled, active, ended, payment window closed, refunded, rejected with the "payment window closed" reason, cancelled.
+- Moved to Before launch (PR 3 plan answer 5): the Stripe test-mode `invoice.paid` end to end (What Archan does himself, step 14). It needs Archan's deploy and Stripe account, so it is not part of PR 3.
 - [ ] If Q14 later allows a link-out, PR 3's scope grows again (button, browser sheet, return handling) through a short amendment approved by Archan.
+- **Hosted rollout (PR 3 plan answer 8):** the PR 3 app first or together, then ALL spec 16b migrations (PR 1 and PR 3) at once; never a migration before the app. The app on main before PR 3 needs the price keys; the PR 3 app works with and without the D15 migration.
 
 **PR 4 (launch docs, `feature/promotion-payment-launch-docs`)**
 - [ ] `docs/runbooks/stripe-setup.md` with Archan's steps for test and live; v1 §16 updated with the before-launch list below.
@@ -593,6 +603,8 @@ First search (spec draft, 2026-11-21):
 4. One real-money test at the smallest price: a real invoice email to Archan's own address, paid with a real card, then a full refund in the dashboard; check the sender and reply-to, the statement descriptor and the receipt.
 5. Terms and privacy policy (spec 18): price, payment by invoice, refunds, disputes, who charges (welcometohvac for LikeToOrder), and that the seller's email is shared with Stripe to send the invoice.
 6. VoiceOver and TalkBack on the new status lines.
+7. **PR 2b built and shipped** (database and handler hardening, below).
+8. **Stripe test-mode `invoice.paid` end to end** (What Archan does himself, step 14), moved from PR 3.
 
 ## Test plan
 - **pgTAP** `supabase/tests/16b-promotion-payment.test.sql` (PR 1): everything under PR 1, calling the private functions as the database owner with fake event payloads; plus the approved 05 and 16 edits. Run with `npx supabase test db` after `npx supabase db reset` (local only). PR 3 extends it with the D15 key set.
@@ -600,6 +612,19 @@ First search (spec draft, 2026-11-21):
 - **jest** (PR 1 and PR 3): the schema keys (PR 1); the status wording, the removed price, `PromoteScreen` states and the updated existing tests (PR 3).
 - **Local manual without Stripe** (after PR 2): `npx supabase db reset`, then `scripts/dev/fake-stripe-event.ts` signs a fake event with a made-up local secret and posts it to the local webhook. It covers only the paths that need no Stripe call: `invoice.voided`, `invoice.marked_uncollectible`, the `charge.refunded` and `charge.dispute.created` shapes, and the signature and livemode refusals. Archan runs it; the local function reads the made-up secret from his local function env, which Claude does not read.
   - **No `invoice.paid` locally (Archan, 2026-11-23):** that path needs the invoice-payments lookup at Stripe, and the functions have no setting that could point the Stripe key at another host. `invoice.paid` is covered by the Deno tests (fake `fetch`) and checked end to end by Archan in Stripe test mode after his deploy (What Archan does himself, step 14).
+- **PR 3 Simulator rounds** (Archan, one round at a time; local only, no Stripe, no functions serve, no rebuild). Prep once: `npx supabase db reset`, then the seed scripts (`restaurants.ts`, then `promotions.ts`, with the local service key in your own terminal), `npx expo start --dev-client`, press i. Demo logins: `seed-restaurant-NNN@example.com`, password `password123`. Open Profile, turn seller mode on, Manage, Promote.
+  - **R1 Invitation:** sign in as `seed-restaurant-001@example.com` (no campaign). See "Promote your business", the line "A larger flag on the map and a card in Offers for 7 days, both marked Sponsored.", the note "We review every headline before it goes live.", the form, and under the start day "We'll confirm the exact dates when your promotion is scheduled." No price, amount, currency or payment word anywhere. Then iOS Settings > Accessibility > Display & Text Size > Larger Text at the largest size: every line wraps, nothing is cut off. Do not send a request.
+  - **R2 Requested (seed_rest_006):** "Waiting for review.", "Featured" or the category, the headline, "Preferred start: ...", no price; Cancel request asks "Cancel this request?" / "We won't review it."; confirm: "Cancelled." and Promote again.
+  - **R3 Headline approved (seed_rest_007):** "Your headline was approved. We'll be in touch with next steps." and Cancel request. Do not cancel (R6 uses it).
+  - **R4 Paid and scheduled (seed_rest_008):** "Paid and scheduled. Starts on ..., ends on ...", then the plain line "Contact us to cancel." (not a button: tapping does nothing), no Cancel button, no Promote again. VoiceOver: the card reads as one sentence group, then the contact line.
+  - **R5 Free demos:** seed_rest_002 "Active until ..." with Cancel promotion ("Stop your promotion now?" / "It ends at once."; choose Keep promotion); seed_rest_003 "Scheduled. Starts on ..., ends on ..." with Cancel promotion; seed_rest_005 "Ended on ..." with Promote again. (The active demo's headline says "for the price of one": that is the seller's own text.)
+  - **R6 Payment window closed (seed_rest_007):** in the local Studio SQL editor:
+    `update public.promotions set pay_by = now() - interval '1 minute' where business_id = (select id from public.businesses where owner_id = (select id from auth.users where email = 'seed-restaurant-007@example.com')) and status = 'payment_due';`
+    Pull to refresh: "Payment window closed." and Promote again.
+  - **R7 Refunded (seed_rest_008):** find the ids: `select p.id as promotion_id, p.status, r.status as payment_status, r.payment_intent_id, r.amount_cents, r.livemode from public.promotions p join public.promotion_payments r on r.promotion_id = p.id where p.business_id = (select id from public.businesses where owner_id = (select id from auth.users where email = 'seed-restaurant-008@example.com'));` (expected: `approved`, `paid`, `pi_FakeSeed0002`, 2500, false). Then, as the database owner in the same editor:
+    `select public.record_stripe_event('evt_LocalFakeR7refund', 'charge.refunded', false, jsonb_build_object('payment_intent_id', 'pi_FakeSeed0002', 'amount_refunded', 2500, 'refunded', true));`
+    (expected answer: outcome `applied`). Pull to refresh: "Refunded." and Promote again; the place is not in Offers. A second run of the same statement answers `duplicate` and changes nothing.
+  - **R8 Rejected, payment window closed:** on seed_rest_006 (cancelled in R2) tap Promote again and send a request; then in the SQL editor `select private.admin_review_promotion((select p.id from public.promotions p where p.status = 'requested' and p.business_id = (select id from public.businesses where owner_id = (select id from auth.users where email = 'seed-restaurant-006@example.com'))), 'reject', null, 'not_paid');` Pull to refresh: "Not approved: the payment window closed." and Promote again.
 - **Manual in Stripe test mode** (Archan, after his setup steps): run the `invoice` admin command, open the invoice from the Stripe dashboard (test mode sends no email), pay with a Stripe test card, then check the app; cancel another one and run `void_pending`.
 
 ## Delivery: PRs and gates
@@ -611,7 +636,7 @@ I stop and commit at every gate (named files, a conventional message, no push) a
 | 0 store check | none (docs) | **S** done 2026-11-21: pay outside the app. Q14 stays open and does not block building. | No |
 | 1 database | `feature/promotion-payment-db` | **B** migration + pgTAP (new + 05/16 edits), `test db` green, breaks (a) to (g). **C** seed, `db:types`, zod keys, runbook, v1 §7/§15/§16. Review, ship. | **Yes** (one) |
 | 2 functions | `feature/promotion-payment-functions` | **D0** Stripe research on public docs + spec edits (done 2026-11-23, "PR 2 research (D0)"). **D1** `_shared/stripe.ts` + signature tests. **D2** `stripe-webhook` + Deno tests with fake signed events. **D3** `promotion-invoice` + Deno tests with a fake admin secret. **D4** breaks W1 to W10. **D5** fake-event script, `config.toml`, `deno.json`, `.env.example` names, runbook. Review, ship. Nothing deployed. | No |
-| 3 app | `feature/promotion-payment-app` | **E1** schema, format, messages, `PromoteScreen` and `PromotionStatusCard`: status wording and price removal, updated tests. **E2** D15 replacing migration + pgTAP + `db:types` (if confirmed). **F** Archan's Simulator run with seed rows, plus the `invoice.paid` end to end in Stripe test mode (Archan's step 14). No dependency, no native rebuild. Review, ship. | Yes (D15, small) |
+| 3 app | `feature/promotion-payment-app` | As built: **E1** D15 replacing migration + pgTAP + break D15-1. **E2** `db:types`, schema, format, messages, fixtures, the price lines out of the screens. **E3** the Promote screen states, "Contact us to cancel.", tests, breaks J1 to J3. **E4** the source scan + docs. **F** Archan's Simulator rounds with seed rows (the Stripe test-mode end to end moved to Before launch). No dependency, no native rebuild. Review, ship. | Yes (D15, small) |
 | 4 launch docs | `feature/promotion-payment-launch-docs` | **G** `stripe-setup.md`, v1 §16. Ship. | No |
 
 ## Privacy and security position
@@ -640,6 +665,14 @@ Resolved by Archan on 2026-11-21.
 - **Q12** Existing `requested` rows stay as they are; existing `approved` rows are marked `is_free` by the migration.
 - **Q13 (2026-11-21)** (b) Stripe Invoicing: the admin function creates a Stripe Customer and an invoice with `collection_method=send_invoice` and a 7-day due date, and Stripe emails the seller a hosted pay page (D14). Options (a) manual email and (c) our own email worker were not chosen.
 - **Q15 (2026-11-21)** Remove the price and payment wording from the app. The app shows status only. Price, deadline and receipt appear only in the Stripe invoice email and its hosted page (table under Screens & routes; D15 for the data).
+
+## PR 2b: database and handler hardening before launch (not built now)
+Recorded 2026-11-24 at the PR 3 plan; a separate PR before launch (Before launch item 7). Plan mode required (schema and Edge Function change).
+- **`attach_invoice`** raises distinct codes: `already_attached` (the row is already `open` with other ids) and `not_attachable` (no longer payable: cancelled, rejected, past `pay_by`). It answers ok when the row already holds exactly this customer and this invoice (an idempotent re-attach).
+- **`begin_promotion_invoice`** also returns the payment row's `livemode` (null for a fresh reservation), so the handler can compare it with Stripe's invoice.
+- **The `promotion-invoice` handler** uses both: on `already_attached` it stops without deleting the draft (fixes the two-runs-at-once known limit, PR 2 review S1); on a re-attach of the same ids it continues; it refuses an invoice whose `livemode` differs from the row's (the check not built in PR 2).
+- Tests: pgTAP for the two codes, the idempotent re-attach and the returned `livemode`; Deno tests for the handler paths; named deliberate breaks (for example: one combined code again; skip the livemode compare), each red then restored with `cmp`.
+- Hosted rollout as for every 16b migration: together with an app update, never before one (no app change is expected; the rule still holds for the release).
 
 ## Follow-ups (not in this spec)
 - OffersPrivacy.test.tsx flaked once under full-suite load, passes alone and on rerun; timing, spec 16 PR 4 test. (Recorded 2026-11-23 at PR 2 gate D3; it flaked the same way once more in the PR 2 final verification and passed alone and on the rerun; not touched in PR 2.)

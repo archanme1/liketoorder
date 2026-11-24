@@ -532,7 +532,7 @@ First search (spec draft, 2026-11-21):
 - [x] Seed has one row in each new state (as approved at the plan: `payment_due` and a paid campaign); `db:types` regenerated; the zod schema accepts the new keys with no behaviour change; jest, lint, typecheck and `npx supabase test db` green; runbook (with the `invoice` and `void_pending` commands) and v1 §7, §15, §16 updated.
 
 **PR 2 (Edge Functions, `feature/promotion-payment-functions`)**
-- [ ] Admin function (Deno tests, fake `fetch`, fake database calls, fake email lookup):
+- [x] Admin function (Deno tests, fake `fetch`, fake database calls, fake email lookup):
   - **refused without the admin secret** (missing header, wrong secret, a user JWT instead: all 401 with no body, no database call and no Stripe call); the compare is constant-time;
   - `PROMOTION_ADMIN_SECRET` unset or shorter than 32 characters -> 503 `not_configured`;
   - the per-promotion rate limit (429 `rate_limited`); a missing Stripe key -> 503 `payments_unavailable`; each database error mapped to its code, never the raw text;
@@ -544,7 +544,7 @@ First search (spec draft, 2026-11-21):
   - `attach_invoice` refused -> the draft is deleted, nothing finalized or sent; `check_invoice_sendable` false -> the invoice is voided and marked, not sent;
   - `already_sent` -> 409 `{ ok: false, error: 'already_sent' }`; success -> exactly `{ ok: true, invoice_status: 'sent' }`;
   - `void_pending` voids each listed invoice and marks it; deletes drafts; marks invoices already void; skips paid ones; one failure does not stop the rest; answers the counts.
-- [ ] Webhook (Deno tests, fake signed events, fake `fetch`):
+- [x] Webhook (Deno tests, fake signed events, fake `fetch`):
   - bad signature, old timestamp, missing header and a body over 256 KB (413) are refused with no database call and no Stripe call;
   - a valid `invoice.paid` triggers the invoice-payments lookup, passes `invoice_id`, `payment_intent_id`, `amount_paid`, `currency` and `paid_at` (from `status_transitions.paid_at`) on, and activates; a failed lookup answers 500; an event missing `paid_at`, `currency` or `amount_paid` answers 500 with no call; no paid payment found -> `payment_intent_id` null is passed;
   - an event whose livemode differs from `STRIPE_EXPECT_LIVEMODE` is refused before any database call (tested separately from the row check);
@@ -553,7 +553,7 @@ First search (spec draft, 2026-11-21):
   - a failed refund call answers 500 and does not call `mark_refund_requested`;
   - a retried duplicate with a refund target repeats the refund call with the same key;
   - the `p_data` shapes of `invoice.voided`, `invoice.marked_uncollectible`, `charge.refunded` and `charge.dispute.created`.
-- [x] Deliberate breaks (labelled W1 to W10 so they do not collide with PR 1's letters), each run in a scratch copy, red on its named test, then restored and proven with `cmp` (done 2026-11-23 at gate D4: all ten red on their named tests, each restore `cmp`-equal to HEAD, tree clean, full Deno suite green after the last restore):
+- [x] Deliberate breaks (labelled W1 to W10 so they do not collide with PR 1's letters), each run in a scratch copy, red on its named test, then restored and proven with `cmp` (done 2026-11-23 at gate D4: all ten red on their named tests, each restore `cmp`-equal to HEAD, tree clean, full Deno suite green after the last restore; all thirteen re-run after the review fixes, same result):
   - W1 skip the signature check;
   - W2 skip the `STRIPE_EXPECT_LIVEMODE` check;
   - W3 answer 200 when the refund call fails;
@@ -563,10 +563,13 @@ First search (spec draft, 2026-11-21):
   - W7 log the customer email;
   - W8 skip `check_invoice_sendable` before send;
   - W9 skip the draft delete when `attach_invoice` refuses;
-  - W10 drop the `Idempotency-Key` on one Stripe POST.
-- [ ] `grep` proves no `sk_`, `rk_` or `whsec_` value outside the tests' obvious fakes, and no `EXPO_PUBLIC_STRIPE` anywhere.
-- [ ] `git diff --stat main -- supabase/migrations` is empty (no migration in PR 2).
-- [ ] `scripts/dev/fake-stripe-event.ts` refuses a non-localhost URL, and the signature it makes verifies (Deno test). `deno lint`, `deno task check`, `deno task test` green; `config.toml`, `deno.json`, `.env.example` (names only) and the runbook updated. Nothing deployed; no secret set.
+  - W10 drop the `Idempotency-Key` on one Stripe POST;
+  - W11 create again on a retry instead of reading the invoice state (review Q1);
+  - W12 send an open invoice whose total differs from the locked amount (review S2);
+  - W13 let the fake-event script follow redirects (review S5).
+- [x] `grep` proves no `sk_`, `rk_` or `whsec_` value outside the tests' obvious fakes, and no `EXPO_PUBLIC_STRIPE` anywhere.
+- [x] `git diff --stat main -- supabase/migrations` is empty (no migration in PR 2).
+- [x] `scripts/dev/fake-stripe-event.ts` refuses a non-localhost URL, and the signature it makes verifies (Deno test). `deno lint`, `deno task check`, `deno task test` green; `config.toml`, `deno.json`, `.env.example` (names only) and the runbook updated. Nothing deployed; no secret set.
 
 **PR 3 (app, `feature/promotion-payment-app`; status wording and price removal)**
 - [ ] The Promote screen shows every state in "What people see" with its action, plus loading, error and Retry; pull to refresh updates it.

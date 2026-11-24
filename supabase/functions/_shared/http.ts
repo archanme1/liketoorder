@@ -45,6 +45,16 @@ export async function readJsonBody(req: Request): Promise<unknown> {
   }
 }
 
+// The raw body bytes (empty when there is none), or undefined when it is over `limit` bytes. Same
+// cap rules as readJsonBody. Used where the exact bytes matter (the Stripe signature).
+export async function readRawBody(req: Request, limit: number): Promise<Uint8Array | undefined> {
+  if (Number(req.headers.get('Content-Length')) > limit) {
+    await req.body?.cancel();
+    return undefined;
+  }
+  return await readAtMost(req.body, limit);
+}
+
 // The whole stream, or undefined once it passes `limit` bytes.
 async function readAtMost(
   body: ReadableStream<Uint8Array> | null,

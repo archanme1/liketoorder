@@ -685,9 +685,10 @@ select ok((select (j -> 'promotion' ->> 'state') = 'requested' and pg_temp.no_pa
 select ok(pg_temp.no_payment_detail(public.cancel_my_promotion((select (j -> 'promotion' ->> 'id')::uuid from d15req)),
                                     'pay60@example.test'),
   'D15: the answer of cancel_my_promotion carries no price key, Stripe id, link or email');
-select ok((select position('"price_cents"' in o::text) = 0 and position('"currency_code"' in o::text) = 0
+select ok((select jsonb_array_length(o -> 'offers') > 0
+                  and position('"price_cents"' in o::text) = 0 and position('"currency_code"' in o::text) = 0
              from (select public.list_offers_near(-30, -100, 5, null, null, null, null) as o) x),
-  'D15: the Offers page carries no price key');
+  'D15: the Offers page (not empty) carries no price key');
 
 -- The privileges of both replaced functions are what PR 1 left: promotion_json for its owner only,
 -- get_my_promotion for its owner, authenticated and service_role (never PUBLIC or anon).

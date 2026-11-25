@@ -16,10 +16,16 @@ import {
   storedRow,
   type FakeServer,
 } from '../__fixtures__/promotion';
+import {
+  buttonLabels,
+  FORBIDDEN_BUTTON,
+  paymentWording,
+  renderedStrings,
+} from '../__fixtures__/noPayment';
 import { PromoteScreen } from '../components/PromoteScreen';
 import { myPromotionKey } from '../hooks/useMyPromotion';
-import { formatPromotionPrice, offerLine, phoneLocale, statusText } from '../format';
-import { PAYMENT_NOTE, promotionErrorMessage } from '../messages';
+import { invitationText, statusText } from '../format';
+import { CONTACT_TO_CANCEL_TEXT, promotionErrorMessage, REVIEW_NOTE } from '../messages';
 import { promotionSchema } from '../schema';
 
 const mockRouter = { push: jest.fn(), replace: jest.fn(), back: jest.fn() };
@@ -96,8 +102,9 @@ async function renderScreen() {
 
 const calls = (name: string) => rpc.mock.calls.filter(([called]) => called === name);
 // The status sentence the screen should show for a stored row.
-const status = (state: Parameters<typeof storedRow>[0]) =>
-  statusText(promotionSchema.parse(storedRowJson(state)));
+const status = (state: Parameters<typeof storedRow>[0], paid = false) =>
+  statusText(promotionSchema.parse({ ...storedRowJson(state), ...(paid ? PAID : {}) }));
+const PAID = { paid: true, is_free: false };
 
 // The answer the fake gives for one stored row, through the same schema the app uses.
 function storedRowJson(state: Parameters<typeof storedRow>[0]) {
@@ -111,8 +118,6 @@ function storedRowJson(state: Parameters<typeof storedRow>[0]) {
     starts_at: row.starts_at,
     ends_at: row.ends_at,
     reject_reason: row.reject_reason,
-    price_cents: 2500,
-    currency_code: 'CAD',
     length_days: 7,
     // Spec 16b keys, with the fake server's defaults.
     paid: row.paid ?? row.status === 'refunded',
@@ -161,19 +166,22 @@ describe('PromoteScreen: the four screen states', () => {
 });
 
 describe('PromoteScreen: no campaign yet', () => {
-  it('invites with what it does, the price and length from the server, and the form', async () => {
+  it('invites with what it does and the length from the server, the review note and the form', async () => {
     await renderScreen();
     expect(await screen.findByRole('header', { name: 'Promote your business' })).toBeTruthy();
-    expect(screen.getByText(/larger flag on the map and a card in the Offers list/)).toBeTruthy();
+    expect(screen.getByText(invitationText(7))).toBeTruthy();
     expect(
-      screen.getByText(offerLine(formatPromotionPrice(2500, 'CAD', phoneLocale()), 7)),
+      screen.getByText(
+        'A larger flag on the map and a card in Offers for 7 days, both marked Sponsored.',
+      ),
     ).toBeTruthy();
-    expect(screen.getByText(PAYMENT_NOTE)).toBeTruthy();
+    expect(screen.getByText(REVIEW_NOTE)).toBeTruthy();
+    expect(screen.queryByText(/CAD|\$|25\.00|charged|contact you about payment/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Send request' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
   });
 
-  it('says promotions are not available yet when there is no price, with no form', async () => {
+  it('says promotions are not available yet when there is no settings row, with no form', async () => {
     server.settings = null;
     await renderScreen();
     expect(await screen.findByText("Promotions aren't available yet.")).toBeTruthy();
@@ -227,13 +235,14 @@ describe('PromoteScreen: no campaign yet', () => {
 });
 
 describe('PromoteScreen: waiting, scheduled and running campaigns', () => {
-  it('shows a waiting request with its price snapshot and Cancel request', async () => {
+  it('shows a waiting request with no price and Cancel request', async () => {
     server.rows.push(storedRow('requested'));
     await renderScreen();
     expect(await screen.findByText(status('requested'))).toBeTruthy();
     expect(screen.getByText('Special offer')).toBeTruthy();
     expect(screen.getByText('Two bowls of pho for the price of one')).toBeTruthy();
     expect(screen.getByText('Preferred start: As soon as possible')).toBeTruthy();
+    expect(screen.queryByText(/CAD|\$|25\.00|for 7 days/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
   });
 
@@ -267,7 +276,7 @@ describe('PromoteScreen: waiting, scheduled and running campaigns', () => {
     server.rows.push(storedRow('scheduled'));
     await renderScreen();
     expect(await screen.findByText(status('scheduled'))).toBeTruthy();
-    expect(status('scheduled')).toMatch(/^Starts on .+, ends on .+\.$/);
+    expect(status('scheduled')).toMatch(/^Scheduled\. Starts on .+, ends on .+\.$/);
     await fireEvent.press(screen.getByRole('button', { name: 'Cancel promotion' }));
     expect(alertSpy).toHaveBeenCalledWith(
       'Cancel this promotion?',
@@ -282,11 +291,11 @@ describe('PromoteScreen: waiting, scheduled and running campaigns', () => {
     server.rows.push(storedRow('active'));
     await renderScreen();
     expect(await screen.findByText(status('active'))).toBeTruthy();
-    expect(status('active')).toMatch(/^Promoted until .+\.$/);
+    expect(status('active')).toMatch(/^Active until .+\.$/);
     await fireEvent.press(screen.getByRole('button', { name: 'Cancel promotion' }));
     expect(alertSpy).toHaveBeenCalledWith(
       'Stop your promotion now?',
-      'It ends at once. Refunds are handled outside the app.',
+      'It ends at once.',
       expect.any(Array),
     );
     await pressAlertButton('Cancel promotion');
@@ -361,7 +370,7 @@ describe('PromoteScreen: ended, rejected and cancelled campaigns', () => {
     expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
   });
 
-  it('shows the not-configured message after Promote again when there is no price', async () => {
+  it('shows the not-configured message after Promote again when there is no settings row', async () => {
     server.rows.push(storedRow('ended'));
     server.settings = null;
     await renderScreen();
@@ -409,7 +418,7 @@ describe('PromoteScreen: where messages show', () => {
     await act(async () => {
       await client.invalidateQueries({ queryKey: myPromotionKey });
     });
-    expect(await screen.findByText(/^Starts on .+, ends on .+\.$/)).toBeTruthy();
+    expect(await screen.findByText(/^Scheduled\. Starts on .+, ends on .+\.$/)).toBeTruthy();
     expect(screen.queryByText('Request sent')).toBeNull();
   });
 
@@ -490,9 +499,9 @@ describe('PromoteScreen: spec 16b states', () => {
   it.each(['scheduled', 'active'] as const)(
     'gives a paid %s campaign no cancel button and no Promote again (no dead button)',
     async (state) => {
-      server.rows.push(storedRow(state, PROMOTION_ID, { paid: true, is_free: false }));
+      server.rows.push(storedRow(state, PROMOTION_ID, PAID));
       await renderScreen();
-      expect(await screen.findByText(status(state))).toBeTruthy();
+      expect(await screen.findByText(status(state, true))).toBeTruthy();
       expect(screen.queryByRole('button', { name: /^Cancel/ })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Send request' })).toBeNull();
@@ -504,10 +513,10 @@ describe('PromoteScreen: spec 16b states', () => {
     await renderScreen();
     await fireEvent.press(await screen.findByRole('button', { name: 'Cancel request' }));
     // Stripe's webhook schedules the paid campaign before the seller confirms.
-    server.rows[0] = storedRow('scheduled', PROMOTION_ID, { paid: true, is_free: false });
+    server.rows[0] = storedRow('scheduled', PROMOTION_ID, PAID);
     await pressAlertButton('Cancel request');
     expect(await screen.findByText("This promotion can't be cancelled here.")).toBeTruthy();
-    expect(await screen.findByText(status('scheduled'))).toBeTruthy();
+    expect(await screen.findByText(status('scheduled', true))).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Cancel/ })).toBeNull());
     expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
   });
@@ -516,5 +525,132 @@ describe('PromoteScreen: spec 16b states', () => {
     server.rows.push(storedRow('active', PROMOTION_ID, { is_free: true }));
     await renderScreen();
     expect(await screen.findByRole('button', { name: 'Cancel promotion' })).toBeTruthy();
+  });
+});
+
+// Spec 16b PR 3: every state of "What people see", with its action, and status only. The scan reads
+// every text, accessibility label and hint (the seller's headline taken out) and every button label.
+describe('PromoteScreen: spec 16b PR 3 states, status only', () => {
+  const HEADLINE = 'Two bowls of pho for the price of one';
+  type Case = {
+    state: Parameters<typeof storedRow>[0];
+    paid?: boolean;
+    reason?: string;
+    text: RegExp;
+    buttons: string[];
+    contact: boolean;
+  };
+  const CASES: Case[] = [
+    {
+      state: 'requested',
+      text: /^Waiting for review\.$/,
+      buttons: ['Cancel request'],
+      contact: false,
+    },
+    {
+      state: 'awaiting_payment',
+      text: /^Your headline was approved\. We'll be in touch with next steps\.$/,
+      buttons: ['Cancel request'],
+      contact: false,
+    },
+    {
+      state: 'scheduled',
+      paid: true,
+      text: /^Paid and scheduled\. Starts on .+, ends on .+\.$/,
+      buttons: [],
+      contact: true,
+    },
+    { state: 'active', paid: true, text: /^Active until .+\.$/, buttons: [], contact: true },
+    {
+      state: 'scheduled',
+      text: /^Scheduled\. Starts on .+, ends on .+\.$/,
+      buttons: ['Cancel promotion'],
+      contact: false,
+    },
+    { state: 'active', text: /^Active until .+\.$/, buttons: ['Cancel promotion'], contact: false },
+    { state: 'ended', text: /^Ended on .+\.$/, buttons: ['Promote again'], contact: false },
+    {
+      state: 'payment_expired',
+      text: /^Payment window closed\.$/,
+      buttons: ['Promote again'],
+      contact: false,
+    },
+    { state: 'refunded', text: /^Refunded\.$/, buttons: ['Promote again'], contact: false },
+    {
+      state: 'rejected',
+      reason: 'not_paid',
+      text: /^Not approved: the payment window closed\.$/,
+      buttons: ['Promote again'],
+      contact: false,
+    },
+    { state: 'cancelled', text: /^Cancelled\.$/, buttons: ['Promote again'], contact: false },
+  ];
+  const ACTIONS = ['Cancel request', 'Cancel promotion', 'Promote again', 'Send request'];
+
+  it.each(CASES.map((c) => [`${c.state}${c.paid ? ' (paid)' : ''}`, c] as const))(
+    '%s: the status line, exactly its action, and no price or payment wording',
+    async (_name, c) => {
+      const extra = {
+        ...(c.paid ? PAID : {}),
+        ...(c.reason ? { reject_reason: c.reason } : {}),
+      };
+      server.rows.push(storedRow(c.state, PROMOTION_ID, extra));
+      await renderScreen();
+      expect(await screen.findByText(c.text)).toBeTruthy();
+      for (const action of ACTIONS) {
+        const present = screen.queryByRole('button', { name: action }) !== null;
+        expect([action, present]).toEqual([action, c.buttons.includes(action)]);
+      }
+      if (c.contact) {
+        const line = screen.getByText(CONTACT_TO_CANCEL_TEXT);
+        expect(line.props.accessibilityRole).toBeUndefined();
+        expect(line.props.onPress).toBeUndefined();
+        expect(screen.queryByRole('button', { name: /contact/i })).toBeNull();
+      } else {
+        expect(screen.queryByText(CONTACT_TO_CANCEL_TEXT)).toBeNull();
+      }
+      expect(paymentWording(renderedStrings(), HEADLINE)).toEqual([]);
+      expect(buttonLabels().filter((label) => FORBIDDEN_BUTTON.test(label))).toEqual([]);
+
+      // The cancel confirmation, where there is one, is status only too.
+      const cancel = c.buttons.find((label) => label.startsWith('Cancel'));
+      if (cancel) {
+        await fireEvent.press(screen.getByRole('button', { name: cancel }));
+        const [title, message, buttons] = alertSpy.mock.calls[0] as [
+          string,
+          string,
+          { text: string }[],
+        ];
+        const alertText = [title, message, ...buttons.map((b) => b.text)];
+        expect(paymentWording(alertText, HEADLINE)).toEqual([]);
+      }
+    },
+  );
+
+  it('invitation: the length line, the review note and the form, and no price or payment wording', async () => {
+    await renderScreen();
+    await screen.findByRole('button', { name: 'Send request' });
+    expect(screen.getByText(invitationText(7))).toBeTruthy();
+    expect(screen.getByText(REVIEW_NOTE)).toBeTruthy();
+    expect(
+      screen.getByText("We'll confirm the exact dates when your promotion is scheduled."),
+    ).toBeTruthy();
+    expect(paymentWording(renderedStrings(), HEADLINE)).toEqual([]);
+    expect(buttonLabels().filter((label) => FORBIDDEN_BUTTON.test(label))).toEqual([]);
+  });
+
+  it('an old server that still sends the price keys: the screen works and shows no price', async () => {
+    rpc.mockImplementationOnce(async () => ({
+      data: {
+        promotion: { ...storedRowJson('requested'), price_cents: 2500, currency_code: 'CAD' },
+        settings: { length_days: 7, price_cents: 2500, currency_code: 'CAD' },
+        eligible: true,
+      },
+      error: null,
+    }));
+    await renderScreen();
+    expect(await screen.findByText('Waiting for review.')).toBeTruthy();
+    expect(paymentWording(renderedStrings(), HEADLINE)).toEqual([]);
+    expect(renderedStrings().join(' ')).not.toMatch(/2500|25\.00|CAD/);
   });
 });

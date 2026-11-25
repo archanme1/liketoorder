@@ -7,7 +7,8 @@ import { checkHeadline, MAX_HEADLINE_CHARS, type HeadlineProblem } from './text'
 
 // The answers of get_my_promotion, request_promotion and cancel_my_promotion (spec 16): exactly
 // the keys of private.promotion_json and get_my_promotion. An extra or missing key fails the parse,
-// so the screen shows its error state instead of half-read data.
+// so the screen shows its error state instead of half-read data. The one exception: the two price
+// keys of a server from before spec 16b D15 are dropped before the parse (see below).
 
 export const PROMOTION_CATEGORIES = ['new_dish', 'special_offer', 'featured'] as const;
 export type PromotionCategory = (typeof PROMOTION_CATEGORIES)[number];
@@ -35,42 +36,56 @@ const WINDOW_STATES: readonly PromotionState[] = ['scheduled', 'active', 'ended'
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const timestampSchema = z.string().refine((value) => !Number.isNaN(Date.parse(value)));
-const priceCentsSchema = z.number().int().positive();
-const currencySchema = z.string().regex(/^[A-Z]{3}$/);
 const lengthDaysSchema = z.number().int().min(1).max(60);
 
-export const promotionSettingsSchema = z.strictObject({
-  price_cents: priceCentsSchema,
-  currency_code: currencySchema,
-  length_days: lengthDaysSchema,
-});
+/**
+ * Spec 16b D15: the app never reads a promotion price. A server from before the D15 migration still
+ * sends these two keys; they are dropped here, before the strict parse, so that server does not break
+ * this app and the parsed data has no price for any screen to show. Any other unknown key still fails.
+ */
+export const LEGACY_PRICE_KEYS = ['price_cents', 'currency_code'] as const;
+
+function withoutLegacyPriceKeys(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  const copy: Record<string, unknown> = { ...(value as Record<string, unknown>) };
+  for (const key of LEGACY_PRICE_KEYS) delete copy[key];
+  return copy;
+}
+
+export const promotionSettingsSchema = z.preprocess(
+  withoutLegacyPriceKeys,
+  z.strictObject({
+    length_days: lengthDaysSchema,
+  }),
+);
 export type PromotionSettings = z.infer<typeof promotionSettingsSchema>;
 
-export const promotionSchema = z
-  .strictObject({
-    id: z.uuid(),
-    category: z.enum(PROMOTION_CATEGORIES),
-    headline: z
-      .string()
-      .refine((value) => charCount(value) >= 1 && charCount(value) <= MAX_HEADLINE_CHARS),
-    preferred_start: dateSchema.nullable(),
-    state: z.enum(PROMOTION_STATES),
-    starts_at: timestampSchema.nullable(),
-    ends_at: timestampSchema.nullable(),
-    reject_reason: z.enum(REJECT_REASONS).nullable(),
-    price_cents: priceCentsSchema,
-    currency_code: currencySchema,
-    length_days: lengthDaysSchema,
-    // Spec 16b: paid by Stripe, or a free campaign approved by hand. Not shown yet (PR 3). Defaults
-    // let this app read a server from before spec 16b; the new states still need the new app, so the
-    // hosted migration still ships only together with an app update.
-    paid: z.boolean().default(false),
-    is_free: z.boolean().default(false),
-    created_at: timestampSchema,
-  })
-  .refine((p) => (p.starts_at === null) === (p.ends_at === null))
-  .refine((p) => !WINDOW_STATES.includes(p.state) || p.starts_at !== null)
-  .refine((p) => (p.state === 'rejected') === (p.reject_reason !== null));
+export const promotionSchema = z.preprocess(
+  withoutLegacyPriceKeys,
+  z
+    .strictObject({
+      id: z.uuid(),
+      category: z.enum(PROMOTION_CATEGORIES),
+      headline: z
+        .string()
+        .refine((value) => charCount(value) >= 1 && charCount(value) <= MAX_HEADLINE_CHARS),
+      preferred_start: dateSchema.nullable(),
+      state: z.enum(PROMOTION_STATES),
+      starts_at: timestampSchema.nullable(),
+      ends_at: timestampSchema.nullable(),
+      reject_reason: z.enum(REJECT_REASONS).nullable(),
+      length_days: lengthDaysSchema,
+      // Spec 16b: paid, as the server recorded it ("Paid and scheduled"), or a free campaign
+      // approved by hand (it keeps its cancel button). Defaults let this app read a server from
+      // before spec 16b; the hosted migrations ship only together with this app, never before it.
+      paid: z.boolean().default(false),
+      is_free: z.boolean().default(false),
+      created_at: timestampSchema,
+    })
+    .refine((p) => (p.starts_at === null) === (p.ends_at === null))
+    .refine((p) => !WINDOW_STATES.includes(p.state) || p.starts_at !== null)
+    .refine((p) => (p.state === 'rejected') === (p.reject_reason !== null)),
+);
 export type Promotion = z.infer<typeof promotionSchema>;
 
 export const myPromotionSchema = z.strictObject({

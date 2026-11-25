@@ -1,4 +1,9 @@
-import { myPromotionJson, promotionJson, SETTINGS_JSON } from '../__fixtures__/promotion';
+import {
+  LEGACY_PRICE_JSON,
+  myPromotionJson,
+  promotionJson,
+  SETTINGS_JSON,
+} from '../__fixtures__/promotion';
 import {
   CATEGORY_REQUIRED,
   HEADLINE_MESSAGES,
@@ -102,13 +107,11 @@ describe('myPromotionSchema: refuses anything else', () => {
     }
   });
 
-  it('refuses an unknown category, a bad date, a bad timestamp and a bad currency', () => {
+  it('refuses an unknown category, a bad date, a bad timestamp and a bad length', () => {
     for (const overrides of [
       { category: 'discount' },
       { preferred_start: '2026-12-2' },
       { created_at: 'yesterday' },
-      { currency_code: 'cad' },
-      { price_cents: 0 },
       { length_days: 61 },
       { id: 'not-a-uuid' },
       { headline: '' },
@@ -188,5 +191,52 @@ describe('myPromotionSchema: spec 16b states and keys (PR 1, accepted, not shown
     for (const state of ['payment_due', 'approved']) {
       expect(promotionSchema.safeParse(promotionJson('requested', { state })).success).toBe(false);
     }
+  });
+});
+
+// Spec 16b D15: a server from before the D15 migration still sends the two price keys. The app drops
+// them before the strict parse, so that server does not break it and no price reaches any screen.
+describe('myPromotionSchema: the legacy price keys (spec 16b D15)', () => {
+  it('reads an old answer with the price keys on the campaign and the settings, and drops them', () => {
+    const answer = {
+      promotion: { ...promotionJson('requested'), ...LEGACY_PRICE_JSON },
+      settings: { ...SETTINGS_JSON, ...LEGACY_PRICE_JSON },
+      eligible: true,
+    };
+    const parsed = myPromotionSchema.parse(answer);
+    expect(parsed.promotion).not.toHaveProperty('price_cents');
+    expect(parsed.promotion).not.toHaveProperty('currency_code');
+    expect(parsed.settings).toEqual({ length_days: 7 });
+    expect(JSON.stringify(parsed)).not.toMatch(/price_cents|currency_code|2500|CAD/);
+  });
+
+  it('drops even a malformed legacy price (it is never read)', () => {
+    const parsed = promotionSchema.parse(
+      promotionJson('requested', { price_cents: 0, currency_code: 'cad' }),
+    );
+    expect(parsed).not.toHaveProperty('price_cents');
+  });
+
+  it('does not change the input it was given', () => {
+    const json = { ...promotionJson('requested'), ...LEGACY_PRICE_JSON };
+    promotionSchema.parse(json);
+    expect(json.price_cents).toBe(2500);
+  });
+
+  it('still refuses any other extra key, on the campaign and on the settings', () => {
+    expect(
+      promotionSchema.safeParse(promotionJson('requested', { amount_cents: 2500 })).success,
+    ).toBe(false);
+    expect(
+      myPromotionSchema.safeParse(
+        myPromotionJson(null, { settings: { length_days: 7, price: 25 } }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it('accepts the D15 answer: settings with the length only', () => {
+    expect(myPromotionSchema.parse(myPromotionJson(promotionJson('active'))).settings).toEqual({
+      length_days: 7,
+    });
   });
 });

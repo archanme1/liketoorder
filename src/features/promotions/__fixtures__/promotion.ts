@@ -10,7 +10,10 @@ const at = (days: number) => new Date(NOW.getTime() + days * DAY_MS).toISOString
 
 export const PROMOTION_ID = '00000000-0000-4000-8000-000000001601';
 
-export const SETTINGS_JSON = { price_cents: 2500, currency_code: 'CAD', length_days: 7 };
+export const SETTINGS_JSON = { length_days: 7 };
+
+/** The two price keys a server from before spec 16b D15 still sends; the app drops them. */
+export const LEGACY_PRICE_JSON = { price_cents: 2500, currency_code: 'CAD' };
 
 type Json = Record<string, unknown>;
 type State =
@@ -49,8 +52,6 @@ export function promotionJson(state: State, overrides: Json = {}): Json {
     state,
     ...WINDOWS[state],
     reject_reason: state === 'rejected' ? 'headline' : null,
-    price_cents: 2500,
-    currency_code: 'CAD',
     length_days: 7,
     // Spec 16 campaigns were approved by hand: free. A refunded one had been paid.
     paid: state === 'refunded',
@@ -169,8 +170,6 @@ export function createFakeServer({
       starts_at: row.starts_at,
       ends_at: row.ends_at,
       reject_reason: row.reject_reason,
-      price_cents: s.price_cents,
-      currency_code: s.currency_code,
       length_days: s.length_days,
       paid: row.paid ?? row.status === 'refunded',
       is_free: row.is_free ?? row.status === 'approved',

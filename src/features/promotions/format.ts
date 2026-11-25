@@ -1,21 +1,22 @@
 import { getLocales } from 'expo-localization';
 
-import { minorToDecimalString } from '@/features/menu/price';
 import { deviceTimeZone } from '@/features/requests/time';
 import { addDays } from '@/lib/localDate';
 
 import {
   AWAITING_PAYMENT_TEXT,
   CANCELLED_TEXT,
+  PAID_SCHEDULED_PREFIX,
   PAYMENT_EXPIRED_TEXT,
   REFUNDED_TEXT,
   REJECT_REASON_TEXT,
   REQUESTED_TEXT,
+  SCHEDULED_PREFIX,
 } from './messages';
 import type { Promotion } from './schema';
 import { MAX_HEADLINE_CHARS } from './text';
 
-// Price, dates and counter wording for the Promote screen. Pure: the locale and the zone are always
+// Dates, length and counter wording for the Promote screen (no price: spec 16b D15). Pure: the locale and the zone are always
 // passed in (the phone's by default, any other in tests). Instants are shown in the zone; date-only
 // strings ("2026-12-02") are calendar days and never move with a zone.
 
@@ -30,33 +31,14 @@ export function phoneLocale(): string {
   return getLocales()[0]?.languageTag ?? 'en-US';
 }
 
-/**
- * "CAD 25.00": the ISO code (an invoice is in that currency, so no symbol that could be another
- * dollar), the currency's own decimals, and the amount as a decimal string, so no float maths.
- */
-export function formatPromotionPrice(cents: number, currency: string, locale = phoneLocale()) {
-  const digits =
-    new Intl.NumberFormat(locale, { style: 'currency', currency }).resolvedOptions()
-      .maximumFractionDigits ?? 2;
-  const format = new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    currencyDisplay: 'code',
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
-  // The amount goes in as a decimal string such as "25.00", built from the integer cents with
-  // string steps only. The cast is because TypeScript's Intl type accepts only numbers. An engine
-  // whose Intl takes decimal strings (the newer spec) formats that exact value. An older one, possibly
-  // Hermes on a phone, turns the string into a Number first: that is still exact for any whole number
-  // of cents below 2^53, far above any promotion price, so no rounding can show. Same approach as
-  // formatPrice in src/features/menu/price.ts.
-  return format.format(minorToDecimalString(cents, digits) as unknown as number);
+/** "for 7 days", "for 1 day": the campaign length, never a price (spec 16b D15). */
+export function campaignLength(lengthDays: number): string {
+  return `for ${lengthDays} ${lengthDays === 1 ? 'day' : 'days'}`;
 }
 
-/** "CAD 25.00 for 7 days". */
-export function offerLine(price: string, lengthDays: number): string {
-  return `${price} for ${lengthDays} ${lengthDays === 1 ? 'day' : 'days'}`;
+/** The invitation's one line: what a promotion gives, and for how long. */
+export function invitationText(lengthDays: number): string {
+  return `A larger flag on the map and a card in Offers ${campaignLength(lengthDays)}, both marked Sponsored.`;
 }
 
 /** "Dec 2" (en-CA) or "2 Dec" (en-GB) for an instant, in the zone. */
@@ -75,9 +57,10 @@ export function statusText(promotion: Promotion, options: FormatOptions = {}): s
     case 'requested':
       return REQUESTED_TEXT;
     case 'scheduled':
-      return `Starts on ${day(promotion.starts_at)}, ends on ${day(promotion.ends_at)}.`;
+      // Paid campaigns say so; a free one (approved by hand) does not (spec 16b PR 3).
+      return `${promotion.paid ? PAID_SCHEDULED_PREFIX : SCHEDULED_PREFIX} Starts on ${day(promotion.starts_at)}, ends on ${day(promotion.ends_at)}.`;
     case 'active':
-      return `Promoted until ${day(promotion.ends_at)}.`;
+      return `Active until ${day(promotion.ends_at)}.`;
     case 'ended':
       return `Ended on ${day(promotion.ends_at)}.`;
     case 'rejected':

@@ -9,10 +9,10 @@ import { SellerScreenGate } from '@/features/sellers/components/SellerScreenGate
 import { useTheme } from '@/theme/useTheme';
 
 import type { PromotionErrorCode } from '../api';
-import { formatPromotionPrice, offerLine, phoneLocale } from '../format';
+import { invitationText } from '../format';
 import { useCancelPromotion } from '../hooks/useCancelPromotion';
 import { useMyPromotion } from '../hooks/useMyPromotion';
-import { PAYMENT_NOTE, promotionErrorMessage } from '../messages';
+import { CONTACT_TO_CANCEL_TEXT, promotionErrorMessage, REVIEW_NOTE } from '../messages';
 import type { MyPromotion, Promotion, PromotionSettings } from '../schema';
 
 import { PromoteForm } from './PromoteForm';
@@ -29,12 +29,21 @@ const OPEN_STATES: readonly Promotion['state'][] = [
 const REQUEST_STATES: readonly Promotion['state'][] = ['requested', 'awaiting_payment'];
 
 // A paid campaign cannot be ended from the app (the server answers contact_support), so it gets no
-// cancel button; spec 16b PR 3 adds "Contact us to cancel". A free campaign keeps spec 16 behaviour.
+// cancel button, only the plain "Contact us to cancel." line (text, not a button: the app has no
+// support contact until spec 18). A free campaign keeps spec 16 behaviour.
+function isRunningOrScheduled(promotion: Promotion): boolean {
+  return promotion.state === 'scheduled' || promotion.state === 'active';
+}
+
 function canCancel(promotion: Promotion): boolean {
   return (
     REQUEST_STATES.includes(promotion.state) ||
-    ((promotion.state === 'scheduled' || promotion.state === 'active') && promotion.is_free)
+    (isRunningOrScheduled(promotion) && promotion.is_free)
   );
+}
+
+function mustContactToCancel(promotion: Promotion): boolean {
+  return isRunningOrScheduled(promotion) && !promotion.is_free;
 }
 
 // A success notice belongs to the state it reports (`signature`): once the screen shows another
@@ -124,7 +133,7 @@ function PromoteBody({ data, notice, setNotice }: PromoteBodyProps) {
         ]
       : current.state === 'scheduled'
         ? ['Cancel this promotion?', "It won't start."]
-        : ['Stop your promotion now?', 'It ends at once. Refunds are handled outside the app.'];
+        : ['Stop your promotion now?', 'It ends at once.'];
     const keep = request ? 'Keep request' : 'Keep promotion';
     const confirm = request ? 'Cancel request' : 'Cancel promotion';
     Alert.alert(title, message, [
@@ -152,6 +161,9 @@ function PromoteBody({ data, notice, setNotice }: PromoteBodyProps) {
         Promote your business
       </Text>
       {promotion ? <PromotionStatusCard promotion={promotion} /> : null}
+      {promotion && mustContactToCancel(promotion) ? (
+        <Text color="textMuted">{CONTACT_TO_CANCEL_TEXT}</Text>
+      ) : null}
       {shown ? <Banner tone={shown.tone} message={shown.message} /> : null}
       {promotion && open && canCancel(promotion) ? (
         <Button
@@ -199,7 +211,8 @@ type InvitationProps = {
   onClose?: () => void;
 };
 
-// What a promotion does and costs, and the form. Seller only: customers never see this.
+// What a promotion does and how long it runs, and the form. No price (spec 16b, Store rules).
+// Seller only: customers never see this.
 function Invitation({ settings, eligible, onSent, onError, onClose }: InvitationProps) {
   const { space } = useTheme();
   const router = useRouter();
@@ -224,19 +237,11 @@ function Invitation({ settings, eligible, onSent, onError, onClose }: Invitation
     );
   }
 
-  const price = offerLine(
-    formatPromotionPrice(settings.price_cents, settings.currency_code, phoneLocale()),
-    settings.length_days,
-  );
   return (
     <View style={{ gap: space.lg }}>
       <Card style={{ gap: space.sm }}>
-        <Text>
-          A promotion gives your place a larger flag on the map and a card in the Offers list, both
-          marked Sponsored.
-        </Text>
-        <Text variant="bodyLg">{price}</Text>
-        <Text color="textMuted">{PAYMENT_NOTE}</Text>
+        <Text variant="bodyLg">{invitationText(settings.length_days)}</Text>
+        <Text color="textMuted">{REVIEW_NOTE}</Text>
       </Card>
       <PromoteForm onSent={onSent} onError={onError} />
       {notNow}

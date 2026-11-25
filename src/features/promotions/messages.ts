@@ -10,7 +10,7 @@ export const CATEGORY_LABELS: Record<PromotionCategory, string> = {
   featured: 'Featured',
 };
 
-export const REQUESTED_TEXT = "Waiting for review. We'll contact you about payment.";
+export const REQUESTED_TEXT = 'Waiting for review.';
 export const CANCELLED_TEXT = 'Cancelled.';
 // Spec 16b: status only, in the spec's final wording. No price and no payment instructions.
 export const AWAITING_PAYMENT_TEXT =
@@ -18,12 +18,17 @@ export const AWAITING_PAYMENT_TEXT =
 export const PAYMENT_EXPIRED_TEXT = 'Payment window closed.';
 export const REFUNDED_TEXT = 'Refunded.';
 export const ASAP_LABEL = 'As soon as possible';
-export const START_NOTE = "We'll confirm the exact dates after payment.";
-export const PAYMENT_NOTE = "Nothing is charged in the app. We'll contact you about payment.";
+export const START_NOTE = "We'll confirm the exact dates when your promotion is scheduled.";
+export const REVIEW_NOTE = 'We review every headline before it goes live.';
+// Spec 16b PR 3: the status of a paid campaign, and what a seller does to cancel one. Plain text, not
+// a button: the app has no support contact yet (spec 18 adds it).
+export const PAID_SCHEDULED_PREFIX = 'Paid and scheduled.';
+export const SCHEDULED_PREFIX = 'Scheduled.';
+export const CONTACT_TO_CANCEL_TEXT = 'Contact us to cancel.';
 
 export const REJECT_REASON_TEXT: Record<RejectReason, string> = {
   headline: "the headline can't be used. You can send a new request with another one.",
-  not_paid: "the invoice wasn't paid.",
+  not_paid: 'the payment window closed.',
   not_eligible: "this business can't be promoted right now.",
   other: "the request couldn't be accepted.",
 };

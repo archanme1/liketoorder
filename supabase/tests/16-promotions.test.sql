@@ -389,11 +389,11 @@ select results_eq(
 select is(pg_temp.keys((select j from req20)), array['eligible', 'promotion', 'settings'],
   'request_promotion answers with eligible, promotion and settings');
 select is(pg_temp.keys((select j from req20) -> 'promotion'),
-  array['category', 'created_at', 'currency_code', 'ends_at', 'headline', 'id', 'is_free', 'length_days', 'paid', 'preferred_start',
-        'price_cents', 'reject_reason', 'starts_at', 'state'],
+  array['category', 'created_at', 'ends_at', 'headline', 'id', 'is_free', 'length_days', 'paid', 'preferred_start',
+        'reject_reason', 'starts_at', 'state'],
   'the promotion object has exactly the documented keys');
-select is(pg_temp.keys((select j from req20) -> 'settings'), array['currency_code', 'length_days', 'price_cents'],
-  'the settings object has exactly price, currency and length');
+select is(pg_temp.keys((select j from req20) -> 'settings'), array['length_days'],
+  'the settings object has exactly the length');
 select is(pg_temp.keys((select j from req20)), pg_temp.keys(public.get_my_promotion()),
   'request_promotion answers with the same keys as get_my_promotion');
 update public.promotion_settings set price_cents = 9900;
@@ -556,10 +556,10 @@ select is(public.get_my_promotion() -> 'promotion' ->> 'state', 'requested',
 select is(pg_temp.keys(public.get_my_promotion()), array['eligible', 'promotion', 'settings'],
   'get_my_promotion has exactly eligible, promotion and settings');
 select is(pg_temp.keys(public.get_my_promotion() -> 'promotion'),
-  array['category', 'created_at', 'currency_code', 'ends_at', 'headline', 'id', 'is_free', 'length_days', 'paid', 'preferred_start',
-        'price_cents', 'reject_reason', 'starts_at', 'state'], 'its promotion has exactly the documented keys');
-select is(public.get_my_promotion() -> 'settings', '{"price_cents": 2500, "currency_code": "CAD", "length_days": 7}'::jsonb,
-  'settings carries the price, currency and length');
+  array['category', 'created_at', 'ends_at', 'headline', 'id', 'is_free', 'length_days', 'paid', 'preferred_start',
+        'reject_reason', 'starts_at', 'state'], 'its promotion has exactly the documented keys');
+select is(public.get_my_promotion() -> 'settings', '{"length_days": 7}'::jsonb,
+  'settings carries the length only');
 select pg_temp.as_user(20);
 select is((public.get_my_promotion() -> 'promotion' ->> 'id')::uuid,
   (select id from public.promotions where business_id = pg_temp.b(20)), 'each owner sees only their own campaign');

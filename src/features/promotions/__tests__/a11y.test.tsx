@@ -114,17 +114,49 @@ describe('Promote screen accessibility', () => {
     server.rows.push(storedRow('active'));
     await renderScreen();
     const card = await screen.findByLabelText(
-      /^Promoted until .+\. Special offer\. Headline: Two bowls of pho for the price of one\.$/,
+      /^Active until .+\. Special offer\. Headline: Two bowls of pho for the price of one\.$/,
     );
     expect(card.props.accessible).toBe(true);
   });
 
-  it('reads a waiting request with its price and preferred start', async () => {
+  it('reads a paid scheduled campaign in words, then "Contact us to cancel." as plain text', async () => {
+    server.rows.push(storedRow('scheduled', undefined, { paid: true, is_free: false }));
+    await renderScreen();
+    const card = await screen.findByLabelText(
+      /^Paid and scheduled\. Starts on .+, ends on .+\. Special offer\. Headline: .+\.$/,
+    );
+    expect(card.props.accessible).toBe(true);
+    const contact = screen.getByText('Contact us to cancel.');
+    expect(contact.props.accessibilityRole).toBeUndefined();
+    expect(contact.props.onPress).toBeUndefined();
+    // The largest text size: nothing caps the scaling or cuts the line.
+    for (const text of [contact, screen.getByText(/^Paid and scheduled\./)]) {
+      expect(text.props.allowFontScaling).not.toBe(false);
+      expect(text.props.maxFontSizeMultiplier).toBeUndefined();
+      expect(text.props.numberOfLines).toBeUndefined();
+    }
+    expect(screen.queryAllByRole('button')).toEqual([]);
+  });
+
+  it.each([
+    ['ended', 'Promote again'],
+    ['payment_expired', 'Promote again'],
+    ['refunded', 'Promote again'],
+    ['active', 'Cancel promotion'],
+  ] as const)('gives the %s action a label, a role and a 44 pt target', async (state, name) => {
+    server.rows.push(storedRow(state));
+    await renderScreen();
+    const button = await screen.findByRole('button', { name });
+    expect(button.props.accessibilityLabel).toBe(name);
+    expect(minHeight(button)).toBeGreaterThanOrEqual(size.touch);
+  });
+
+  it('reads a waiting request with its preferred start and no price', async () => {
     server.rows.push(storedRow('requested'));
     await renderScreen();
     expect(
       await screen.findByLabelText(
-        /^Waiting for review\. We'll contact you about payment\. Special offer\. Headline: .+\. CAD.25\.00 for 7 days\. Preferred start: As soon as possible\.$/,
+        /^Waiting for review\. Special offer\. Headline: .+\. Preferred start: As soon as possible\.$/,
       ),
     ).toBeTruthy();
   });

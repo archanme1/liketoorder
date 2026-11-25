@@ -133,8 +133,10 @@ select private.admin_review_promotion('<promotion id>', 'approve_headline');
 - It copies the price, currency and length from today's settings onto the promotion (the **price
   lock**); a later settings change never changes it. It needs a settings row (`not_configured`).
 - It sets `pay_by` to now plus 7 days. The answer shows the state `awaiting_payment`.
-- The answer of `admin_review_promotion` carries no price (spec 16b D15: the seller's view has none).
-  To see the locked price, use the query under "See every campaign, its state and its payment".
+- The answer of `admin_review_promotion` shows only the id, the state and the window; it never
+  carried a price. To see the locked price, use the query under "See every campaign, its state and its
+  payment". (Spec 16b D15 removed the price only from what the app receives: `get_my_promotion` and
+  `private.promotion_json`.)
 - Then send the invoice (next section). Nothing is charged until the seller pays Stripe's invoice.
 
 ## Your admin secret (once, then at the start of each terminal session)

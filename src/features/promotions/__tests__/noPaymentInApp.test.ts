@@ -1,8 +1,14 @@
+import { render } from '@testing-library/react-native';
+import { createElement } from 'react';
+import { Text, View } from 'react-native';
+
 import {
   ALLOWED_STATUS_WORDS,
   FORBIDDEN_BUTTON,
   FORBIDDEN_RENDERED,
   paymentWording,
+  RENDERED_PROP_KEYS,
+  renderedStrings,
 } from '../__fixtures__/noPayment';
 
 // The app's tsconfig loads no Node types, so the Node calls are typed here (as in
@@ -189,5 +195,50 @@ describe('no payment in the app (spec 16b PR 3, Store rules)', () => {
     for (const label of ['Cancel request', 'Cancel promotion', 'Promote again', 'Send request']) {
       expect(FORBIDDEN_BUTTON.test(label)).toBe(false);
     }
+  });
+});
+
+describe('the rendered-text scan reads what it says it reads', () => {
+  it('reads exactly these props, plus text children and accessibilityValue.text', () => {
+    expect(RENDERED_PROP_KEYS).toEqual([
+      'accessibilityLabel',
+      'accessibilityHint',
+      'aria-label',
+      'title',
+      'placeholder',
+    ]);
+  });
+
+  it('finds payment wording in each prop it reads, and in text children', async () => {
+    await render(
+      createElement(
+        View,
+        null,
+        createElement(Text, null, 'Pay in text'),
+        createElement(View, { accessibilityLabel: 'Pay in label' }),
+        createElement(View, { accessibilityHint: 'Pay in hint' }),
+        createElement(View, { 'aria-label': 'Pay in aria' }),
+        createElement(View, { accessibilityValue: { text: 'Pay in value' } }),
+        createElement(View, { title: 'Pay in title' } as object),
+        createElement(View, { placeholder: 'Pay in placeholder' } as object),
+      ),
+    );
+    expect(paymentWording(renderedStrings(), 'unused headline').sort()).toEqual(
+      [
+        'Pay in aria',
+        'Pay in hint',
+        'Pay in label',
+        'Pay in placeholder',
+        'Pay in text',
+        'Pay in title',
+        'Pay in value',
+      ].sort(),
+    );
+  });
+
+  it('refuses an empty headline (it would make the scan pass vacuously)', () => {
+    expect(() => paymentWording(['Pay now'], '')).toThrow(
+      'paymentWording needs the seller headline',
+    );
   });
 });

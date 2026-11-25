@@ -42,7 +42,19 @@ export const ALLOWED_STATUS_WORDS = [
   'A larger flag on the map and a card in Offers for 7 days, both marked Sponsored.',
 ] as const;
 
-/** Every string the screen renders: text children, accessibility labels and hints. */
+/** The string props renderedStrings reads on every element, besides the text children. */
+export const RENDERED_PROP_KEYS = [
+  'accessibilityLabel',
+  'accessibilityHint',
+  'aria-label',
+  'title',
+  'placeholder',
+] as const;
+
+/**
+ * The strings the screen renders: every text child, the string props in RENDERED_PROP_KEYS and
+ * accessibilityValue.text, on every element of the rendered tree.
+ */
 export function renderedStrings(): string[] {
   const out: string[] = [];
   const seen = new WeakSet<object>();
@@ -58,10 +70,12 @@ export function renderedStrings(): string[] {
       return;
     }
     const { props, children } = node as { props?: Record<string, unknown>; children?: unknown };
-    for (const key of ['accessibilityLabel', 'accessibilityHint', 'placeholder'] as const) {
+    for (const key of RENDERED_PROP_KEYS) {
       const value = props?.[key];
       if (typeof value === 'string') out.push(value);
     }
+    const accessibilityValue = props?.accessibilityValue as { text?: unknown } | undefined;
+    if (typeof accessibilityValue?.text === 'string') out.push(accessibilityValue.text);
     walk(children);
   };
   walk(screen.toJSON());
@@ -91,6 +105,8 @@ export function buttonLabels(): string[] {
  * the seller's words, for example "half price", not app wording).
  */
 export function paymentWording(strings: readonly string[], headline: string): string[] {
+  // An empty headline would split every string into single characters and pass vacuously.
+  if (headline.length === 0) throw new Error('paymentWording needs the seller headline');
   return strings
     .map((text) => text.split(headline).join(' '))
     .filter((text) => FORBIDDEN_RENDERED.some((pattern) => pattern.test(text)));

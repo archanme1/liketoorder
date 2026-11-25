@@ -370,7 +370,7 @@ describe('PromoteScreen: ended, rejected and cancelled campaigns', () => {
     expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
   });
 
-  it('shows the not-configured message after Promote again when there is no price', async () => {
+  it('shows the not-configured message after Promote again when there is no settings row', async () => {
     server.rows.push(storedRow('ended'));
     server.settings = null;
     await renderScreen();

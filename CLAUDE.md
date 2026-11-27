@@ -194,8 +194,8 @@ Updated by `/ship-feature`. Do not implement a feature marked ⬜ unless the act
 | 14 | activity-grid | ✅ Shipped | .claude/specs/14-activity-grid.md |
 | 15 | activity-grid-cuisine-view | ✅ Shipped | .claude/specs/15-activity-grid-cuisine-view.md |
 | 16 | promotions | ✅ Shipped | .claude/specs/16-promotions.md |
-| 16b | promotion-payment: payment outside the app (store rules) | 🚧 PR 2 shipped (#41), PR 3 next | .claude/specs/16b-promotion-payment.md |
-| 16c | promotion lengths and start date picker (seller picks 1/3/5/7/30 days, no price in the app; calendar for the start day) | 📝 Planned (roadmap row only) | — |
+| 16b | promotion-payment: payment outside the app (store rules) | 🚧 PR 3 shipped (#42), PR 4 next | .claude/specs/16b-promotion-payment.md |
+| 16c | promotion-lengths-and-date-picker (seller picks 1/3/5/7/30 days, no price in the app; calendar for the start day) | 📝 Spec written | .claude/specs/16c-promotion-lengths-and-date-picker.md |
 | 17 | reports | ⬜ Not started | — |
 | 18 | legal-pages | ⬜ Not started | — |
 

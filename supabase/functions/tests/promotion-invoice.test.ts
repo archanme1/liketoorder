@@ -3,7 +3,7 @@
 // real rpc.ts; global fetch throws. Every console line and response body is checked last.
 import assert from 'node:assert/strict';
 import { createStripeClient, STRIPE_VERSION } from '../_shared/stripe.ts';
-import { createHandler, MIN_ADMIN_SECRET_LENGTH } from '../promotion-invoice/handler.ts';
+import { createHandler, invoiceDescription, MIN_ADMIN_SECRET_LENGTH } from '../promotion-invoice/handler.ts';
 import { createDatabase, type Rpc } from '../promotion-invoice/rpc.ts';
 import { blockNetwork, fakeFetch, type RecordedRequest, USER_JWT } from './helpers.ts';
 import {
@@ -149,6 +149,8 @@ type DbOptions = {
   toVoid?: { payment_id: string; invoice_id: string }[];
   fail?: Record<string, { message: string; details?: string } | undefined>; // fn -> error, once
   row?: Partial<Row>;
+  // What begin_promotion_invoice answers for the locked row (spec 16c); defaults 7 days and 2500.
+  begin?: { length_days?: unknown; amount_cents?: unknown };
 };
 
 function fakeDb(o: DbOptions = {}) {
@@ -174,9 +176,9 @@ function fakeDb(o: DbOptions = {}) {
           payment_id: PAYMENT_ID,
           owner_id: OWNER_ID,
           business_name: BUSINESS_NAME,
-          amount_cents: 2500,
+          amount_cents: o.begin && 'amount_cents' in o.begin ? o.begin.amount_cents : 2500,
           currency: 'CAD',
-          length_days: 7,
+          length_days: o.begin && 'length_days' in o.begin ? o.begin.length_days : 7,
           pay_by: PAY_BY,
           customer_id: row.customer_id,
           invoice_id: row.invoice_id,
@@ -406,6 +408,63 @@ test('invoice: the calls in order, each body, key and version; answer is { ok, i
     'mark_invoice_sent',
   ]);
   assert.deepEqual(s.db.calls[1].args, { p_payment_id: PAYMENT_ID, p_customer_id: 'cus_Fake1', p_invoice_id: 'in_Fake1', p_livemode: false });
+});
+
+// --- invoice: the length on the invoice and the item (spec 16c) ----------------------------------
+
+// The description sent on the invoice (POST /v1/invoices) and on its item (POST /v1/invoiceitems).
+async function sentDescriptions(lengthDays: number): Promise<[string | null, string | null]> {
+  const s = setup({ db: { begin: { length_days: lengthDays } } });
+  const res = await s.invoice();
+  assert.equal(res.status, 200);
+  const body = (route: string) => {
+    const req = s.stripe.requests.find((r) => `${r.method} ${r.url.pathname}` === route);
+    return new URLSearchParams(req?.body ?? '').get('description');
+  };
+  return [body('POST /v1/invoices'), body('POST /v1/invoiceitems')];
+}
+
+test('invoice description: 1 day is singular', async () => {
+  assert.equal(invoiceDescription(1), 'LikeToOrder promotion, 1 day');
+  assert.deepEqual(await sentDescriptions(1), ['LikeToOrder promotion, 1 day', 'LikeToOrder promotion, 1 day']);
+});
+
+test('invoice description: 3 days', async () => {
+  assert.equal(invoiceDescription(3), 'LikeToOrder promotion, 3 days');
+  assert.deepEqual(await sentDescriptions(3), ['LikeToOrder promotion, 3 days', 'LikeToOrder promotion, 3 days']);
+});
+
+test('invoice description: 30 days', async () => {
+  assert.equal(invoiceDescription(30), 'LikeToOrder promotion, 30 days');
+  assert.deepEqual(await sentDescriptions(30), ['LikeToOrder promotion, 30 days', 'LikeToOrder promotion, 30 days']);
+});
+
+test('invoice: 60 days, the upper bound, is accepted', async () => {
+  assert.deepEqual(await sentDescriptions(60), ['LikeToOrder promotion, 60 days', 'LikeToOrder promotion, 60 days']);
+});
+
+test("invoice: a 30-day row's item amount is begin's amount_cents", async () => {
+  // 8000 is a test placeholder, not a price.
+  const s = setup({ db: { begin: { length_days: 30, amount_cents: 8000 } } });
+  const res = await s.invoice();
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, invoice_status: 'sent' });
+  const item = s.stripe.requests.find((r) => r.url.pathname === '/v1/invoiceitems');
+  assert.equal(new URLSearchParams(item?.body ?? '').get('amount'), '8000');
+  assert.equal([...s.stripe.invoices.values()][0].total, 8000);
+  assert.equal(s.stripe.created.sent, 1);
+});
+
+test('invoice: an out-of-range length_days is internal_error with no Stripe call', async () => {
+  for (const length_days of [0, 61, -1, 1.5, null, '7']) {
+    const s = setup({ db: { begin: { length_days } } });
+    const res = await s.invoice();
+    assert.equal(res.status, 500, String(length_days));
+    assert.deepEqual(await res.json(), { ok: false, error: 'internal_error' });
+    assert.equal(s.stripe.requests.length, 0, String(length_days));
+    assert.deepEqual(s.db.calls.map((c) => c.fn), ['begin_promotion_invoice'], String(length_days));
+    assert.equal(s.emailLookups.length, 0, String(length_days));
+  }
 });
 
 test('invoice: the livemode recorded by attach_invoice is the one Stripe answered', async () => {

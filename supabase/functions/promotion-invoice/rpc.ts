@@ -20,7 +20,7 @@ const Begin = z.union([
     business_name: z.string().min(1).max(200),
     amount_cents: z.number().int().positive(),
     currency: z.literal('CAD'),
-    length_days: z.number().int().positive(),
+    length_days: z.number().int().min(1).max(60), // the promotions.length_days column check (spec 16c)
     pay_by: z.string(),
     customer_id: z.string().regex(CUSTOMER_ID).nullable(),
     invoice_id: z.string().regex(INVOICE_ID).nullable(),

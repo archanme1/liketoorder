@@ -6,6 +6,11 @@ import { type BeginAnswer, type Database, DatabaseError } from './rpc.ts';
 // A shorter PROMOTION_ADMIN_SECRET counts as no secret (spec 16b, D0 answers).
 export const MIN_ADMIN_SECRET_LENGTH = 32;
 
+// The Stripe invoice and item text (spec 16c): "1 day" for a 1-day campaign, otherwise "N days".
+export function invoiceDescription(lengthDays: number): string {
+  return `LikeToOrder promotion, ${lengthDays} ${lengthDays === 1 ? 'day' : 'days'}`;
+}
+
 type Code =
   | 'invalid_input'
   | 'not_found'
@@ -102,7 +107,7 @@ async function sendInvoice(deps: Deps, stripe: StripeClient, promotionId: string
   if (!email || !email.includes('@')) return fail('no_email');
 
   const paymentId = begin.payment_id;
-  const description = `LikeToOrder promotion, ${begin.length_days} days`;
+  const description = invoiceDescription(begin.length_days);
   const metadata = { payment_id: paymentId };
   const dueDate = Math.floor(Date.parse(begin.pay_by) / 1000);
   if (!Number.isSafeInteger(dueDate)) throw new Stop('internal_error');
